@@ -98,7 +98,7 @@ what a cast that is not this one will get.
   string is what `voice_id` takes. The display name beside it is a label and is accepted nowhere.
 - **`provider` accepts three values, and the contracts package lists four.** The mint answers
   `provider: "qwen"` with `422 Invalid discriminator value. Expected 'cartesia' | 'breezeblue' |
-  'fish'`, but `libs/contracts` still carries `qwenVoiceSpecSchema` in the union — so a spec that
+  'fish'`, but the wire schemas still carry `qwenVoiceSpecSchema` in the union — so a spec that
   typechecks can still be refused on the wire. This demo's three presets used to be `qwen`, which
   meant the whole registry was a 422 waiting to happen and only the unverified gate hid it. The
   boot-time validator here mirrors what the wire actually takes, not what the schema says.

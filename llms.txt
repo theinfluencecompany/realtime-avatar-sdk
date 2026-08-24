@@ -22,7 +22,6 @@ Runtime: Node >= 20. Zero dependencies. Server-only (it holds the API key).
   returns WHY the mic did not start (the macOS system denial is not the browser denial, and the
   address bar cannot fix it), attachRemoteAudio() plays her and surfaces a blocked autoplay.
   No React, no livekit-client dependency
-- libs/contracts (realtime-avatar-contracts): runtime schemas for the wire
 - libs/mcp (realtime-avatar-mcp): MCP server so an agent can read avatars,
   balance and the per-session bill directly. Read-only unless REALTIME_AVATAR_ALLOW_WRITES=1.
 

@@ -174,4 +174,4 @@ export {
   type KnownBehaviorState,
   type SessionBehavior,
   type SessionClip,
-} from "realtime-avatar-contracts";
+} from "../wire";

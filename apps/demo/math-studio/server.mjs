@@ -175,7 +175,7 @@ function monogram({ name, hue }) {
  *
  *     422 voice.provider: Invalid discriminator value. Expected 'cartesia' | 'breezeblue' | 'fish'
  *
- * `libs/contracts` still carries `qwenVoiceSpecSchema` in the `voiceSpecSchema` union, so a spec
+ * the wire schemas still carry `qwenVoiceSpecSchema` in the `voiceSpecSchema` union, so a spec
  * that typechecks against the SDK can still be refused on the wire. Three presets here used to be
  * qwen, which meant this registry could not have worked at all — every one of them was a 422
  * waiting for someone to verify it, and the only reason nothing broke is that the gate below
@@ -262,7 +262,7 @@ const VOICE_UNVERIFIED = new Set();
  * once per call.
  *
  * These three are what the wire accepts, verified against it rather than copied from
- * `libs/contracts` — which also lists `qwen`, and the mint 422s on `qwen`.
+ * the wire schemas — which also list `qwen`, and the mint 422s on `qwen`.
  */
 const VOICE_SHAPES = {
   cartesia:   { required: ["voice_id"], optional: ["model", "speed", "emotion", "language"] },

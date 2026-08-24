@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Fail if libs/contracts exports a name that is not on its allowlist.
+ * Fail if the wire module exports a name that is not on its allowlist.
  *
  * check-boundary.mjs asks "does anything shipped mention a term we listed?". That is a
  * denylist, and it answers only for terms someone thought to add. It passed for months
@@ -10,15 +10,15 @@
  *
  * This asks the opposite, and it is the question that scales: "is every name we export
  * one we MEANT to export?" A new export fails by default. Widening the surface is then a
- * line in public-surface.txt that a reviewer sees, rather than an omission nobody sees.
+ * line in wire-surface.txt that a reviewer sees, rather than an omission nobody sees.
  *
  * The allowlist is safe to keep in the public repo precisely because it is an allowlist:
  * it names only what already ships.
  */
 import { readFile } from "node:fs/promises";
 
-const SOURCE = "libs/contracts/src/index.ts";
-const ALLOWLIST = "libs/contracts/public-surface.txt";
+const SOURCE = "libs/client/src/wire.ts";
+const ALLOWLIST = "libs/client/wire-surface.txt";
 
 const allowed = new Set(
   (await readFile(ALLOWLIST, "utf8"))
@@ -57,8 +57,8 @@ if (extra.length > 0) {
     `${extra.length} export(s) not on the allowlist:\n` +
       extra.map((n) => `    ${n}`).join("\n") +
       `\n\n  If these belong in the PUBLIC surface, add them to ${ALLOWLIST} — that is a\n` +
-      `  review decision. If they are platform internals, they belong in the private\n` +
-      `  contracts package, not in a repo that goes public.`,
+      `  review decision. If they are platform internals, they belong upstream in the\n` +
+      `  private contract, not in a repo that goes public.`,
   );
 }
 // A stale entry is not a leak, so it does not fail the build — but it does mean the

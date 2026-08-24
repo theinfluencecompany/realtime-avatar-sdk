@@ -2,11 +2,10 @@ name: Release realtime-avatar-react
 
 # Publishes realtime-avatar-react (libs/client) to npm.
 #
-# The contracts package is BUNDLED into the tarball (tsup noExternal), so the published
-# package carries no workspace:* dep and installs standalone — no monorepo needed at the
-# consumer end.
+# The wire schemas live inside this package (src/wire.ts), so the published tarball carries
+# no workspace:* dep and installs standalone — no monorepo needed at the consumer end.
 #
-#   - push to main touching libs/client or libs/contracts -> real publish
+#   - push to main touching libs/client -> real publish
 #   - workflow_dispatch (dry_run defaults true) -> build + `npm publish --dry-run`
 #
 # Versions are unique, NON-committed prereleases (0.0.0-main.<UTC-timestamp>.<sha>);
@@ -17,7 +16,6 @@ on:
     branches: [main]
     paths:
       - "libs/client/**"
-      - "libs/contracts/**"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -59,8 +57,8 @@ jobs:
       # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10.
       - run: npm install -g npm@latest
       - run: npm install
-      # contracts first — libs/client bundles its types (tsup noExternal + dts.resolve).
-      - run: npm run build -w libs/contracts
+      # The wire schemas are src/wire.ts inside libs/client now, so there is no sibling
+      # package to build first.
       - run: npm run build -w libs/client
       # Re-scan the built artifact before it leaves the runner. Sourcemaps embed original
       # source via sourcesContent, so a clean source tree can still ship a leaky tarball.

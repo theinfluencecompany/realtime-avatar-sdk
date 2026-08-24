@@ -17,11 +17,11 @@ async function prependUseClient(file: string) {
 
 // Self-contained publish build.
 //
-// `realtime-avatar-contracts` is an internal, unpublished workspace package, so
-// it is BUNDLED IN (noExternal) — the published tarball must carry no
-// `workspace:*` dependency. Everything else (react / react-dom /
-// @livekit/components-react / livekit-client / zod) is a real npm package that
-// stays EXTERNAL and is declared as a (peer)dependency.
+// The wire schemas used to live in a sibling workspace package that was bundled in here
+// (noExternal) so the tarball carried no `workspace:*` dependency. They are now
+// src/wire.ts inside this package, so there is nothing to bundle and nothing to resolve —
+// an ordinary relative import. react / react-dom / @livekit/* / livekit-client / zod are
+// real npm packages and stay EXTERNAL, declared as (peer)dependencies.
 //
 // Output paths intentionally mirror the previous `tsc` layout so the public
 // `exports` map in package.json is unchanged:
@@ -42,13 +42,9 @@ export default defineConfig({
   format: ["esm"],
   target: "es2022",
   outDir: "dist",
-  // Emit a .d.ts for every entry point. `dts.resolve` forces the declaration
-  // rollup to follow + inline the internal contracts package types (it is
-  // otherwise treated as external, leaving a dangling
-  // `import ... from "realtime-avatar-contracts"` in the published .d.ts).
-  dts: {
-    resolve: [/^realtime-avatar-contracts$/],
-  },
+  // Emit a .d.ts for every entry point. `resolve` is no longer needed: wire.ts is a file
+  // in this package, so the declaration rollup follows it without being told to.
+  dts: true,
   // NO sourcemaps. tsup emits them with `sourcesContent`, inlining the original TypeScript
   // into the tarball: 23 files, 334,826 bytes, repeated across five entry-point maps for a
   // 417 KB package against 5-15 KB for every other one here. Turning this off took it to
@@ -68,8 +64,6 @@ export default defineConfig({
   clean: true,
   splitting: false,
   treeshake: true,
-  // Bundle the internal contracts package; keep real npm packages external.
-  noExternal: ["realtime-avatar-contracts"],
   external: [
     "react",
     "react-dom",

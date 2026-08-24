@@ -118,7 +118,6 @@ live instead of reading about them.
 | [`libs/proxy`](./libs/proxy) | `realtime-avatar-proxy` | Next.js / Hono / Express adapters that keep your key server-side |
 | [`libs/browser`](./libs/browser) | `realtime-avatar-browser` | Mic and playback, with the six failure modes turned into values |
 | [`libs/tools`](./libs/tools) | `realtime-avatar-tools` | The browser tool plane — your functions, called mid-conversation |
-| [`libs/contracts`](./libs/contracts) | `realtime-avatar-contracts` | Runtime schemas for the wire, if you're building your own proxy |
 | [`libs/mcp`](./libs/mcp) | `realtime-avatar-mcp` | MCP server for coding agents |
 
 ---

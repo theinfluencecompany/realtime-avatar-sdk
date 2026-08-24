@@ -186,7 +186,7 @@ export {
   type KnownBehaviorState,
   type SessionBehavior,
   type SessionClip,
-} from "realtime-avatar-contracts";
+} from "../wire";
 
 // Mic single-flight lease — the cross-room getUserMedia guard. Both halves are
 // RN-safe but were not re-exported on native before; an Android call path needs

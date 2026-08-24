@@ -72,7 +72,7 @@ export class RealtimeAvatarConfigError extends Error {
 export class RealtimeAvatarCapacityError extends Error {
   constructor(
     message: string,
-    readonly busy: import("realtime-avatar-contracts").CapacityBusyResponse,
+    readonly busy: import("./wire").CapacityBusyResponse,
   ) {
     super(message);
     this.name = "RealtimeAvatarCapacityError";

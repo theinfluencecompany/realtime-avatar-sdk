@@ -13,8 +13,8 @@ import {
 import type {
   CapacityBusyResponse,
   LiveKitSessionReleaseReason,
-} from "realtime-avatar-contracts";
-import type { LLMProvider } from "realtime-avatar-contracts";
+} from "./wire";
+import type { LLMProvider } from "./wire";
 import {
   listConfiguredLLMProviders,
   readLLMProvider,

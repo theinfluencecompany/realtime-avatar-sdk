@@ -11,4 +11,4 @@ export type {
   LLMSelectionForProvider,
   VoiceSpec,
   VoiceSpecInput,
-} from "realtime-avatar-contracts";
+} from "./wire";
