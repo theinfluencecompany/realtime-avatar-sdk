@@ -46,5 +46,6 @@ export {
   type ConnectVideo,
   type ConnectVideoState,
   type CreateRealtimeAvatarHandlerOptions,
+  type RealtimeAvatarGate,
   type RealtimeAvatarHandler,
 } from "./connect/handler";
