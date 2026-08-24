@@ -17,6 +17,32 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: "${{ matrix.node }}" }
+      # Materialise the denylist from a secret. It is NOT in this repo by design — the list
+      # is an inventory of what is private, so shipping it would leak the thing it protects.
+      #
+      # Threat model, because the availability is deliberately uneven:
+      #   - same-repo PR / push to main -> secret present -> the boundary is ENFORCED. This is
+      #     the branch that matters: a maintainer is the only one who can introduce an internal
+      #     term, because they are the only one who knows any.
+      #   - fork PR -> GitHub withholds the secret -> the scan reports "no term list" and
+      #     passes. Correct, not a gap: an outside contributor cannot leak an inventory they
+      #     have never seen, and handing every fork the list to prove it would BE the leak.
+      #
+      # Never `cat` this file in a step. Actions masks the secret's value in logs, but only
+      # the value — a line-by-line dump reveals it one term at a time.
+      - name: Materialise the boundary denylist
+        env:
+          BOUNDARY_TERMS: ${{ secrets.BOUNDARY_TERMS }}
+        run: |
+          if [ -n "$BOUNDARY_TERMS" ]; then
+            printf '%s\n' "$BOUNDARY_TERMS" > scripts/boundary-terms.private.txt
+            echo "denylist materialised ($(grep -cvE '^\s*#|^\s*$' scripts/boundary-terms.private.txt) terms)"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "::error::BOUNDARY_TERMS is missing on a push to main — the boundary check would pass without checking anything"
+            exit 1
+          else
+            echo "::warning::no denylist (fork PR) — the boundary check is advisory on this run"
+          fi
       - run: npm install
       - run: npm run typecheck
       # Build BEFORE test: libs/proxy resolves the client through node_modules, so its
