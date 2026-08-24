@@ -176,18 +176,30 @@ export type ConnectSessionContext = {
   mode: "avatar" | "voice";
 };
 
+/**
+ * The gates an integrator writes policy against, coarser than the wire operations so the decision
+ * stays about consequence rather than about routes: what it costs (`connect`), what it frees
+ * (`release`), what it reveals (`read`), what it creates (`write`), and what it destroys (`delete`).
+ */
+export type RealtimeAvatarGate = "connect" | "release" | "read" | "write" | "delete";
+
 export type CreateRealtimeAvatarHandlerOptions = {
   apiKey: ApiKeyFactory;
   /** Where you mounted this handler. Must match the client's `proxyUrl`. */
   pathPrefix?: string;
   /**
    * Gate every operation. Return a Response to refuse (401/402/403); return nothing to
-   * allow. Exactly one operation costs money to start — `"connect"` — so that is where a
-   * wallet check belongs; the rest are cheap reads.
+   * allow. `"connect"` is the one that costs money to start, so that is where a wallet
+   * check belongs — but it is not the only one worth refusing: `"write"` creates avatars
+   * and uploads assets against your account, and `"delete"` removes an avatar with no
+   * undo on this surface. Only `"read"` is genuinely cheap.
+   *
+   * Every operation reaches this callback, because the handler forwards them all by
+   * default — this is the gate, not a second line behind one.
    */
   authorize?: (context: {
     request: Request;
-    operation: "connect" | "release" | "read";
+    operation: RealtimeAvatarGate;
   }) => MaybePromise<Response | void | null>;
   /**
    * Decide the call. Return a policy, or a Response to refuse. Omit it only if you are
@@ -235,11 +247,35 @@ const SERVER_OWNED_KEYS = [
   "video_cache_id",
 ] as const;
 
-/** Map the proxy's fine-grained operations onto the three the integrator actually gates. */
-function coarseOperation(operation: RealtimeAvatarProxyOperation): "connect" | "release" | "read" {
-  if (operation === "realtime.livekitSession") return "connect";
-  if (operation === "realtime.livekitSessionRelease") return "release";
-  return "read";
+/**
+ * Which gate each fine-grained proxy operation answers to.
+ *
+ * This used to collapse everything except the two realtime operations into `"read"`, which meant a
+ * browser deleting an avatar reached `authorize` looking exactly like a balance lookup — while the
+ * docs told integrators to leave reads cheap. Mutations are now their own gate, and deletion is
+ * separate from creation because those are genuinely different decisions here: letting an end user
+ * bring their own avatar means allowing `"write"`, and it should not also hand them `"delete"`.
+ *
+ * A record rather than a switch, so the `satisfies` makes it exhaustive: a new operation added to
+ * `RealtimeAvatarProxyOperation` fails to compile until it has been classified, instead of silently
+ * defaulting into the most permissive gate — which is the exact bug this replaces.
+ */
+const OPERATION_GATE = {
+  "realtime.livekitSession": "connect",
+  "realtime.livekitSessionRelease": "release",
+  "realtime.livekitCapacity": "read",
+  "avatars.list": "read",
+  "avatars.get": "read",
+  "credits.balance": "read",
+  "avatars.create": "write",
+  "avatars.update": "write",
+  "assets.upload": "write",
+  "assets.remote": "write",
+  "avatars.delete": "delete",
+} as const satisfies Record<RealtimeAvatarProxyOperation, RealtimeAvatarGate>;
+
+function coarseOperation(operation: RealtimeAvatarProxyOperation): RealtimeAvatarGate {
+  return OPERATION_GATE[operation];
 }
 
 /** A connect request is the only body carrying both a character and a mode. */
