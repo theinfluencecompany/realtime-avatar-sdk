@@ -1,0 +1,1319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>LIVE · Shopping</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --red: #fe2c55;
+        --amber: #ffb02e;
+        --green: #2fbf71;
+        --shadow: 0 1px 3px #000000a6, 0 0 1px #00000073;  /* every glyph sits on moving video */
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent }
+      body { margin: 0; min-height: 100svh; background: #0b0b0d; color: #fff;
+        font: 15px/1.45 -apple-system, "SF Pro Text", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+        display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 18px 12px 26px }
+      button { font: inherit; color: inherit; border: none; background: none; padding: 0; cursor: pointer }
+      .stage { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; justify-content: center }
+      .pagehint { color: #6f6f78; font-size: 11.5px; text-align: center; max-width: 620px; line-height: 1.6 }
+      .pagehint code { color: #9a9aa6; font-size: 11px }
+
+      /* ── The phone. Edge-to-edge video with every control floating on it. ── */
+      .phone { position: relative; width: min(400px, 94vw); height: min(866px, 88svh);
+        aspect-ratio: 9/16; background: #000; border-radius: 34px; overflow: hidden;
+        box-shadow: 0 30px 80px #000c, 0 0 0 1px #ffffff14 }
+      video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+        opacity: 0; transition: opacity .5s }
+      video.on { opacity: 1 }
+      .scrim { position: absolute; inset: 0; pointer-events: none; z-index: 1;
+        background: linear-gradient(180deg, #000000a1 0, #00000038 11%, transparent 22% 50%, #0000005c 74%, #000000ab 100%) }
+      .idle { position: absolute; inset: 0; display: grid; place-items: center; z-index: 1;
+        color: #55555f; font-size: 13px; text-align: center; padding: 0 40px; line-height: 1.6 }
+
+      .statusbar { position: absolute; inset: 0 0 auto 0; height: 46px; z-index: 6;
+        display: flex; align-items: center; justify-content: space-between; padding: 12px 26px 0;
+        font-size: 14.5px; font-weight: 700; text-shadow: var(--shadow); pointer-events: none }
+      .statusbar .right { display: flex; align-items: center; gap: 5px }
+      .bars { display: flex; align-items: flex-end; gap: 1.5px; height: 11px }
+      .bars i { width: 3px; background: #fff; border-radius: 1px; display: block }
+      .bars i:nth-child(1) { height: 4px } .bars i:nth-child(2) { height: 6px }
+      .bars i:nth-child(3) { height: 8.5px } .bars i:nth-child(4) { height: 11px }
+      .batt { width: 25px; height: 13px; border-radius: 4px; border: 1.5px solid #ffffffa6;
+        position: relative; display: grid; place-items: center; font-size: 9px; font-weight: 800 }
+      .batt::after { content: ""; position: absolute; right: -4px; width: 2px; height: 5px;
+        background: #ffffffa6; border-radius: 0 1px 1px 0 }
+
+      /* ── Host row ── */
+      .topbar { position: absolute; inset: 52px 12px auto 12px; z-index: 6;
+        display: flex; align-items: center; gap: 8px }
+      .host { display: flex; align-items: center; gap: 8px; background: #00000052; border-radius: 999px;
+        padding: 3px; backdrop-filter: blur(12px); min-width: 0; max-width: 60% }
+      .host .pfp { width: 34px; height: 34px; border-radius: 999px; flex: none; display: grid;
+        place-items: center; font-size: 14px; font-weight: 800;
+        background: linear-gradient(140deg, #fe2c55, #7b2ff7); box-shadow: 0 0 0 1.5px #ffffff4d }
+      .host .meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; padding-right: 2px }
+      .host .name { font-size: 14px; font-weight: 700; text-shadow: var(--shadow);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px }
+      .host .likes { font-size: 11.5px; font-weight: 600; color: #ffffffdb; display: flex;
+        align-items: center; gap: 3px; text-shadow: var(--shadow); font-variant-numeric: tabular-nums }
+      .follow { background: var(--red); font-size: 14px; font-weight: 700;
+        border-radius: 999px; padding: 7px 13px; flex: none; white-space: nowrap; transition: transform .15s }
+      .follow:active { transform: scale(.94) }
+      .follow.done { background: #ffffff2e; color: #ffffffc4; font-weight: 600 }
+      .topright { margin-left: auto; display: flex; align-items: center; gap: 9px; flex: none }
+      .viewers { display: flex; align-items: center; gap: 4px; background: #00000052; border-radius: 999px;
+        padding: 6px 11px; font-size: 13px; font-weight: 600; backdrop-filter: blur(12px);
+        font-variant-numeric: tabular-nums; text-shadow: var(--shadow) }
+      .iconbtn { width: 28px; height: 28px; display: grid; place-items: center; opacity: .95 }
+
+      /* ══ THE PRODUCT CARD ══════════════════════════════════════════════════════════════════
+         Every number on it comes from the catalogue. Her tools decide WHICH product and WHICH
+         offer are showing; they never supply the figures the card renders.
+
+         It lives in the overlay column rather than being anchored to the frame itself. Anchoring
+         it separately makes its height a guess about the chat's, and the two run through each
+         other the moment either grows — which is exactly what a status line and four fast
+         comments will do. ── */
+      .card { flex: none; pointer-events: auto;
+        background: #14141aef; border-radius: 14px; padding: 10px 11px; backdrop-filter: blur(16px);
+        border: 1px solid #ffffff1f; display: none; animation: cardIn .4s cubic-bezier(.2,1.2,.4,1) }
+      .card.on { display: block }
+      .card.gone { animation: cardOut .3s ease-in forwards }
+      @keyframes cardIn { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: none } }
+      @keyframes cardOut { to { opacity: 0; transform: translateY(10px) } }
+      .card .head { display: flex; align-items: center; gap: 6px; margin-bottom: 7px }
+      .card .num { background: var(--amber); color: #241a00; font-size: 11px; font-weight: 900;
+        border-radius: 5px; padding: 2px 6px; letter-spacing: .02em }
+      .card .now { font-size: 10.5px; font-weight: 800; letter-spacing: .1em; color: var(--amber) }
+      .card .now.sold { color: #ff6b6b }
+      .card .body { display: flex; align-items: center; gap: 10px }
+      .card .thumb { width: 54px; height: 54px; border-radius: 10px; flex: none; display: grid;
+        place-items: center; font-size: 28px; background: #ffffff14 }
+      .card .info { min-width: 0; flex: 1 }
+      .card .nm { font-size: 14.5px; font-weight: 700; white-space: nowrap; overflow: hidden;
+        text-overflow: ellipsis }
+      .card .prices { display: flex; align-items: baseline; gap: 7px; margin-top: 2px }
+      .card .was { font-size: 12px; color: #ffffff70; text-decoration: line-through }
+      .card .isnow { font-size: 21px; font-weight: 900; color: var(--amber); letter-spacing: -.5px;
+        font-variant-numeric: tabular-nums }
+      .card .basis { font-size: 10.5px; font-weight: 700; color: #ffffff96; text-transform: uppercase;
+        letter-spacing: .05em }
+      .card .buy { background: var(--red); border-radius: 8px; padding: 9px 15px; font-size: 13.5px;
+        font-weight: 800; flex: none; transition: transform .12s }
+      .card .buy:active { transform: scale(.94) }
+      .card .buy:disabled { background: #ffffff1f; color: #ffffff6b }
+      .card .meters { display: flex; align-items: center; gap: 10px; margin-top: 8px;
+        font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums }
+      .card .bar { flex: 1; height: 5px; border-radius: 999px; background: #ffffff1c; overflow: hidden }
+      .card .bar i { display: block; height: 100%; border-radius: 999px; background: var(--red);
+        transition: width .4s }
+      .card .timer { color: var(--red); display: none; align-items: center; gap: 4px }
+      .card .timer.on { display: flex }
+      .card .timer.on::before { content: ""; width: 6px; height: 6px; border-radius: 999px;
+        background: var(--red); animation: blip 1s infinite }
+      @keyframes blip { 50% { opacity: .25 } }
+
+      /* ── Everything that stacks over the video shares ONE bottom-anchored column: status, then
+            the product card, then chat, then her caption. Only the chat may shrink. ── */
+      .overlay { position: absolute; left: 12px; right: 12px; bottom: 66px; z-index: 4;
+        display: flex; flex-direction: column; justify-content: flex-end; gap: 8px;
+        max-height: 62%; pointer-events: none }
+      .chat { flex: 0 1 auto; min-height: 0; max-width: 78%; overflow: hidden;
+        display: flex; flex-direction: column; justify-content: flex-end; gap: 9px;
+        mask-image: linear-gradient(transparent 0, #000 26%); -webkit-mask-image: linear-gradient(transparent 0, #000 26%) }
+      .row { display: flex; gap: 8px; align-items: flex-start; animation: rowIn .3s ease-out }
+      .row .pfp { width: 28px; height: 28px; border-radius: 999px; flex: none; display: grid;
+        place-items: center; font-size: 11.5px; font-weight: 800; margin-top: 1px }
+      .row .body { min-width: 0 }
+      .row .handle { font-size: 13px; font-weight: 600; color: #ffffffc9; text-shadow: var(--shadow) }
+      .row .text { font-size: 14.5px; font-weight: 700; line-height: 1.25; text-shadow: var(--shadow);
+        overflow-wrap: anywhere; display: block }
+      .row.mine .handle { color: #ffe08a }
+      .row.buy .text { color: var(--amber) }
+      .row.store .pfp { background: #ffffff2b }
+      .row.store .text { color: #8fd6ff; font-size: 13.5px }
+      @keyframes rowIn { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+      .badge { font-size: 10px; font-weight: 800; border-radius: 4px; padding: 1.5px 4px;
+        display: inline-flex; align-items: center; gap: 2px; margin-right: 4px; line-height: 1.35 }
+      .badge.lvl { background: linear-gradient(100deg, #3b6cff, #7b2ff7) }
+      .badge.buyer { background: linear-gradient(100deg, #ff9a3c, #fe2c55) }
+
+      /* Her speech is a caption, never a chat row. Chat is the audience; she is the broadcast. */
+      .caption { flex: none; align-self: flex-start; max-width: 86%;
+        font-size: 13px; font-weight: 600; line-height: 1.35; text-shadow: var(--shadow);
+        background: #0000004d; backdrop-filter: blur(8px); border-radius: 9px; padding: 5px 9px;
+        display: none; animation: rowIn .3s ease-out; border-left: 2px solid transparent }
+      .caption.on { display: block }
+      .caption.flagged { border-left-color: var(--red); background: #3a0d18cc }
+      .caption::before { content: "LIVE CAPTION"; display: block; font-size: 8.5px; font-weight: 800;
+        letter-spacing: .1em; color: #ffffff7a; margin-bottom: 1px }
+      .caption.flagged::before { content: "LIVE CAPTION · FLAGGED"; color: #ff9db0 }
+
+      /* ── Dock ── */
+      .dock { position: absolute; inset: auto 10px 14px 10px; z-index: 6;
+        display: flex; align-items: center; gap: 9px }
+      .dock .say { flex: 1; min-width: 0; height: 42px; border-radius: 999px; background: #00000052;
+        backdrop-filter: blur(12px); color: #fff; padding: 0 16px; font: inherit; font-size: 14.5px;
+        border: none; outline: none }
+      .dock .say::placeholder { color: #ffffff9e }
+      .dock .say:disabled { opacity: .55 }
+      .act { width: 40px; height: 40px; border-radius: 999px; display: grid; place-items: center;
+        flex: none; position: relative; transition: transform .14s; background: #ffffff2b;
+        backdrop-filter: blur(10px) }
+      .act:active { transform: scale(.88) }
+      .act:disabled { opacity: .45 }
+      .act.cart { background: var(--amber); color: #241a00 }
+      .act .count { position: absolute; right: -3px; top: -3px; min-width: 18px; height: 18px;
+        border-radius: 999px; background: var(--red); color: #fff; font-size: 11px; font-weight: 800;
+        display: none; place-items: center; padding: 0 5px }
+      .act .count.on { display: grid }
+
+      .hearts { position: absolute; right: 8px; bottom: 60px; width: 120px; height: 50%;
+        z-index: 5; pointer-events: none; overflow: hidden }
+      .heart { position: absolute; bottom: 0; right: 40px; font-size: 24px;
+        filter: drop-shadow(0 2px 6px #0007); animation: rise 2.6s ease-out forwards }
+      @keyframes rise {
+        0%   { opacity: 0; transform: translate(0, 0) scale(.4) }
+        12%  { opacity: 1; transform: translate(0, -30px) scale(1.1) }
+        100% { opacity: 0; transform: translate(var(--x2), -360px) scale(.85) }
+      }
+
+      /* ── Cart sheet ── */
+      .sheet { position: absolute; inset: auto 0 0 0; z-index: 9; background: #1c1c22f5;
+        backdrop-filter: blur(22px); border-radius: 16px 16px 34px 34px; padding: 14px 14px 20px;
+        transform: translateY(102%); transition: transform .32s cubic-bezier(.3, 1, .4, 1);
+        max-height: 72%; display: flex; flex-direction: column }
+      .sheet.on { transform: none }
+      .sheet h3 { margin: 0 0 10px; font-size: 15px; font-weight: 800;
+        display: flex; align-items: center; gap: 8px }
+      .sheet h3 span { margin-left: auto; font-size: 11.5px; font-weight: 600; color: #ffffff8c }
+      .lines { overflow: auto; display: flex; flex-direction: column; gap: 8px; min-height: 0 }
+      .line { display: flex; align-items: center; gap: 9px; background: #ffffff0f; border-radius: 10px;
+        padding: 8px 10px }
+      .line .e { font-size: 22px; flex: none }
+      .line .t { flex: 1; min-width: 0; font-size: 13px; font-weight: 600 }
+      .line .t small { display: block; color: #ffffff8c; font-weight: 500; font-size: 11px }
+      .line .p { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--amber) }
+      .line .x { color: #ffffff70; font-size: 17px; padding: 0 2px }
+      .empty { color: #ffffff70; font-size: 12.5px; text-align: center; padding: 22px 0 }
+      .checkout { margin-top: 12px; display: flex; align-items: center; gap: 10px;
+        border-top: 1px solid #ffffff14; padding-top: 11px }
+      .checkout .tot { font-size: 13px; color: #ffffff8c; font-weight: 600 }
+      .checkout .tot b { color: #fff; font-size: 17px; font-variant-numeric: tabular-nums }
+      .checkout .go { margin-left: auto; background: var(--red); border-radius: 9px;
+        padding: 11px 26px; font-size: 14px; font-weight: 800 }
+      .checkout .go:disabled { background: #ffffff1f; color: #ffffff70 }
+
+      /* ── Gate + status ── */
+      .gate { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center;
+        background: #000000d9; backdrop-filter: blur(4px) }
+      .gate.hide { display: none }
+      .gate .inner { display: grid; justify-items: center; gap: 14px; padding: 0 30px; text-align: center }
+      .gate .dot { width: 9px; height: 9px; border-radius: 999px; background: var(--red);
+        box-shadow: 0 0 0 0 #fe2c55; animation: pulse 1.8s infinite }
+      @keyframes pulse { 70% { box-shadow: 0 0 0 12px #fe2c5500 } 100% { box-shadow: 0 0 0 0 #fe2c5500 } }
+      .gate h2 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -.3px }
+      .gate p { margin: 0; font-size: 12.5px; color: #8d8d99; line-height: 1.6; max-width: 280px }
+      .gate .cta { background: var(--red); border-radius: 999px; padding: 13px 34px;
+        font-size: 15px; font-weight: 800; transition: transform .14s }
+      .gate .cta:active { transform: scale(.95) }
+      .gate .cta:disabled { opacity: .55 }
+      /* The status line is in the column too, and collapses to nothing when it has nothing to
+         say — a mic failure is a sentence long and it must not be readable only in the gaps
+         between comments. */
+      .status { flex: none; align-self: center; text-align: center; font-size: 12px;
+        font-weight: 600; line-height: 1.5; padding: 5px 11px; border-radius: 9px;
+        background: #000000ad; backdrop-filter: blur(8px) }
+      .status:empty { display: none }
+      /* In the column too, for the same reason the status is: it appears exactly when a real
+         person has to tap it, and a button laid over the comments is a button that reads as
+         part of them. */
+      .unblock { flex: none; align-self: center; display: none; pointer-events: auto }
+      .unblock.on { display: block }
+      .unblock button { background: #fff; color: #111; border-radius: 999px; padding: 9px 18px;
+        font-size: 13px; font-weight: 800 }
+
+      /* ══ THE RUN OF SHOW ═══════════════════════════════════════════════════════════════════
+         The producer's side of the room. Every live-selling desk has a human here deciding what
+         goes up next and in what order, and this panel is that job — which means it is a THIRD
+         clock on top of the two the room already runs on, and the fastest of the three. A
+         producer who taps "Show now" expects the card to change on the tap, not after she has
+         finished her sentence. So the page switches the card AT ONCE and tells her afterwards;
+         she catches up in words. Making her the gate would make the button feel broken. ── */
+      .queue { width: min(300px, 94vw); display: flex; flex-direction: column; gap: 10px;
+        font-size: 12px }
+      .qrow { display: flex; align-items: center; gap: 7px; padding: 7px 8px; border-radius: 9px;
+        background: #17171d; border: 1px solid #ffffff12; transition: border-color .2s }
+      .qrow.live { border-color: var(--amber); background: #241c0d }
+      .qrow.out { opacity: .45 }
+      .qrow .pos { font-size: 10px; font-weight: 800; color: #63636e; width: 12px; flex: none;
+        font-variant-numeric: tabular-nums }
+      .qrow.live .pos { color: var(--amber) }
+      .qrow .e { font-size: 18px; flex: none }
+      .qrow .t { flex: 1; min-width: 0 }
+      .qrow .t b { display: block; font-size: 12px; font-weight: 700; color: #e6e6ee;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+      .qrow .t small { color: #7c7c88; font-size: 10.5px; font-variant-numeric: tabular-nums }
+      .qrow .t small.gone { color: #ff9db0 }
+      .qbtns { display: flex; align-items: center; gap: 2px; flex: none }
+      .qbtns button { width: 21px; height: 21px; border-radius: 5px; display: grid;
+        place-items: center; color: #8f8f9c; font-size: 12px; line-height: 1 }
+      .qbtns button:hover:not(:disabled) { background: #ffffff17; color: #fff }
+      .qbtns button:disabled { opacity: .25 }
+      .qbtns .now { width: auto; padding: 0 7px; font-size: 10.5px; font-weight: 800;
+        background: #ffffff1a; color: #d6d6de }
+      .qbtns .now:hover:not(:disabled) { background: var(--amber); color: #241a00 }
+      .qadd { display: flex; gap: 6px; margin-top: 8px }
+      .qadd select { flex: 1; min-width: 0; background: #17171d; color: #d6d6de; font: inherit;
+        font-size: 11.5px; border: 1px solid #ffffff17; border-radius: 7px; padding: 6px 7px }
+      .qadd button { background: #ffffff17; border-radius: 7px; padding: 0 12px; font-size: 11.5px;
+        font-weight: 700; color: #d6d6de }
+      .qadd button:disabled { opacity: .35 }
+
+      /* ══ THE RAIL ══════════════════════════════════════════════════════════════════════════
+         The whole argument of this demo, made watchable: what she has been AUTHORISED to say,
+         what she said anyway, and which tool handed her each figure. ── */
+      .rail { width: min(376px, 94vw); display: flex; flex-direction: column; gap: 10px;
+        font-size: 12px }
+      .pane { background: #121216; border: 1px solid #ffffff12; border-radius: 12px; padding: 10px 11px }
+      .pane h4 { margin: 0 0 3px; font-size: 11px; font-weight: 800; letter-spacing: .09em;
+        text-transform: uppercase; color: #8f8f9c; display: flex; align-items: center; gap: 6px }
+      .pane h4 b { margin-left: auto; color: #fff; font-size: 11px }
+      .pane .sub { color: #63636e; font-size: 10.5px; line-height: 1.5; margin-bottom: 8px }
+      .figs { display: flex; flex-wrap: wrap; gap: 5px }
+      .fig { border-radius: 6px; padding: 3px 7px; font-size: 11.5px; font-weight: 700;
+        background: #14301f; color: #6fe0a0; border: 1px solid #2a6b46; font-variant-numeric: tabular-nums }
+      .fig small { font-weight: 500; opacity: .7; margin-left: 4px; font-size: 10px }
+      .fig.dying { background: #2f2712; color: #ffd479; border-color: #6b5a2a }
+      .fig.dead { background: #2a1218; color: #ff9db0; border-color: #6b2a38; text-decoration: line-through }
+      .none { color: #4e4e58; font-size: 11px; font-style: italic }
+      .flag { border-radius: 8px; padding: 7px 9px; margin-bottom: 6px; line-height: 1.5;
+        border-left: 3px solid }
+      .flag.hard { background: #2a1218; border-color: var(--red) }
+      .flag.soft { background: #2b2413; border-color: var(--amber) }
+      .flag .k { font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase }
+      .flag.hard .k { color: #ff9db0 } .flag.soft .k { color: #ffd479 }
+      .flag .q { color: #d6d6de; font-size: 11.5px; margin: 2px 0 }
+      .flag .q em { font-style: normal; background: #fe2c5540; border-radius: 3px; padding: 0 2px }
+      .flag .why { color: #7c7c88; font-size: 10.5px }
+      .tool { border-top: 1px solid #ffffff0d; padding: 6px 0 5px; display: flex; gap: 8px;
+        align-items: baseline }
+      .tool:first-of-type { border-top: none }
+      .tool .n { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+        font-weight: 600; color: #cfcfda; min-width: 74px }
+      .tool.hit .n { color: #6fe0a0 }
+      .tool .d { color: #63636e; font-size: 10.5px; flex: 1; line-height: 1.45 }
+      .tool .c { color: #8f8f9c; font-size: 10.5px; font-variant-numeric: tabular-nums }
+      .lastret { color: #57616b; font-size: 10px; font-family: ui-monospace, Menlo, monospace;
+        margin-top: 2px; word-break: break-all; line-height: 1.4 }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="queue">
+        <div class="pane">
+          <h4>Run of show <b id="qcount">0</b></h4>
+          <div class="sub">The producer's desk. Reorder it and she works down it; hit
+            <b>Now</b> and the card changes on the tap, then she is told to catch up. Her five
+            verbs do not change — the queue is just what "the next one" means.</div>
+          <div id="qlist"></div>
+          <div class="qadd">
+            <select id="qpick"><option value="">Add a product…</option></select>
+            <button id="qaddbtn" disabled>Add</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="phone">
+        <video id="her" autoplay playsinline></video>
+        <div class="scrim"></div>
+        <div class="idle" id="idle">the stream is offline</div>
+
+        <div class="statusbar">
+          <span id="clock">14:39</span>
+          <span class="right">
+            <span class="bars"><i></i><i></i><i></i><i></i></span>
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="#fff"><path d="M8 10.5 6 8.3a3 3 0 0 1 4 0zM3.6 6a6.6 6.6 0 0 1 8.8 0l-1.3 1.4a4.7 4.7 0 0 0-6.2 0zM1 3.3a10.4 10.4 0 0 1 14 0l-1.3 1.4a8.5 8.5 0 0 0-11.4 0z"/></svg>
+            <span class="batt">46</span>
+          </span>
+        </div>
+
+        <div class="topbar">
+          <div class="host">
+            <span class="pfp" id="pfp">L</span>
+            <span class="meta">
+              <span class="name" id="handle">Live</span>
+              <span class="likes"><svg width="11" height="10" viewBox="0 0 12 11" fill="#fff"><path d="M6 10.6 1.1 5.9A3.1 3.1 0 0 1 6 2.1a3.1 3.1 0 0 1 4.9 3.8z"/></svg><span id="likes">0</span></span>
+            </span>
+            <button class="follow" id="follow">+ Follow</button>
+          </div>
+          <div class="topright">
+            <span class="viewers"><svg width="12" height="12" viewBox="0 0 12 12" fill="#fff"><circle cx="6" cy="3.4" r="2.4"/><path d="M1.5 11a4.5 4.5 0 0 1 9 0z"/></svg><span id="viewers">1</span></span>
+            <button class="iconbtn" id="close" title="Leave">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 4l12 12M16 4L4 16" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="overlay">
+          <div class="unblock" id="unblock"><button>Tap to enable sound</button></div>
+          <div class="status" id="status"></div>
+          <div class="card" id="card"></div>
+          <div class="chat" id="chat"></div>
+          <div class="caption" id="caption"></div>
+        </div>
+        <div class="hearts" id="hearts"></div>
+
+        <div class="dock">
+          <input class="say" id="say" placeholder="Ask about a product…" disabled />
+          <button class="act" id="like" disabled title="Like">
+            <svg width="22" height="20" viewBox="0 0 22 20" fill="#fff"><path d="M11 19.2 1.6 9.6A5.6 5.6 0 0 1 11 3.4a5.6 5.6 0 0 1 9.4 6.2z"/></svg>
+          </button>
+          <button class="act cart" id="cartbtn" disabled title="Cart">
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M3 4h2.4l2.3 10.2h9.1l1.9-7.4H6.2" stroke="#241a00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.2" cy="18.2" r="1.7" fill="#241a00"/><circle cx="16.4" cy="18.2" r="1.7" fill="#241a00"/></svg>
+            <span class="count" id="cartcount">0</span>
+          </button>
+        </div>
+
+        <div class="sheet" id="sheet">
+          <h3>Your cart <span id="charged"></span></h3>
+          <div class="lines" id="lines"></div>
+          <div class="checkout">
+            <span class="tot">Total <b id="total">$0</b></span>
+            <button class="go" id="buy" disabled>Place order</button>
+          </div>
+        </div>
+
+        <div class="gate" id="gate">
+          <div class="inner">
+            <span class="dot"></span>
+            <h2>Go live</h2>
+            <p>She sells from a catalogue she cannot read. Every price on screen came back from a tool.</p>
+            <button class="cta" id="start">Go live</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rail">
+        <div class="pane">
+          <h4>Authorised figures <b id="figcount">0</b></h4>
+          <div class="sub">Every number a tool has handed her, and how long she may still say it.
+            A figure expires exactly when the fact behind it does — a flash price dies with its
+            window, a stock count goes stale in 45s, a shipping time never does.</div>
+          <div class="figs" id="figs"><span class="none">nothing yet — no tool has been called</span></div>
+        </div>
+        <div class="pane">
+          <h4>Compliance <b id="flagcount">0 flags</b></h4>
+          <div class="sub">Her captions, checked against the ledger above. A figure she was not
+            handed is a hard flag and the page posts a correction into chat. This is a detector,
+            not a gate: the audio already left.</div>
+          <div id="flags"><span class="none">clean so far</span></div>
+        </div>
+        <div class="pane">
+          <h4>Tool plane <b id="deadline"></b></h4>
+          <div class="sub">Five verbs for five products, or for five hundred. Adding a SKU is a
+            row in the catalogue on the server — not a tool, and not a line of her brief.</div>
+          <div id="tools"></div>
+        </div>
+      </div>
+    </div>
+
+    <p class="pagehint">
+      She has no prices. The catalogue lives on the server, five tools hand her the figures, and her brief forbids
+      saying any other — so watch the ledger on the right, wait for a flash window to expire, and see whether she
+      keeps quoting the dead price. This is a real call and spends credits; your mic is live, so ask her things out loud.
+    </p>
+
+    <script type="module">
+      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+      import { attachAvatarTools, TOOL_DEADLINE_MS } from "/sdk/tools.js";
+      import { enableMicrophone, attachRemoteAudio } from "/sdk/browser/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const say = (t) => ($("status").textContent = t);
+      const rand = (a) => a[Math.floor(Math.random() * a.length)];
+      const esc = (s) => String(s).replace(/[<&]/g, (c) => (c === "<" ? "&lt;" : "&amp;"));
+      const money = (n) => `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+      const short = (n) => (n >= 1e4 ? (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K"
+        : n >= 1e3 ? n.toLocaleString() : String(n));
+
+      const YOU = "you";
+      let room = null, sessionId = null, live = false;
+      let CAT = [];                                  // the catalogue, cached from the server
+      const at = (ref) => CAT.find((p) => p.ref === String(ref));
+      /** Catalogue in, run of show out. The opening order is the catalogue's; the producer owns
+       *  it from then on, so this only seeds a queue that is still empty. */
+      function loadCatalog(products) {
+        CAT = products;
+        if (!queue.length) queue = CAT.filter((p) => p.stock > 0).map((p) => p.ref);
+        renderQueue();
+      }
+
+      addEventListener("pagehide", () => {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+      });
+
+      /* ═══════════════════════════════════════════════════════════════════════════════════════
+         THE LEDGER — what she is allowed to say out loud.
+
+         One rule, and it needs no per-tool bookkeeping: WHATEVER A TOOL RETURNED, SHE MAY
+         REPEAT. So every tool result is scanned for numbers on its way back to her and each one
+         is written down here with an expiry, taken from the fact it came from:
+
+             a flash price      dies when its window closes (the server stamped that, not us)
+             a stock count      45s, because stock moves while she talks
+             everything else    never — a list price and a shipping time do not expire
+
+         That last column is the whole point. The failure this catches is not a model inventing
+         a number from nothing; it is a model repeating a number that WAS true. She quoted the
+         flash price correctly, the minute ran out, and she is still quoting it — nothing in the
+         conversation told her it stopped.
+      ═══════════════════════════════════════════════════════════════════════════════════════ */
+      const STOCK_TTL_MS = 45_000;
+      const ledger = new Map();  // number → { until: epoch|Infinity, from: toolName }
+
+      function authorise(n, until, from) {
+        const prev = ledger.get(n);
+        // Longest life wins: the same figure may be both a list price (forever) and today's
+        // flash price (sixty seconds), and expiring it on the shorter one flags an honest line.
+        if (!prev || until > prev.until) ledger.set(n, { until, from });
+        else prev.from = from;
+      }
+      /** Every number inside a tool's return value, including numbers embedded in its strings. */
+      function authoriseResult(result, until, from) {
+        for (const m of JSON.stringify(result ?? {}).matchAll(/\d+(?:\.\d+)?/g)) {
+          authorise(Number(m[0]), until, from);
+        }
+        renderLedger();
+      }
+      const authorised = (n) => (ledger.get(n)?.until ?? 0) > Date.now();
+
+      function renderLedger() {
+        const now = Date.now();
+        const rows = [...ledger.entries()]
+          .filter(([, v]) => v.until > now - 20_000)          // keep the recently dead visible
+          .sort((a, b) => a[1].until - b[1].until);
+        $("figcount").textContent = rows.filter(([, v]) => v.until > now).length;
+        $("figs").innerHTML = rows.length
+          ? rows.map(([n, v]) => {
+              const left = v.until - now;
+              const cls = left <= 0 ? "dead" : left < 15_000 ? "dying" : "";
+              const tag = v.until === Infinity ? v.from
+                : left <= 0 ? "expired" : `${Math.ceil(left / 1000)}s`;
+              return `<span class="fig ${cls}">${n}<small>${esc(tag)}</small></span>`;
+            }).join("")
+          : `<span class="none">nothing yet — no tool has been called</span>`;
+      }
+      setInterval(renderLedger, 1000);
+
+      /* ── The scanner. Digits first: she may say "eighty nine" rather than "89", and a checker
+            that only reads digits is a checker that passes everything spoken naturally. ── */
+      const NUM_WORD = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8,
+        nine:9, ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16,
+        seventeen:17, eighteen:18, nineteen:19, twenty:20, thirty:30, forty:40, fifty:50,
+        sixty:60, seventy:70, eighty:80, ninety:90 };
+      function wordsToDigits(text) {
+        const out = [];
+        let acc = null, gap = "";
+        for (const tok of text.split(/([^A-Za-z0-9.]+)/)) {
+          const k = tok.toLowerCase();
+          if (k in NUM_WORD) { acc = (acc ?? 0) + NUM_WORD[k]; gap = ""; continue; }
+          if (k === "hundred") { acc = (acc || 1) * 100; gap = ""; continue; }
+          if (k === "thousand") { acc = (acc || 1) * 1000; gap = ""; continue; }
+          // A space or hyphen between number words is part of the number ("twenty two"), so it
+          // is held rather than emitted until we know the run has ended.
+          if (acc !== null && /^[\s-]+$/.test(tok)) { gap += tok; continue; }
+          if (acc !== null) { out.push(String(acc), gap); acc = null; gap = ""; }
+          out.push(tok);
+        }
+        if (acc !== null) out.push(String(acc), gap);
+        return out.join("");
+      }
+
+      /* A claim is a number with a CUE attached. A bare number is not a claim — "number three"
+         names a product and must never be flagged, so nothing here matches it.
+         Every cue anchors on the NOUN, never on a lead-in word. `only|just|last (\d+)` reads
+         beautifully and flags "the last one" and "just one second", because wordsToDigits has
+         by then turned both into digits. A detector that cries at English idiom is a detector
+         its pane gets ignored, so recall loses to precision here on purpose. */
+      const CUES = [
+        [/\$\s?(\d+(?:\.\d+)?)/g, "price"],
+        [/(\d+(?:\.\d+)?)\s*(?:dollars|bucks|pounds|euros)\b/gi, "price"],
+        [/(\d+(?:\.\d+)?)\s*(?:%|percent|per cent)/gi, "discount"],
+        [/\b(\d+)\s*(?:left|remaining|units|pieces|more|in stock|available|to go)\b/gi, "stock"],
+        // Ranges first, and BOTH ends are captured: "three to five days" quoted against a
+        // catalogue that says two to four is a claim whose front half is the wrong one, and a
+        // pattern that only reads the last number lets it through.
+        [/\b(\d+)\s*(?:-|–|to)\s*(\d+)\s*(?:business\s+)?(?:days?|weeks?|hours?)\b/gi, "delivery"],
+        [/\b(\d+)\s*(?:business\s+)?(?:days?|weeks?|hours?)\b/gi, "delivery"],
+      ];
+      /** Keyword lists over-trigger by design — these are marked REVIEW, never VIOLATION.
+       *  Two entries are narrower than they look, and both were narrowed by watching this pane
+       *  cry wolf on a real run: `treats` keeps the verb ("it treats dryness") and drops the noun,
+       *  because "a treat for your feet" fired twice in one stream and is not a health claim.
+       *  A soft flag still costs attention, and a pane that is wrong twice stops being read. */
+      const PHRASES = [
+        [/\bbest\b/i, "absolute claim"], [/\bnumber one\b|\bno\.?\s?1\b|#1\b/i, "ranking claim"],
+        [/\bcheapest\b|\blowest (?:price|ever)\b/i, "price superlative"],
+        [/\bguarantee[ds]?\b|\brisk[- ]free\b/i, "unqualified guarantee"],
+        [/\bcures?\b|\btreats\b|\bheals?\b|\bmedical\b/i, "health claim"],
+        [/\bmiracle\b|\bunbeatable\b|\bworld'?s\b/i, "absolute claim"],
+      ];
+
+      let flagCount = 0;
+      /**
+       * Check one finished caption. Returns true if anything HARD fired.
+       *
+       * Two severities on purpose. An unsourced figure is a fact she made up and it is checkable,
+       * so it is hard. A banned word is a heuristic — "best for travel" is a perfectly legal
+       * sentence — so it is soft, and calling it a violation would train whoever reads this rail
+       * to ignore the pane. A compliance tool nobody trusts is a compliance tool nobody reads.
+       */
+      function check(text) {
+        const norm = wordsToDigits(text);
+        const bad = new Map();
+        for (const [re, kind] of CUES) {
+          for (const m of norm.matchAll(re)) {
+            // Every capture group, not just the first: a range cue carries two numbers and a
+            // wrong low end is as much of a claim as a wrong high one. Groups that did not
+            // participate come back undefined and fall out at the isFinite check.
+            for (const g of m.slice(1)) {
+              const n = Number(g);
+              if (!Number.isFinite(n) || authorised(n)) continue;
+              bad.set(n, kind);
+            }
+          }
+        }
+        for (const [n, kind] of bad) {
+          const known = ledger.get(n);
+          flag("hard", `unsourced ${kind}`, text, String(n),
+            known ? `${n} was authorised by ${known.from}, and that expired `
+                    + `${Math.round((Date.now() - known.until) / 1000)}s ago`
+                  : `no tool has returned ${n} on this stream`);
+        }
+        for (const [re, why] of PHRASES) {
+          const m = text.match(re);
+          if (m) flag("soft", why, text, m[0], "keyword match — read it and decide");
+        }
+        return bad.size > 0;
+      }
+
+      function flag(sev, kind, text, needle, why) {
+        flagCount += 1;
+        $("flagcount").textContent = `${flagCount} flag${flagCount === 1 ? "" : "s"}`;
+        const quoted = esc(text).replace(esc(needle), `<em>${esc(needle)}</em>`);
+        const el = document.createElement("div");
+        el.className = `flag ${sev}`;
+        el.innerHTML = `<div class="k">${esc(kind)}</div><div class="q">"${quoted}"</div>
+          <div class="why">${esc(why)}</div>`;
+        const box = $("flags");
+        if (box.querySelector(".none")) box.innerHTML = "";
+        box.prepend(el);
+        while (box.children.length > 12) box.lastElementChild.remove();
+      }
+
+      let showing = null;             // the product currently on screen
+      let flashEndsAt = 0;            // server-stamped; 0 when nothing is running
+      let offerOnCard = null;         // { price, basis } — what the card is quoting
+
+      /* ═══════════════════════════════════════════════════════════════════════════════════════
+         THE RUN OF SHOW — the producer's queue.
+
+         `queue` is an array of refs and it is the page's, not hers. It decides two things and
+         nothing else: what "the next one" means to `feature` and `wrap`, and what the panel on
+         the left draws. Adding, removing and reordering therefore cost no tool, no brief and no
+         reconnect — which is the same argument the catalogue makes, pointed at running order
+         instead of at prices.
+      ═══════════════════════════════════════════════════════════════════════════════════════ */
+      let queue = [];
+      const queued = () => queue.map(at).filter(Boolean);
+      /** The next thing to sell: the one after whatever is showing, wrapping, skipping empties. */
+      function nextInQueue(afterRef = showing?.ref) {
+        const live = queued().filter((p) => p.stock > 0);
+        if (!live.length) return null;
+        const i = live.findIndex((p) => p.ref === afterRef);
+        return live[(i + 1) % live.length];
+      }
+
+      function renderQueue() {
+        $("qcount").textContent = queue.length;
+        $("qlist").innerHTML = queued().map((p, i) => {
+          const gone = p.stock <= 0;
+          return `<div class="qrow ${p.ref === showing?.ref ? "live" : ""} ${gone ? "out" : ""}">
+            <span class="pos">${i + 1}</span><span class="e">${p.emoji}</span>
+            <span class="t"><b>#${esc(p.ref)} ${esc(p.name)}</b>
+              <small class="${gone ? "gone" : ""}">${money(p.list)} · ${gone ? "sold out" : `${p.stock.toLocaleString()} left`}</small></span>
+            <span class="qbtns">
+              <button data-up="${p.ref}" ${i === 0 ? "disabled" : ""} title="Move up">↑</button>
+              <button data-down="${p.ref}" ${i === queue.length - 1 ? "disabled" : ""} title="Move down">↓</button>
+              <button class="now" data-now="${p.ref}" ${gone ? "disabled" : ""} title="Put it on screen now">Now</button>
+              <button data-del="${p.ref}" title="Take it out of the run">✕</button>
+            </span></div>`;
+        }).join("") || `<span class="none">nothing queued — she has nothing to sell</span>`;
+
+        const spare = CAT.filter((p) => !queue.includes(p.ref));
+        $("qpick").innerHTML = `<option value="">Add a product…</option>`
+          + spare.map((p) => `<option value="${esc(p.ref)}">#${esc(p.ref)} ${esc(p.name)}`
+            + `${p.stock <= 0 ? " (sold out)" : ""}</option>`).join("");
+        $("qpick").disabled = spare.length === 0;
+      }
+
+      $("qlist").onclick = (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        const { up, down, now, del } = b.dataset;
+        if (up || down) {
+          const ref = up ?? down, i = queue.indexOf(ref), j = i + (up ? -1 : 1);
+          if (i < 0 || j < 0 || j >= queue.length) return;
+          [queue[i], queue[j]] = [queue[j], queue[i]];
+          renderQueue();
+          return;
+        }
+        if (del) {
+          queue = queue.filter((r) => r !== del);
+          // Pulling the live product is a real producer action, so it clears the screen rather
+          // than leaving a card for something no longer in the run.
+          if (showing?.ref === del) clearCard(`[PRODUCER] #${del} is out of the run. Stop selling it and move on.`);
+          renderQueue();
+          return;
+        }
+        if (now) takeOver(now);
+      };
+      $("qpick").onchange = () => ($("qaddbtn").disabled = !$("qpick").value);
+      $("qaddbtn").onclick = () => {
+        const ref = $("qpick").value;
+        if (!ref || queue.includes(ref)) return;
+        queue.push(ref);
+        $("qpick").value = ""; $("qaddbtn").disabled = true;
+        renderQueue();
+        const p = at(ref);
+        // A product added mid-stream is news she has no other way of hearing.
+        void toChat(`[PRODUCER] #${ref} ${p?.name ?? ""} has been added to the run.`, { force: true });
+      };
+
+      /**
+       * "Now" — the producer overrides whatever she is doing.
+       *
+       * The card changes on the tap. Waiting for her to call `feature` would put a turn between
+       * the click and the screen, and a producer who has just cut to a new product is not going
+       * to sit through the end of her sentence about the last one. She is told immediately after,
+       * forced past the sampler, and the tool result she gets next agrees with the screen.
+       */
+      function takeOver(ref) {
+        const p = at(ref);
+        if (!p || p.stock <= 0) return;
+        showing = p;
+        flashEndsAt = 0;
+        offerOnCard = { price: p.list, basis: "list" };
+        paintCard();
+        renderQueue();
+        storeLine(`Producer: now showing #${p.ref} ${p.name}.`);
+        void toChat(`[PRODUCER] Switch to #${p.ref} ${p.name} now — it is already on screen. `
+          + `Talk about it, and quote nothing until you have called a tool for it.`, { force: true });
+      }
+
+      function clearCard(producerLine) {
+        showing = null; flashEndsAt = 0; offerOnCard = null;
+        $("card").classList.add("gone");
+        setTimeout(() => $("card").classList.remove("on", "gone"), 300);
+        if (producerLine) void toChat(producerLine, { force: true });
+      }
+
+      /* ═══════════════════════════════════════════════════════════════════════════════════════
+         THE FIVE VERBS.
+
+         Nothing product-specific in any of them, and nothing that grows when the catalogue does.
+         A description that named a price ("the sleep mask is $89") would be handing her a number
+         to remember — and a number she remembers is a number she is still saying after the
+         window shuts. So the descriptions describe the ACTION and the results carry the facts.
+      ═══════════════════════════════════════════════════════════════════════════════════════ */
+
+      /** "3", "#3", "number 3", or a slice of the name. The page resolves; she never has to. */
+      function resolve(ref) {
+        const s = String(ref ?? "").trim().toLowerCase().replace(/^#|^number\s*/g, "");
+        return at(s) ?? CAT.find((p) => p.name.toLowerCase().includes(s)) ?? null;
+      }
+      const NOT_FOUND = (ref) => ({
+        error: "no_such_product", asked_for: String(ref ?? ""),
+        products: CAT.map((p) => `#${p.ref} ${p.name}`),
+      });
+
+
+      const VERBS = {
+        feature: {
+          description: "Put a product on screen. It becomes the one you are talking about. "
+            + "Takes the number a viewer used, or part of the name. Leave it out and you get the "
+            + "next product in the producer's run of show.",
+          parameters: { type: "object", properties: { ref: { type: "string" } } },
+          execute: ({ ref }) => {
+            // No ref means "whatever is next", and next is the producer's business, not hers.
+            // That is the whole reason the queue can be reordered mid-stream without her
+            // knowing: the word "next" resolves against the panel, at the moment she asks.
+            const p = ref ? resolve(ref) : nextInQueue();
+            if (!p) return ref ? NOT_FOUND(ref) : { error: "nothing_left", say: "Everything in the run is sold out." };
+            showing = p; flashEndsAt = 0;
+            offerOnCard = { price: p.list, basis: "list" };
+            paintCard();
+            renderQueue();
+            if (p.stock <= 0) {
+              return { on_screen: `#${p.ref} ${p.name}`, sold_out: true,
+                say: "It is sold out. Tell them, and move to another product." };
+            }
+            return {
+              on_screen: `#${p.ref} ${p.name}`, list_price: p.list,
+              offers_you_can_run: Object.keys(p.offers),
+              note: "The card shows the list price. Call quote to put an offer on it.",
+            };
+          },
+        },
+        quote: {
+          description: "Put a price on screen for a product: list, flash, coupon or bundle. "
+            + "Only run an offer feature said was available. Say the number this returns and no other.",
+          parameters: {
+            type: "object",
+            properties: {
+              ref: { type: "string" },
+              offer: { type: "string", enum: ["list", "flash", "coupon", "bundle"] },
+            },
+            required: ["ref", "offer"],
+          },
+          execute: async ({ ref, offer }) => {
+            const p = resolve(ref);
+            if (!p) return NOT_FOUND(ref);
+            if (p.stock <= 0) return { available: false, reason: "sold_out", say: "Say it is gone." };
+            showing = p;
+
+            if (offer === "list") {
+              flashEndsAt = 0;
+              offerOnCard = { price: p.list, basis: "list" };
+              paintCard();
+              return { on_screen: true, price: p.list, offer: "list", expires: "never" };
+            }
+            const deal = p.offers[offer];
+            if (!deal) {
+              return { available: false, asked_for: offer,
+                offers_you_can_run: Object.keys(p.offers),
+                say: "That offer does not exist on this product. Do not invent one." };
+            }
+            if (offer === "flash") {
+              /* The window opens on the SERVER so its clock is one clock — see /api/flash. The
+                 round trip is local and well inside the 2.5s a tool has, which is the only
+                 reason a network call belongs in here at all. */
+              const r = await fetch("/api/flash", {
+                method: "POST", headers: { "content-type": "application/json" },
+                body: JSON.stringify({ ref: p.ref }),
+              }).then((x) => x.json()).catch(() => ({ ok: false, reason: "offline" }));
+              if (!r.ok) return { available: false, reason: r.reason };
+              flashEndsAt = r.endsAt;
+              offerOnCard = { price: r.price, basis: "flash" };
+              paintCard();
+              const secs = Math.round((r.endsAt - Date.now()) / 1000);
+              return {
+                on_screen: true, price: r.price, offer: "flash", seconds_left: secs,
+                say: "This price dies when the timer does. Stop quoting it then.",
+                // A flash figure is authorised only while its window is open, plus a few
+                // seconds of grace for a sentence that started before it shut.
+                _until: r.endsAt + 8000,
+              };
+            }
+            offerOnCard = { price: deal.price, basis: offer === "coupon" ? `code ${deal.code}` : `${deal.units}-pack` };
+            flashEndsAt = 0;
+            paintCard();
+            return { on_screen: true, price: deal.price, offer,
+              ...(deal.code ? { code: deal.code } : {}), ...(deal.units ? { units: deal.units } : {}),
+              expires: "never" };
+          },
+        },
+        lookup: {
+          description: "Look up one fact about a product and read it back: sizing, material, "
+            + "shipping, returns or stock. Use it the moment a viewer asks — never answer from memory.",
+          parameters: {
+            type: "object",
+            properties: {
+              ref: { type: "string" },
+              field: { type: "string", enum: ["sizing", "material", "shipping", "returns", "stock"] },
+            },
+            required: ["ref", "field"],
+          },
+          execute: ({ ref, field }) => {
+            const p = resolve(ref);
+            if (!p) return NOT_FOUND(ref);
+            if (field === "stock") {
+              return { product: `#${p.ref} ${p.name}`, units_left: p.stock,
+                sold_out: p.stock <= 0, _until: Date.now() + STOCK_TTL_MS };
+            }
+            return { product: `#${p.ref} ${p.name}`, [field]: p.facts[field] ?? "not listed" };
+          },
+        },
+        last_call: {
+          description: "The closing beat. Puts the real units left and the timer on screen and "
+            + "tells you what is actually left. Use it to close, never to guess.",
+          parameters: { type: "object", properties: { ref: { type: "string" } }, required: ["ref"] },
+          execute: ({ ref }) => {
+            const p = resolve(ref);
+            if (!p) return NOT_FOUND(ref);
+            showing = p;
+            paintCard(true);
+            const secs = flashEndsAt > Date.now() ? Math.round((flashEndsAt - Date.now()) / 1000) : null;
+            return {
+              product: `#${p.ref} ${p.name}`, units_left: p.stock, sold_out: p.stock <= 0,
+              ...(secs === null ? {} : { seconds_left: secs }),
+              say: p.stock <= 0 ? "It is gone. Say so and move on."
+                : "Read the number back exactly. It moves while you speak.",
+              _until: Date.now() + STOCK_TTL_MS,
+            };
+          },
+        },
+        wrap: {
+          description: "Finished with a product: take it off screen and move on. Tells you what "
+            + "the producer has queued next.",
+          parameters: { type: "object", properties: { ref: { type: "string" } } },
+          execute: ({ ref }) => {
+            const p = ref ? resolve(ref) : showing;
+            const next = nextInQueue(p?.ref);
+            clearCard();
+            renderQueue();
+            return { cleared: p ? `#${p.ref} ${p.name}` : "nothing",
+              next_up: next ? `#${next.ref} ${next.name}` : "nothing left in the run",
+              note: "Call feature with no product to pick it up." };
+          },
+        },
+      };
+
+      /* Wrap every verb once: time it, write its figures into the ledger, and paint the trace.
+         `_until` is a private hint from the verb about how long its numbers live; it is stripped
+         before the result goes back to her, because it is bookkeeping and she would read it out. */
+      const ToolStat = Object.fromEntries(Object.keys(VERBS).map((n) => [n, { calls: 0, ms: null, last: null }]));
+      const TOOLS = Object.fromEntries(Object.entries(VERBS).map(([name, def]) => [name, {
+        description: def.description,
+        parameters: def.parameters,
+        execute: async (args) => {
+          const t0 = performance.now();
+          const raw = await def.execute(args ?? {});
+          const { _until, ...out } = raw ?? {};
+          authoriseResult(out, _until ?? Infinity, name);
+          const st = ToolStat[name];
+          st.calls += 1; st.ms = Math.round(performance.now() - t0);
+          st.last = JSON.stringify(out);
+          renderTools();
+          return out;
+        },
+      }]));
+
+      let accepted = new Set();
+      function renderTools() {
+        $("deadline").textContent = `${TOOL_DEADLINE_MS}ms deadline`;
+        $("tools").innerHTML = Object.entries(VERBS).map(([n, def]) => {
+          const st = ToolStat[n];
+          const mark = accepted.size ? (accepted.has(n) ? "✓" : "✗") : "·";
+          return `<div class="tool ${st.calls ? "hit" : ""}">
+            <span class="n">${mark} ${n}</span>
+            <span class="d">${esc(def.description.split(".")[0])}.
+              ${st.last ? `<div class="lastret">→ ${esc(st.last.slice(0, 130))}</div>` : ""}</span>
+            <span class="c">${st.calls}${st.ms != null ? ` · ${st.ms}ms` : ""}</span>
+          </div>`;
+        }).join("");
+      }
+
+      /* ── The card. Every figure on it is read from the catalogue, never from her caption. ── */
+      let urgent = false;
+      function paintCard(makeUrgent = false) {
+        if (makeUrgent) urgent = true;
+        const p = showing;
+        if (!p) return;
+        const offer = offerOnCard ?? { price: p.list, basis: "list" };
+        const discounted = offer.price < p.list;
+        const sold = p.stock <= 0;
+        // Stock bar reads as "how much of the opening drop is gone", so it needs a denominator
+        // that does not move. First sighting wins.
+        p.opened ??= Math.max(p.stock, 1);
+        const pct = Math.max(0, Math.min(100, Math.round((p.stock / p.opened) * 100)));
+        $("card").className = "card on";
+        $("card").innerHTML = `
+          <div class="head">
+            <span class="num">#${esc(p.ref)}</span>
+            <span class="now ${sold ? "sold" : ""}">${sold ? "SOLD OUT" : "NOW SHOWING"}</span>
+          </div>
+          <div class="body">
+            <span class="thumb">${p.emoji}</span>
+            <span class="info">
+              <span class="nm">${esc(p.name)}</span>
+              <span class="prices">
+                ${discounted ? `<span class="was">${money(p.list)}</span>` : ""}
+                <span class="isnow">${money(offer.price)}</span>
+                <span class="basis">${esc(offer.basis)}</span>
+              </span>
+            </span>
+            <button class="buy" id="add" ${sold ? "disabled" : ""}>${sold ? "Gone" : "Add"}</button>
+          </div>
+          <div class="meters">
+            <span class="timer ${flashEndsAt > Date.now() ? "on" : ""}" id="tick"></span>
+            <span>${sold ? "0 left" : `${p.stock.toLocaleString()} left`}</span>
+            <span class="bar"><i style="width:${pct}%"></i></span>
+          </div>`;
+        const add = $("add");
+        if (add) add.onclick = () => addToCart(p, offer);
+        tickFlash();
+      }
+      function tickFlash() {
+        const el = $("tick");
+        if (!el) return;
+        const left = flashEndsAt - Date.now();
+        if (left <= 0) {
+          el.classList.remove("on");
+          // The window shut. The card falls back to the standing price on its own — if it did
+          // not, the page would be showing a price the server would refuse to charge.
+          if (flashEndsAt && showing) {
+            flashEndsAt = 0;
+            const c = showing.offers.coupon;
+            offerOnCard = c ? { price: c.price, basis: `code ${c.code}` }
+                            : { price: showing.list, basis: "list" };
+            paintCard();
+            storeLine(`Flash price on #${showing.ref} has ended — now ${money(offerOnCard.price)}.`);
+          }
+          return;
+        }
+        const s = Math.ceil(left / 1000);
+        el.textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+      }
+      setInterval(tickFlash, 250);
+
+      /* ═══════════════════════════════════════════════════════════════════════════════════════
+         CHAT — the same one channel `livestream` uses. Comments, cart adds, orders and follows
+         are all `lk.chat` text; only the shape of the line differs, and her brief names each.
+         The sampler is the same idea too: the room paints every event, she gets a sample.
+      ═══════════════════════════════════════════════════════════════════════════════════════ */
+      const FORWARD_FLOOR_MS = 3600;
+      let lastForwardAt = 0;
+      const sentByUs = new Set();
+
+      /** How long a figure the ROOM handed her stays sayable. */
+      const TOLD_TTL_MS = 90_000;
+
+      async function toChat(text, { force = false } = {}) {
+        if (!room) return false;
+        const now = Date.now();
+        if (!force && now - lastForwardAt < FORWARD_FLOOR_MS) return false; // sampled out, by design
+        lastForwardAt = now;
+
+        /* A tool result is not the only legitimate source of a number: the room tells her some
+           too. "[ORDER] Chloe bought #1 x2" is the page saying two, so "that's two more pairs
+           heading your way" is her repeating it, not inventing it — and flagging that as an
+           unsourced claim is the kind of false positive that gets the compliance pane ignored.
+           Same rule as tool results: whatever she was handed, she may repeat.
+
+           ONLY the page's own lines count, which is what the bracket tests for. A viewer comment
+           travels this same channel, and "it's only 5 dollars right?" from a stranger must never
+           license her to say five dollars. The storefront may put figures in her mouth; the
+           audience may not. */
+        if (text.startsWith("[")) authoriseResult(text, now + TOLD_TTL_MS, "the room");
+
+        sentByUs.add(text);
+        try { await room.localParticipant.sendText(text, { topic: "lk.chat" }); return true; }
+        catch { sentByUs.delete(text); return false; }
+      }
+
+      const PALETTE = ["#fe2c55", "#25f4ee", "#7b2ff7", "#ff9a3c", "#2fbf71", "#3b6cff", "#ff5c9a"];
+      const hash = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.codePointAt(0)) >>> 0; return h; };
+      const pfp = (who) => `<span class="pfp" style="background:${PALETTE[hash(who) % PALETTE.length]}">`
+        + `${esc((who.trim()[0] ?? "?").toUpperCase())}</span>`;
+      const badges = (who) => {
+        const h = hash(who);
+        return `<span class="badge lvl">◆ ${(h % 40) + 3}</span>`
+          + (h % 5 === 0 ? `<span class="badge buyer">Buyer</span>` : "");
+      };
+
+      function pushRow(html, cls = "") {
+        const d = document.createElement("div");
+        d.className = `row ${cls}`;
+        d.innerHTML = html;
+        $("chat").append(d);
+        while ($("chat").children.length > 24) $("chat").firstElementChild.remove();
+      }
+      const comment = (who, text, cls = "") => pushRow(
+        `${pfp(who)}<span class="body"><span class="handle">${badges(who)}${esc(who)}</span>`
+        + `<span class="text">${esc(text)}</span></span>`, cls);
+      const buyLine = (who, text) => pushRow(
+        `${pfp(who)}<span class="body"><span class="handle">${esc(who)}</span>`
+        + `<span class="text">${esc(text)}</span></span>`, "buy");
+      /** The page speaking as the storefront — the job a human control operator does in a real
+       *  room, correcting the host in chat when the room has been told something wrong. */
+      function storeLine(text) {
+        pushRow(`<span class="pfp">🛍</span><span class="body"><span class="text">${esc(text)}</span></span>`, "store");
+      }
+
+      /* ── Cart. Note what she CANNOT do: none of her five verbs adds anything to it or spends
+            anything. She merchandises; the tap is the customer's. That boundary is also the one
+            the 2.5s tool deadline would force anyway — a real checkout does not fit in it. ── */
+      const cart = [];
+      function addToCart(p, offer) {
+        cart.push({ ref: p.ref, name: p.name, emoji: p.emoji, price: offer.price, basis: offer.basis });
+        paintCart();
+        void toChat(`[CART] ${YOU} added #${p.ref}`, { force: true });
+        buyLine(YOU, `added ${p.name} to cart`);
+      }
+      function paintCart() {
+        $("cartcount").textContent = cart.length;
+        $("cartcount").classList.toggle("on", cart.length > 0);
+        $("buy").disabled = cart.length === 0;
+        const total = cart.reduce((a, l) => a + l.price, 0);
+        $("total").textContent = money(total);
+        $("lines").innerHTML = cart.length
+          ? cart.map((l, i) => `<div class="line"><span class="e">${l.emoji}</span>
+              <span class="t">${esc(l.name)}<small>#${esc(l.ref)} · ${esc(l.basis)}</small></span>
+              <span class="p">${money(l.price)}</span>
+              <button class="x" data-i="${i}">✕</button></div>`).join("")
+          : `<div class="empty">Nothing yet. Tap Add on the card she is showing.</div>`;
+      }
+      $("lines").onclick = (e) => {
+        const i = e.target.closest("[data-i]")?.dataset.i;
+        if (i != null) { cart.splice(Number(i), 1); paintCart(); }
+      };
+      $("cartbtn").onclick = () => $("sheet").classList.toggle("on");
+
+      /**
+       * Checkout. The server prices this, not the page and not her — see /api/order.
+       *
+       * `expectPrice` is what the customer was SHOWN, sent so the server can say whether it
+       * agrees. When it does not, the customer is still charged correctly and the gap is a hard
+       * flag: somewhere between the catalogue and the screen, a number changed.
+       */
+      $("buy").onclick = async () => {
+        $("buy").disabled = true;
+        let charged = 0, mismatched = 0;
+        for (const line of cart.splice(0)) {
+          const r = await fetch("/api/order", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ref: line.ref, qty: 1, expectPrice: line.price, buyer: "you" }),
+          }).then((x) => x.json()).catch(() => null);
+          if (!r?.ok) { storeLine(`${line.name} could not be ordered (${r?.reason ?? "offline"}).`); continue; }
+          const p = at(r.ref);
+          if (p) p.stock = r.stock;
+          renderQueue();
+          charged += r.charged;
+          if (r.mispriced) {
+            mismatched += 1;
+            flag("hard", "price mismatch at checkout",
+              `${line.name} shown at ${money(r.expected)}`, money(r.expected),
+              `the catalogue charged ${money(r.unitPrice)} (${r.basis}) — the server prices the order, `
+              + "so the customer is safe and the screen was wrong");
+            storeLine(`${line.name} was ${money(r.unitPrice)} at checkout, not ${money(r.expected)}.`);
+          }
+          buyLine(YOU, `bought ${line.name} · ${money(r.charged)}`);
+          void toChat(`[ORDER] ${YOU} bought #${r.ref} x${r.units}`, { force: true });
+        }
+        paintCart();
+        if (showing) paintCard();
+        $("charged").textContent = `charged ${money(charged)}`
+          + (mismatched ? ` · ${mismatched} repriced` : "");
+        setTimeout(() => $("sheet").classList.remove("on"), 900);
+      };
+
+      /* ── Going live ─────────────────────────────────────────────────────────────────────── */
+      $("start").onclick = async () => {
+        $("start").disabled = true;
+        say("going live…");
+        const res = await fetch("/api/golive", { method: "POST" });
+        if (res.status === 429) {
+          const q = await res.json();      // capacity, not a rate limit — isQueued made it a position
+          say(`all slots busy — position ${q.position ?? "?"}, retrying…`);
+          setTimeout(() => { $("start").disabled = false; $("start").click(); }, q.retryAfterMs ?? 3000);
+          return;
+        }
+        if (res.status === 402) { say("out of credits — top up to go live"); $("start").disabled = false; return; }
+        if (!res.ok) { say(`could not go live (${res.status})`); $("start").disabled = false; return; }
+        const { grant, catalog } = await res.json();
+        loadCatalog(catalog);
+        try { await join(grant); }
+        catch (err) { say(String(err?.message ?? err)); $("start").disabled = false; }
+      };
+
+      async function join(grant) {
+        sessionId = grant.session_id;    // held from HERE — the pagehide beacon needs it now
+        room = new Room();
+
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === Track.Kind.Video) {
+            track.attach($("her"));
+            $("her").classList.add("on");
+            $("idle").style.display = "none";
+          }
+        });
+        room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+          const mine = participant?.identity === room.localParticipant.identity;
+          for (const s of segments) {
+            if (!s.final) continue;
+            if (mine && sentByUs.delete(s.text)) continue;   // the echo of our own typed line
+            if (mine) { comment(YOU, s.text, "mine"); continue; }
+            showCaption(s.text, check(s.text));
+          }
+        });
+        room.on(RoomEvent.Disconnected, () => endUi("stream ended"));
+
+        // BEFORE connect: `track.attach()` returns a detached element, and a track subscribed
+        // during connect is missed entirely — a race that only shows on a fast connection and
+        // presents as a silent call rather than as an error.
+        attachRemoteAudio(room, {
+          onPlaybackBlocked: (unblock) => {
+            $("unblock").classList.toggle("on", unblock !== null);
+            $("unblock").firstElementChild.onclick = () => unblock?.();
+          },
+        });
+
+        await room.connect(grant.livekit_url, grant.participant_token);
+
+        // TOOLS FIRST, MICROPHONE SECOND. Her brief tells her to open the moment she connects,
+        // so by the time connect returns she is already reaching for `feature`. The microphone
+        // is a human deciding — up to fifteen seconds of it — and it has no business holding the
+        // tool plane hostage while it waits. Tools registered late look like a page that hung.
+        const reg = await attachAvatarTools(room, TOOLS, { timeoutMs: 15000 });
+        accepted = new Set(reg.accepted);
+        renderTools();
+        if (reg.rejected?.length) say(`tools rejected: ${JSON.stringify(reg.rejected)}`);
+
+        live = true;
+        $("gate").classList.add("hide");
+        for (const el of document.querySelectorAll(".dock .say, .dock .act")) el.disabled = false;
+        $("viewers").textContent = short(viewers = 40 + Math.floor(Math.random() * 260));
+        $("likes").textContent = short(likes = 900 + Math.floor(Math.random() * 4000));
+        paintCart();
+        startAudience();
+
+        const mic = await enableMicrophone(room);
+        if (!mic.ok) say(`${mic.message} — ${mic.hint}`);
+        else setTimeout(() => say(""), 1400);
+      }
+
+      let captionTimer = null;
+      function showCaption(text, flagged) {
+        $("caption").textContent = text;
+        $("caption").className = `caption on${flagged ? " flagged" : ""}`;
+        clearTimeout(captionTimer);
+        captionTimer = setTimeout(() => $("caption").classList.remove("on"), 7000);
+        if (!flagged || !showing) return;
+        /* A hard flag is worth a correction IN THE ROOM, not just in the rail — that is what a
+           control operator does. It goes to her too, so the next thing she says is right. */
+        const p = showing, offer = offerOnCard ?? { price: p.list, basis: "list" };
+        storeLine(`Correction: #${p.ref} ${p.name} is ${money(offer.price)} (${offer.basis}), `
+          + `${p.stock} left.`);
+        void toChat(`[STORE] Correction — #${p.ref} is ${money(offer.price)}, ${p.stock} left. `
+          + `Say these numbers, not the ones you just said.`, { force: true });
+      }
+
+      function endUi(msg) {
+        live = false;
+        stopAudience();
+        say(msg);
+        for (const el of document.querySelectorAll(".dock .say, .dock .act")) el.disabled = true;
+        $("sheet").classList.remove("on");
+        $("gate").classList.remove("hide");
+        $("start").disabled = false;
+      }
+
+      /* ── The audience. Simulated in the page so the room is never silent — and their orders are
+            REAL orders against the server, so the stock she reads out is the stock they moved.
+            Swap this for a websocket fan-in from real viewers and nothing on her side changes. ── */
+      const LURKERS = ["neon_kat", "pixelwolf", "mira_88", "toastradamus", "lil_comet", "yuki.exe",
+        "starlvr", "moon_wav", "bytebard", "kimchi_kat", "Chloe", "Kobe", "naki taki", "rayaan"];
+      const ASKS = ["does it run small?", "how long is shipping", "is it still on sale",
+        "what's the return policy", "how many left??", "does #1 come in black", "is this washable",
+        "can I use the code twice", "wait what's the price again", "sold out?? 😭",
+        "does it fit a 14 inch laptop", "is the silk real"];
+      const HYPE = ["ordered!!", "chat is fast today", "been waiting for this drop", "🔥🔥🔥",
+        "my third one honestly", "first!!", "the lighting is unreal", "she actually answered me 😭"];
+      let viewers = 1, likes = 0;
+      const timers = [];
+
+      function startAudience() {
+        stopAudience();
+        timers.push(setInterval(() => {
+          if (!live) return;
+          const roll = Math.random();
+          if (roll < 0.13) { floatHeart(); return; }
+          // A question is worth her turn; hype is not. That ladder is three lines, and it is the
+          // editorial decision the room actually turns on.
+          const asking = roll < 0.62;
+          const who = rand(LURKERS), text = asking ? rand(ASKS) : rand(HYPE);
+          comment(who, text);
+          if (asking) void toChat(`${who}: ${text}`);           // sampled — the floor decides
+          if (Math.random() < 0.4) viewers = Math.max(1, viewers + (Math.random() < 0.72 ? 1 : -1));
+          $("viewers").textContent = short(viewers);
+        }, 1350));
+
+        // Somebody in the room buys whatever is on screen. It goes through /api/order like any
+        // other order, so the stock counter she is about to read is genuinely moving under her.
+        timers.push(setInterval(async () => {
+          if (!live || !showing || showing.stock <= 0 || Math.random() > 0.55) return;
+          const who = rand(LURKERS), qty = Math.random() < 0.25 ? 2 : 1;
+          const r = await fetch("/api/order", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ref: showing.ref, qty, buyer: "crowd" }),
+          }).then((x) => x.json()).catch(() => null);
+          if (!r?.ok) return;
+          const p = at(r.ref);
+          if (p) p.stock = r.stock;
+          renderQueue();
+          buyLine(who, `bought ${r.name}${r.units > 1 ? ` ×${r.units}` : ""}`);
+          if (showing?.ref === r.ref) paintCard();
+          void toChat(`[ORDER] ${who} bought #${r.ref} x${r.units}`);  // sampled like any comment
+          if (r.stock === 0) {
+            storeLine(`#${r.ref} ${r.name} just sold out.`);
+            void toChat(`[STORE] #${r.ref} is sold out. Stop selling it.`, { force: true });
+          }
+        }, 3200));
+      }
+      function stopAudience() { for (const t of timers.splice(0)) clearInterval(t); }
+
+      function floatHeart() {
+        const h = document.createElement("div");
+        h.className = "heart";
+        h.textContent = rand(["❤️", "💖", "🧡", "✨"]);
+        h.style.setProperty("--x2", `${Math.round((Math.random() - 0.5) * 110)}px`);
+        h.style.right = `${20 + Math.random() * 40}px`;
+        $("hearts").append(h);
+        $("likes").textContent = short(likes += 1);
+        setTimeout(() => h.remove(), 2600);
+      }
+
+      /* ── The viewer's own actions. Never sampled away: the sampler exists to thin out
+            simulated crowd noise, and dropping the real person's message teaches the opposite
+            of what it is for. ── */
+      $("say").addEventListener("keydown", async (e) => {
+        if (e.key !== "Enter" || !room || !$("say").value.trim()) return;
+        const text = $("say").value.trim();
+        $("say").value = "";
+        comment(YOU, text, "mine");
+        await toChat(text, { force: true });
+      });
+      $("like").onclick = () => { for (let i = 0; i < 4; i++) setTimeout(floatHeart, i * 70); };
+      $("close").onclick = () => { if (live) { room?.disconnect(); endUi("you left the stream"); } };
+      let following = false;
+      $("follow").onclick = async () => {
+        if (following) return;
+        following = true;
+        $("follow").textContent = "Following";
+        $("follow").classList.add("done");
+        for (let i = 0; i < 5; i++) setTimeout(floatHeart, i * 60);
+        if (live) await toChat(`[FOLLOW] ${YOU} just followed you`, { force: true });
+      };
+      $("her").parentElement.addEventListener("pointerdown", (e) => {
+        if (!$("sheet").classList.contains("on")) return;
+        if (!e.target.closest(".sheet, #cartbtn")) $("sheet").classList.remove("on");
+      });
+
+      /* ── Chrome ─────────────────────────────────────────────────────────────────────────── */
+      const streamer = (new URLSearchParams(location.search).get("name") || "Live").trim() || "Live";
+      $("handle").textContent = streamer;
+      $("pfp").textContent = streamer.slice(0, 1).toUpperCase();
+      const tick = () => ($("clock").textContent =
+        new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }));
+      tick(); setInterval(tick, 20000);
+      renderTools();
+      // The catalogue before the call, so the rail and the cart are honest on a cold page.
+      fetch("/api/catalog").then((r) => r.json()).then(({ products }) => { loadCatalog(products); }).catch(() => {});
+    </script>
+  </body>
+</html>

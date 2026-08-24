@@ -1,0 +1,1118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Coding companion</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0b0d; --rail: #101013; --line: #ffffff14; --line2: #ffffff0d;
+        --ink: #f2efec; --dim: #94908c; --dim2: #6d6a67; --accent: #ff5b3a;
+      }
+      * { box-sizing: border-box }
+      html, body { height: 100% }
+      body { margin: 0; background: var(--bg); color: var(--ink); overflow: hidden;
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+        display: grid; grid-template-columns: 384px 1fr }
+      @media (max-width: 900px) { body { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; overflow: auto } }
+
+      /* ── left rail: her, the thread, the prompt ─────────────────────────────────────── */
+      .rail { background: var(--rail); border-right: 1px solid var(--line); display: flex;
+        flex-direction: column; min-height: 0; overflow: hidden; padding: 14px; gap: 12px }
+      .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; flex: none }
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: #4b4744; flex: none }
+      .dot.live { background: #3ddc84; box-shadow: 0 0 0 3px #3ddc8422 }
+      .dot.busy { background: #ffb020; box-shadow: 0 0 0 3px #ffb02022 }
+      /* Sized by the viewport, never by what is under it. `aspect-ratio` alone sets height
+         from width, so on a short window a 384px rail wants a 480px stage and the prompt box
+         — the one control the whole app is driven from — is pushed below the fold.
+         `width: 100%` is not redundant next to a stretching flex item: once `max-height`
+         clamps the height, an engine is free to run the ratio BACKWARDS and derive the width
+         from that clamped height, which leaves the stage narrower than the panels under it
+         and a strip of dead rail beside it. Stating the width outright removes the choice. */
+      .stage { position: relative; border-radius: 14px; overflow: hidden; background: #08080a;
+        border: 1px solid var(--line); width: 100%; aspect-ratio: 4/5; display: grid;
+        place-items: center; flex: 0 0 auto; max-height: 42vh; min-height: 130px }
+      /* Absolutely positioned, not a grid item. As a grid item under a parent whose height
+         comes from `aspect-ratio`, `height: 100%` is cyclic and resolves to `auto` — so the
+         video fell back to its intrinsic 1:1 and rendered 353x353 inside a 242px-tall box,
+         overflowing by 111px and being clipped by the rounded corner every frame. */
+      .stage video { position: absolute; inset: 0; width: 100%; height: 100%;
+        object-fit: cover; display: none }
+      .stage video.on { display: block }
+      .idle { color: #56524f; font-size: 12.5px; text-align: center; padding: 0 18px }
+      .status { position: absolute; inset: auto 0 0 0; padding: 8px 11px; font-size: 11.5px;
+        background: linear-gradient(transparent, #000000d9); color: #ded6cd }
+      .clock { position: absolute; top: 8px; right: 9px; padding: 2px 7px; border-radius: 999px;
+        background: #000000a6; color: #cfc9c3; font: 11px/1.5 ui-monospace, monospace;
+        letter-spacing: .04em; pointer-events: none }
+      .clock:empty { display: none }
+      .clock.low { color: #ffb9a5; background: #4a1a10cc }
+
+      /* Not a <details>. Chrome wraps details content in a `::details-content` box, so a
+         child's `flex: 1 1 0` applies to nothing — the log took its content height and spilled
+         past the border instead of scrolling. A plain container and a button behave the same
+         in every engine, and a button keeps the keyboard behaviour <summary> gave us. */
+      .thread { border: 1px solid var(--line); border-radius: 12px; background: #0d0d10;
+        display: flex; flex-direction: column; overflow: hidden; flex: none }
+      /* `flex-basis: 0`, NOT `auto`. On `auto` the thread's own content is its base size, so
+         every transcription that lands grows the log, grows the thread, and takes the space
+         out of the stage above it — resizing a playing video element on every turn, which is
+         a relayout and a recomposite of a clipped video layer each time. Measured: 25 lines
+         walked the stage down through eleven heights. The avatar must not change size because
+         she said something. */
+      .thread.open { flex: 1 1 0; min-height: 60px }
+      .thread-head { width: 100%; background: none; border: 0; border-radius: 0; flex: none;
+        cursor: pointer; padding: 11px 13px; font: inherit; font-size: 12.5px; color: var(--dim);
+        display: flex; align-items: center; gap: 7px; text-align: left; user-select: none }
+      .thread-head:hover { background: #ffffff08 }
+      .chev { font-size: 10px; display: inline-block; transition: transform .15s }
+      .thread.open .chev { transform: rotate(90deg) }
+      .badge { margin-left: auto; background: #ffffff12; border-radius: 999px; padding: 1px 7px; font-size: 11px }
+      #log { overflow-y: auto; padding: 0 13px 12px; font-size: 12.5px; display: flex;
+        flex-direction: column; gap: 9px; flex: 1 1 0; min-height: 0 }
+      .thread:not(.open) #log { display: none }
+      #log .turn { display: grid; gap: 2px }
+      #log .who { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim2) }
+      #log .her .who { color: var(--accent) }
+      #log .tool { color: var(--dim2); font: 11.5px/1.5 ui-monospace, monospace }
+
+      /* `margin-top: auto` keeps the prompt on the floor of the rail. With the conversation
+         collapsed nothing else is claiming the slack, and a composer floating in the middle
+         of a column of empty space reads as unfinished. */
+      .composer { border: 1px solid var(--line); border-radius: 12px; background: #0d0d10;
+        padding: 9px 10px; display: grid; gap: 8px; flex: none; margin-top: auto }
+      textarea { border: 0; background: none; color: var(--ink); font: inherit; resize: none;
+        outline: none; min-height: 46px; max-height: 120px; padding: 2px }
+      textarea::placeholder { color: #5c5854 }
+      .actions { display: flex; gap: 7px; align-items: center }
+      button { font: inherit; font-size: 13px; cursor: pointer; border-radius: 9px;
+        border: 1px solid var(--line); background: #17171b; color: var(--ink); padding: 7px 12px }
+      button:hover:not(:disabled) { background: #1e1e23 }
+      button:disabled { opacity: .4; cursor: default }
+      button.primary { background: var(--accent); border-color: transparent; font-weight: 600; color: #fff }
+      button.primary:hover:not(:disabled) { background: #ff6f52 }
+      .grow { flex: 1 }
+
+      /* ── right pane: the app ────────────────────────────────────────────────────────── */
+      .work { display: flex; flex-direction: column; min-width: 0; min-height: 0 }
+      .bar { display: flex; align-items: center; gap: 6px; padding: 9px 12px;
+        border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap }
+      .seg { display: flex; background: #17171b; border: 1px solid var(--line); border-radius: 9px; padding: 2px }
+      .seg button { border: 0; background: none; padding: 5px 12px; border-radius: 7px; font-size: 12.5px; color: var(--dim) }
+      .seg button.on { background: #2a2a31; color: var(--ink) }
+      .vers { display: flex; gap: 4px; align-items: center; margin-left: 4px; overflow: auto; max-width: 42% }
+      .vers button { padding: 4px 9px; font-size: 11.5px; border-radius: 7px; color: var(--dim); flex: none }
+      .vers button.on { background: #2a2a31; color: var(--ink); border-color: #ffffff22 }
+      .ghost { padding: 6px 9px; font-size: 12.5px; color: var(--dim) }
+      .view { flex: 1; min-height: 0; position: relative; background: #fff }
+      iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff }
+      pre.code { position: absolute; inset: 0; margin: 0; padding: 16px 18px; overflow: auto;
+        background: var(--bg); color: #cfc9c3; font: 12.5px/1.65 ui-monospace, monospace;
+        white-space: pre-wrap; word-break: break-word; display: none }
+      body.tab-code pre.code { display: block }
+      body.tab-code iframe { visibility: hidden }
+      .empty { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg);
+        color: #56524f; font-size: 13px; text-align: center; padding: 30px }
+      .strip { flex: none; display: none; align-items: center; gap: 9px; padding: 8px 12px;
+        border-top: 1px solid var(--line); background: #0d0d10; font-size: 12.5px }
+      .strip.on { display: flex }
+      .strip a { color: #7ec8ff; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+      .strip .err { color: #ff8b6f }
+      .notes { flex: none; display: none; padding: 7px 12px; border-top: 1px solid var(--line);
+        background: #17110f; color: #ff9d84; font: 11.5px/1.5 ui-monospace, monospace;
+        max-height: 90px; overflow: auto; white-space: pre-wrap }
+      .notes.on { display: block }
+    </style>
+  </head>
+  <body class="tab-preview">
+    <!-- ── left: her, a thread you can ignore, and the box you talk into ──────────────── -->
+    <aside class="rail">
+      <div class="brand"><span class="dot" id="dot"></span> Coding companion</div>
+
+      <div class="stage">
+        <video id="her" autoplay playsinline></video>
+        <span class="idle" id="idle">Press Call, then say what you want to build.</span>
+        <div class="status" id="status">not connected</div>
+        <!-- How long this call has left. On screen the whole time, so the moment the media
+             stops at the cap the freeze is already explained. -->
+        <div class="clock" id="clock"></div>
+      </div>
+      <!-- Her audio elements land here, not on <body>. body is the page's two-column grid,
+           and appending media elements to it makes them grid items. -->
+      <div id="audio" hidden></div>
+
+      <!-- Open by default: what she says while she builds is worth watching, and a panel you
+           have to discover is a panel nobody reads. Collapse it to give the app the room. -->
+      <section class="thread open" id="thread">
+        <button class="thread-head" id="threadToggle" aria-expanded="true" aria-controls="log">
+          <span class="chev" aria-hidden="true">▸</span> Conversation
+          <span class="badge" id="count">0</span>
+        </button>
+        <div id="log" role="log" aria-live="polite"></div>
+      </section>
+
+      <div class="composer">
+        <textarea id="say" rows="2" placeholder="Describe an app… or just say it out loud." disabled></textarea>
+        <div class="actions">
+          <button class="primary" id="call">Call</button>
+          <button id="hang" disabled>Hang up</button>
+          <span class="grow"></span>
+          <button id="send" disabled>Send</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── right: the app she is building ─────────────────────────────────────────────── -->
+    <main class="work">
+      <div class="bar">
+        <div class="seg">
+          <button id="tabPreview" class="on">Preview</button>
+          <button id="tabCode">Code</button>
+        </div>
+        <div class="vers" id="vers"></div>
+        <span class="grow"></span>
+        <button class="ghost" id="reload" title="Re-render" disabled>⟳</button>
+        <button class="ghost" id="pop" title="Open in a new tab" disabled>↗</button>
+        <button id="publish" disabled hidden>Publish</button>
+      </div>
+
+      <div class="view">
+        <!-- allow-scripts and NOTHING else. Adding allow-same-origin next to it would hand the
+             generated page this document's origin — and a `srcdoc` frame with both is not a
+             sandbox at all, it can reach straight into `parent`. -->
+        <iframe id="frame" sandbox="allow-scripts" title="App preview"></iframe>
+        <pre class="code" id="code"></pre>
+        <div class="empty" id="empty">Nothing built yet.<br />Start a call and describe an app.</div>
+      </div>
+
+      <div class="notes" id="notes"></div>
+      <div class="strip" id="strip"></div>
+    </main>
+
+    <script type="module">
+      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+      // The non-React tool plane, served by this app's own server from the installed package.
+      // In a bundled app this is a plain import of "realtime-avatar-tools".
+      import { attachAvatarTools } from "/sdk/tools.js";
+
+      const $ = (id) => document.getElementById(id);
+      const say = (t) => ($("status").textContent = t);
+
+      // Why the microphone did not start. Published as realtime-avatar-browser;
+      // inlined so this example stays standalone. It returns a reason instead of throwing because
+      // "the mic won't start" is one sentence covering six causes with six different fixes — and
+      // one of them is not in the browser at all. Left unguarded, the rejection is an unhandled
+      // promise nobody watches and the page simply stops mid-connect.
+      async function startMic(room) {
+        if (!navigator.mediaDevices) return { ok: false, why: "This page is not a secure context. Use https, or http://localhost — a LAN address will not do." };
+        try {
+          // Per spec getUserMedia may neither resolve nor reject if the prompt is ignored.
+          const noAnswer = new Promise((r) => setTimeout(() => r("no-answer"), 15000));
+          const started = room.localParticipant.setMicrophoneEnabled(true).then(() => "ok");
+          if (await Promise.race([started, noAnswer]) === "no-answer") return { ok: false, why: "The microphone prompt was not answered — look for it in the address bar." };
+          return { ok: true };
+        } catch (err) {
+          const message = err?.message ?? String(err);
+          if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+            // Chromium reports a macOS system denial as NotAllowedError too, and THAT one the
+            // address bar cannot fix — so the two must never share a message.
+            return /by system|system permission/i.test(message)
+              ? { ok: false, why: "macOS is blocking the browser itself: System Settings > Privacy & Security > Microphone, then RESTART the browser." }
+              : { ok: false, why: "This site is blocked from the microphone — allow it from the address-bar icon and reload." };
+          }
+          if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") return { ok: false, why: "No microphone is available." };
+          if (err?.name === "NotReadableError" || err?.name === "TrackStartError") return { ok: false, why: "Another app or tab is holding the microphone." };
+          return { ok: false, why: message };
+        }
+      }
+
+      /**
+       * Is there a picture, and is it still moving?
+       *
+       * Two different failures wear the same face here, and NEITHER raises an event.
+       *
+       * BLACK. An avatar can reach `ready`, start a call, and publish a track that is live,
+       * decoding, and advancing — and every frame of it black. `readyState` is 4,
+       * `videoWidth` is a plausible 700, `paused` is false, and nothing in the API says a
+       * word. Observed on a `ready`, `sourceKind: "video"` avatar, so the source kind is not
+       * the whole story and must not be trusted as the check.
+       *
+       * STALLED. The frames simply stop arriving. `readyState` is still 4, `paused` is still
+       * false, the MediaStreamTrack is still `live` and unmuted, and `TrackUnsubscribed` does
+       * not fire. Measured when a call reached its `maxSeconds` cap: the frame counter stopped
+       * dead at 7457 and the page went on saying "connected — say what you want to build"
+       * until the tab was closed. It is also what a lost render worker looks like, which is
+       * why this is watched rather than assumed away.
+       *
+       * So the picture is watched for the WHOLE call, not just at the start. The two checks
+       * retire differently on purpose:
+       *   - black reads 32x32 pixels a second and stops the moment it sees a picture, because
+       *     black-for-the-whole-call is the case it exists for and a GPU readback every second
+       *     after that buys nothing;
+       *   - stall reads a frame COUNTER, which costs nothing, and therefore never stops.
+       */
+      const STALL_MS = 4000;
+      let healthTimer = null;
+      let videoStalled = false;
+      const stopVideoWatch = () => {
+        clearInterval(healthTimer);
+        healthTimer = null;
+        videoStalled = false;
+      };
+      /** Frames decoded so far. `currentTime` is a fallback: it moves for the same reasons. */
+      const framesSeen = (v) => v.getVideoPlaybackQuality?.().totalVideoFrames ?? Math.round(v.currentTime * 30);
+
+      function watchVideo() {
+        stopVideoWatch();
+        const canvas = Object.assign(document.createElement("canvas"), { width: 32, height: 32 });
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        let checkBlack = true;
+        let blackSince = null;
+        let lastFrames = -1;
+        let stillSince = null;
+
+        healthTimer = setInterval(() => {
+          const v = $("her");
+          if (!v.videoWidth) return;
+
+          // ── still moving? ───────────────────────────────────────────────────────────────
+          const frames = framesSeen(v);
+          if (frames !== lastFrames) {
+            lastFrames = frames;
+            stillSince = null;
+            if (videoStalled) {
+              videoStalled = false;
+              $("idle").style.display = "none";
+              say("connected — say what you want to build");
+              log("video", "picture is back", "tool");
+            }
+          } else {
+            stillSince ??= Date.now();
+            if (!videoStalled && Date.now() - stillSince >= STALL_MS) {
+              videoStalled = true;
+              // The element is left alone: the frozen frame is still her, and blanking it
+              // would throw away the only thing on screen. What was missing was the sentence.
+              say("her video has stopped moving — the render may have dropped, or the call may be over");
+              log("video", `stalled: ${frames} frames, track still live`, "tool");
+            }
+            return; // a frozen frame is not evidence about brightness
+          }
+
+          // ── anything in it? ─────────────────────────────────────────────────────────────
+          if (!checkBlack || v.paused) return;
+          let brightest = 0;
+          try {
+            ctx.drawImage(v, 0, 0, 32, 32);
+            const { data } = ctx.getImageData(0, 0, 32, 32);
+            for (let i = 0; i < data.length; i += 4) {
+              const lum = data[i] + data[i + 1] + data[i + 2];
+              if (lum > brightest) brightest = lum;
+            }
+          } catch {
+            checkBlack = false; // a tainted canvas is not worth failing a call over
+            return;
+          }
+          if (brightest > 12) return void (checkBlack = false); // proven to have a picture in it
+          blackSince ??= Date.now();
+          if (Date.now() - blackSince < 6000) return;
+          checkBlack = false;
+          $("her").classList.remove("on");
+          $("idle").textContent = "the avatar is publishing a black video track";
+          $("idle").style.display = "";
+          say("connected, and she can hear you — but her video has no picture in it. Try a different AVATAR_ID.");
+          log("video", "black track: live and decoding, every frame empty", "tool");
+        }, 1000);
+      }
+
+      let turns = 0;
+      /** Only chase the bottom if the reader is already there — yanking someone who has
+       *  scrolled up to read what she said two turns ago is worse than not following. */
+      const atBottom = () => {
+        const el = $("log");
+        return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+      };
+      const log = (who, text, cls = "") => {
+        const open = $("thread").classList.contains("open");
+        // Reading scrollHeight forces a synchronous layout, so measure only while it is on
+        // screen — a collapsed log has nothing to scroll and nothing to see.
+        const follow = open && atBottom();
+        const d = document.createElement("div");
+        d.className = `turn ${cls}`;
+        d.append(Object.assign(document.createElement("div"), { className: "who", textContent: who }));
+        d.append(Object.assign(document.createElement("div"), { textContent: text }));
+        $("log").append(d);
+        if (follow) $("log").scrollTop = $("log").scrollHeight;
+        $("count").textContent = ++turns;
+      };
+
+      $("threadToggle").onclick = () => {
+        const open = $("thread").classList.toggle("open");
+        $("threadToggle").setAttribute("aria-expanded", String(open));
+        if (open) $("log").scrollTop = $("log").scrollHeight;
+      };
+      const tool = (text) => log("tool", text, "tool");
+
+      let room = null;
+      let sessionId = null;
+      let canPublish = false;
+      let maxSeconds = 0;
+
+      // The slot is held from the moment the grant lands — BEFORE the room exists. A tab
+      // closed in that gap tells no one. `pagehide` + sendBeacon is the one goodbye that
+      // outlives a closing page; the server ends the call and the slot frees now instead of
+      // at the join timeout. Ending is idempotent, so firing after a normal hang-up is fine.
+      addEventListener("pagehide", () => {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+      });
+
+      /** Hang up for real: leave the room AND tell the server, which frees the slot now
+       *  rather than when the platform notices the participant has gone (measured at about
+       *  eight seconds). `sessionId` is deliberately KEPT — `/api/publish` looks the script
+       *  name up by it, and hanging up should not stop you shipping what is on the panel.
+       *  Ending is idempotent, so the pagehide beacon firing afterwards costs nothing. */
+      function endCall() {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+        room?.disconnect();
+      }
+
+      /**
+       * The call has a hard cap, and hitting it does not look like an ending.
+       *
+       * At `maxSeconds` the media stops. The video element keeps `readyState` 4 and
+       * `paused` false, the track stays `live`, and `Disconnected` does not arrive for
+       * seconds — measured against a 300s cap at `activeSeconds: 299.693`. So the page
+       * showed a frozen picture under the word "connected", which reads as a bug in the
+       * renderer rather than as a call that simply ran out of time.
+       *
+       * Counting it down is the whole fix: the number is on screen the entire call, so the
+       * freeze arrives already explained — and the page hangs up itself rather than waiting
+       * to be told about an ending it could have predicted to the second.
+       */
+      let clockTimer = null;
+      const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      const stopClock = () => {
+        clearInterval(clockTimer);
+        clockTimer = null;
+        $("clock").textContent = "";
+      };
+      function startClock(seconds) {
+        stopClock();
+        if (!seconds) return;
+        const endsAt = Date.now() + seconds * 1000;
+        const paint = () => {
+          const left = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+          $("clock").textContent = mmss(left);
+          $("clock").classList.toggle("low", left <= 30);
+          if (left > 0) return;
+          stopClock();
+          endedUI(`this call reached its ${mmss(seconds)} limit — press Call to start another`);
+          endCall();
+        };
+        paint();
+        clockTimer = setInterval(paint, 1000);
+      }
+
+      /** One teardown for every way a call can end, so none of them leaves half the UI live. */
+      function endedUI(message) {
+        say(message);
+        $("dot").className = "dot";
+        stopVideoWatch();
+        stopClock();
+        $("her").classList.remove("on");
+        $("idle").textContent = "Press Call, then say what you want to build.";
+        $("idle").style.display = "";
+        $("audio").replaceChildren(); // her audio elements go with the call
+        $("hang").disabled = $("say").disabled = $("send").disabled = true;
+        $("call").disabled = false;
+        // Publish stays available. Hanging up does not delete what you built, and the
+        // server's record of this session outlives the room — so shipping the thing you
+        // just made should not require calling her back to ask permission.
+        $("publish").disabled = !currentHtml();
+        room = null;
+      }
+
+      /** Typed turns echo back as transcriptions of ourselves. We logged them at the
+       *  keystroke, so the echo is skipped — otherwise every typed turn appears twice. */
+      const sentByUs = new Set();
+
+      // ── the document, and its history ──────────────────────────────────────────────────
+      /** Every build lands here. `html` is the CLEAN document — what gets published. */
+      const versions = []; // { n, html, label }
+      let showing = 0; // 1-based; 0 means nothing built yet
+      const currentHtml = () => versions[showing - 1]?.html ?? "";
+
+      /**
+       * The preview preamble.
+       *
+       * Injected for the PREVIEW only and never for the published page, so what goes on the
+       * public URL is exactly the document the model wrote. It does two jobs:
+       *
+       * 1. Reports back. A page that throws on line 40 still renders the first 39 lines, so
+       *    "did it work" cannot be read off the frame — the frame has to say so.
+       * 2. Stands in for storage. This frame has an OPAQUE origin, where touching
+       *    `localStorage` THROWS rather than returning null, and a model asked for a todo
+       *    list reaches for it every time. An in-memory shim keeps that from being fatal, and
+       *    behaves the same way the published page will, because the model is told to keep
+       *    state in memory there too.
+       */
+      const PREAMBLE = `<script>(() => {
+  const send = (kind, text) => { try { parent.postMessage({ __studio: 1, kind, text: String(text).slice(0, 600) }, "*") } catch (e) {} };
+  // A FACTORY, called once per storage. One shared Map would make sessionStorage.setItem
+  // visible to localStorage.getItem and give both a combined length — which no browser does,
+  // so a page that used both would behave here in a way it never would once published.
+  const store = () => { const mem = new Map(); return {
+    getItem: (k) => mem.has(String(k)) ? mem.get(String(k)) : null,
+    setItem: (k, v) => void mem.set(String(k), String(v)), removeItem: (k) => void mem.delete(String(k)),
+    clear: () => mem.clear(), key: (i) => [...mem.keys()][i] ?? null, get length() { return mem.size } }; };
+  for (const n of ["localStorage", "sessionStorage"]) {
+    try { Object.defineProperty(window, n, { value: store(), configurable: true }) } catch (e) {}
+  }
+  window.alert = (m) => send("log", "alert: " + m);
+  window.confirm = () => true;
+  window.prompt = () => null;
+  addEventListener("error", (e) => send("error", e.message + " (line " + e.lineno + ")"));
+  addEventListener("unhandledrejection", (e) => send("error", "unhandled rejection: " + (e.reason && e.reason.message || e.reason)));
+  const ce = console.error.bind(console);
+  console.error = (...a) => { send("error", a.map(String).join(" ")); ce(...a) };
+})();<\/script>`;
+
+      /**
+       * Put the preamble inside the document, not in front of it.
+       *
+       * Prepending would push the doctype out of first position and drop the frame into quirks
+       * mode — the preview would then lay out differently from the published page, which is
+       * the one thing a preview may not do.
+       */
+      function withPreamble(html) {
+        // A FUNCTION replacement, not a string one: `$&` and friends are special in a
+        // replacement string, and the preamble is not something we want scanned for them.
+        const head = html.match(/<head[^>]*>/i);
+        if (head) return html.replace(head[0], () => head[0] + PREAMBLE);
+        const open = html.match(/<html[^>]*>/i) ?? html.match(/<!doctype[^>]*>/i);
+        return open ? html.replace(open[0], () => open[0] + PREAMBLE) : PREAMBLE + html;
+      }
+
+      /** Errors the running page reported since the last render. */
+      let liveErrors = [];
+      addEventListener("message", (e) => {
+        // The frame's origin is the string "null" — it has an opaque one, by design. So the
+        // sender is identified by its WINDOW, which cannot be spoofed, not by its origin.
+        if (e.source !== $("frame").contentWindow) return;
+        const d = e.data;
+        if (!d || d.__studio !== 1) return;
+        if (d.kind === "error") {
+          liveErrors.push(d.text);
+          $("notes").textContent = liveErrors.join("\n");
+          $("notes").classList.add("on");
+        }
+      });
+
+      function render(html) {
+        liveErrors = [];
+        $("notes").classList.remove("on");
+        $("notes").textContent = "";
+        $("empty").style.display = html ? "none" : "";
+        $("frame").srcdoc = html ? withPreamble(html) : "";
+        $("reload").disabled = $("pop").disabled = !html;
+        $("publish").disabled = !html || !sessionId;
+      }
+
+      function paintVersions() {
+        $("vers").replaceChildren(
+          ...versions.map((v) => {
+            const b = document.createElement("button");
+            b.textContent = `v${v.n}`;
+            b.title = v.label;
+            b.className = v.n === showing ? "on" : "";
+            b.onclick = () => show(v.n);
+            return b;
+          }),
+        );
+      }
+
+      function show(n) {
+        const v = versions[n - 1];
+        if (!v) return false;
+        showing = n;
+        $("code").textContent = v.html;
+        render(v.html);
+        paintVersions();
+        return true;
+      }
+
+      function addVersion(html, label) {
+        versions.push({ n: versions.length + 1, html, label });
+        show(versions.length);
+        return versions.length;
+      }
+
+      const setTab = (which) => {
+        document.body.className = `tab-${which}`;
+        $("tabPreview").classList.toggle("on", which === "preview");
+        $("tabCode").classList.toggle("on", which === "code");
+      };
+      $("tabPreview").onclick = () => setTab("preview");
+      $("tabCode").onclick = () => setTab("code");
+      $("reload").onclick = () => render(currentHtml());
+      $("pop").onclick = () => {
+        const url = URL.createObjectURL(new Blob([currentHtml()], { type: "text/html" }));
+        open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      };
+
+      // ── the build ──────────────────────────────────────────────────────────────────────
+      /**
+       * Ask the code model for a whole document and stream it into the Code tab.
+       *
+       * It sends STRINGS — a request, the current document, the errors — and never a turn
+       * with a role on it. A `system` turn in a request body would sit beside the build
+       * engine's own prompt and quietly outrank it; here there is no field to put one in.
+       */
+      async function writeDoc(request, errors = "", signal) {
+        setTab("code");
+        // One text node for the whole stream, kept and appended to. See `paint` below for why
+        // it is not just `$("code").textContent = ""` and a fresh assignment per frame.
+        const sink = document.createTextNode("");
+        $("code").replaceChildren(sink);
+        // The "nothing built yet" card covers the whole view. On a FIRST build it would sit
+        // on top of the code streaming in behind it, so the one visible sign that anything is
+        // happening would be hidden for the twenty seconds it matters most.
+        $("empty").style.display = "none";
+        let res;
+        try {
+          res = await fetch("/api/code", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ request, current: currentHtml(), errors }),
+            signal,
+          });
+        } catch (err) {
+          if (signal?.aborted) return { ok: false, doc: "", aborted: true, error: "superseded" };
+          return { ok: false, doc: "", error: `could not reach the build engine — ${err.message}` };
+        }
+        if (!res.ok || !res.body) {
+          // Say WHICH refusal it was. Swallowing this leaves an empty panel and no account of
+          // itself, which reads as the model having nothing to say rather than as a failure.
+          const body = await res.json().catch(() => ({}));
+          return { ok: false, doc: "", error: `the build engine refused (${res.status}) — ${body.error ?? "no reason given"}` };
+        }
+
+        // OpenAI-shaped SSE: accumulate `choices[].delta.content` and repaint as it arrives.
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let doc = "";
+
+        /**
+         * Repaint on a cadence, and APPEND — never re-set the whole string.
+         *
+         * Three costs hide in this one line, and each fix only removes one of them.
+         *
+         * 1. Painting per CHUNK read `scrollHeight` back after every delta, which is a forced
+         *    synchronous layout on a growing, wrapping <pre> — about 1200 of them. Throttling
+         *    to once a frame fixed that: 2762ms of main thread per build down to 716ms.
+         * 2. What survived is that `textContent = doc` REPLACES the text node, so the engine
+         *    re-shapes all N characters from scratch on every repaint. That is O(n x repaints)
+         *    and it does not register as a long task, because it is not one long task — it is
+         *    a thousand medium ones landing on whatever you were typing. Appending to a node
+         *    that already exists keeps the shaping already done for everything above.
+         * 3. And a frame is the wrong cadence. A 14 KB document takes gpt-4.1 about half a
+         *    minute, so once a frame is ~1500 repaints to show ~500 bytes a second — most of
+         *    them adding eight characters. Nobody can read the difference between that and
+         *    12Hz; the machine can measure it.
+         *
+         * Measured in this page, on a 14 KB document of distinct lines (repeated lines cache
+         * their shaping and would flatter every option equally):
+         *
+         *     replace, 1500 repaints    772ms      <- what this used to do
+         *     append,  1500 repaints    250ms
+         *     append,   300 repaints     49ms      <- what it does now
+         *
+         * The scroll is written, not read: assigning past the end clamps, so following the
+         * stream costs no `scrollHeight` measurement at all.
+         */
+        const PAINT_MS = 80;
+        let painted = 0;
+        let pending = 0;
+        let lastPaint = 0;
+        const flush = () => {
+          pending = 0;
+          lastPaint = performance.now();
+          if (doc.length > painted) {
+            sink.appendData(doc.slice(painted));
+            painted = doc.length;
+          }
+          $("code").scrollTop = 1e9;
+        };
+        const paint = () => {
+          if (pending) return;
+          // Scheduled on a timer for the cadence, then handed to rAF so the write still lands
+          // on a frame boundary rather than in the middle of one.
+          pending = setTimeout(() => requestAnimationFrame(flush), Math.max(0, PAINT_MS - (performance.now() - lastPaint)));
+        };
+
+        try {
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let nl;
+            while ((nl = buffer.indexOf("\n")) >= 0) {
+              const line = buffer.slice(0, nl).trim();
+              buffer = buffer.slice(nl + 1);
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === "[DONE]") continue;
+              try {
+                const piece = JSON.parse(data)?.choices?.[0]?.delta?.content;
+                if (!piece) continue;
+                doc += piece;
+                paint();
+              } catch {
+                // A frame split across chunks. The whole line re-arrives on the next read.
+              }
+            }
+          }
+        } catch (err) {
+          clearTimeout(pending); // nothing left to show; do not paint a stream that stopped
+          if (signal?.aborted) return { ok: false, doc: "", aborted: true, error: "superseded" };
+          return { ok: false, doc: "", error: `the build stream broke — ${err.message}` };
+        }
+        // The model is told not to fence its output; it sometimes does anyway, and a stray
+        // ``` in front of the doctype is enough to put the frame in quirks mode.
+        clearTimeout(pending);
+        const clean = doc.replace(/^\s*```[a-z]*\n?/i, "").replace(/```\s*$/, "").trim();
+        // The tail is still unpainted whatever happened. Append it if the text is unchanged;
+        // pay for one full re-shape only when a fence actually had to come off.
+        if (clean === doc) sink.appendData(doc.slice(painted));
+        else $("code").textContent = clean;
+        return { ok: Boolean(clean), doc: clean, error: clean ? "" : "the build engine returned nothing" };
+      }
+
+      /** A build that produced no page has to say so somewhere the user is already looking. */
+      function showBuildError(message) {
+        $("empty").style.display = "none";
+        $("notes").textContent = message;
+        $("notes").classList.add("on");
+        setTab("code");
+        $("code").textContent = `No page was produced.\n\n${message}`;
+      }
+
+      /** A tick after the frame has loaded, whatever it was going to throw has been thrown. */
+      const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      let job = null; // { id, status, version, errors, request }
+      let nextJob = 1;
+
+      /**
+       * Write it, render it, and if it threw, hand the errors back and try once more.
+       *
+       * Once, not three times: a page that renders is already on screen and already useful,
+       * so a second repair round mostly spends money re-deciding a layout the user can see.
+       * That is the opposite trade from a program whose only output was its exit state.
+       *
+       * `live()` is checked after every await. A superseded job must stop touching the panel
+       * the instant it loses it — otherwise its version lands on top of the newer build, and
+       * the user watches the thing they asked for get overwritten by the thing they didn't.
+       */
+      async function runBuild(j, request) {
+        const live = () => job === j;
+        j.status = "writing";
+        const first = await writeDoc(request, "", j.signal);
+        if (first.aborted || !live()) return void (j.status = "superseded");
+        if (!first.ok || !/<html|<!doctype|<body/i.test(first.doc)) {
+          j.status = "failed";
+          j.errors = first.error || "the build engine did not return a page";
+          showBuildError(j.errors); // she can poll for this; the panel should not stay blank
+          return;
+        }
+        j.version = addVersion(first.doc, request.slice(0, 80));
+        j.status = "rendering";
+        setTab("preview");
+        await settle(1400);
+        if (!live()) return void (j.status = "superseded");
+
+        if (liveErrors.length) {
+          j.status = "repairing";
+          const broke = liveErrors.join("\n");
+          const fixed = await writeDoc("Fix the errors.", broke, j.signal);
+          if (fixed.aborted || !live()) return void (j.status = "superseded");
+          if (fixed.ok && /<html|<!doctype|<body/i.test(fixed.doc)) {
+            j.version = addVersion(fixed.doc, `repair: ${request.slice(0, 60)}`);
+            setTab("preview");
+            await settle(1400);
+            if (!live()) return void (j.status = "superseded");
+          }
+        }
+        // A page with a leftover console error is still a page. `done` means it is on screen;
+        // `errors` is what she should mention, not a reason to call the build a failure.
+        j.status = "done";
+        j.errors = liveErrors.join("\n").slice(0, 400);
+      }
+
+      // ── publishing ─────────────────────────────────────────────────────────────────────
+      let pub = null; // { status: 'publishing' | 'live' | 'failed', url, error }
+
+      async function runPublish() {
+        pub = { status: "publishing", url: null, error: "" };
+        $("strip").className = "strip on";
+        $("strip").replaceChildren(document.createTextNode("Publishing…"));
+        $("publish").disabled = true;
+        try {
+          const res = await fetch("/api/publish", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            // The document, and the session id we were given. NOT a script name — the server
+            // owns that, and a page that could choose one could overwrite any Worker there.
+            body: JSON.stringify({ session_id: sessionId, html: currentHtml() }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(body.error ?? `publish failed (${res.status})`);
+          pub = { status: "live", url: body.url, error: "" };
+          const a = Object.assign(document.createElement("a"), {
+            href: body.url, textContent: body.url, target: "_blank", rel: "noopener noreferrer",
+          });
+          const copy = Object.assign(document.createElement("button"), { textContent: "Copy" });
+          copy.onclick = () => navigator.clipboard?.writeText(body.url);
+          $("strip").replaceChildren(document.createTextNode("Live →"), a, copy);
+          tool(`published → ${body.url}`);
+        } catch (err) {
+          pub = { status: "failed", url: null, error: String(err?.message ?? err) };
+          const s = Object.assign(document.createElement("span"), { className: "err", textContent: pub.error });
+          $("strip").replaceChildren(s);
+          tool(`publish failed — ${pub.error}`);
+        } finally {
+          $("publish").disabled = !currentHtml() || !sessionId;
+        }
+      }
+
+      // ── her tools ──────────────────────────────────────────────────────────────────────
+      // Descriptions are written FOR HER — they are the only thing that tells her model when
+      // a tool is the right move, so they say WHEN to call it, not just what it returns.
+      //
+      // The deadline is 2.5 seconds. A build is tens of seconds and a publish is about ten,
+      // so NEITHER can return its result: both hand back a receipt and keep their real
+      // promise on the panel, and she learns the outcome the way the user does — by asking.
+      const TOOLS = {
+        build_app: {
+          description:
+            "Start building or changing the web app from something the user has just asked for, passing their request in their own words. Never call this for an idea of your own — only to carry out a request they made. Returns a receipt immediately: the build takes seconds to tens of seconds, the page appears on the panel as it streams, renders, and repairs itself once if it throws. Use check_app to learn the outcome. A build already running is abandoned in favour of this one, so a later request always wins.",
+          parameters: {
+            type: "object",
+            properties: {
+              request: {
+                type: "string",
+                description:
+                  "What to build or change, in the user's words. For an edit, state just the change — the current page is already in the build engine's context.",
+              },
+            },
+            required: ["request"],
+            additionalProperties: false,
+          },
+          execute: ({ request }) => {
+            const text = String(request ?? "").trim();
+            if (!text) return { status: "empty", message: "say what to build" };
+            /**
+             * A running build is SUPERSEDED, not a reason to refuse.
+             *
+             * Returning {status:'busy'} is the right trade when every build is one the user
+             * asked for — two requests in twenty seconds, keep the first. It stops being the
+             * right trade the moment a build can be one SHE started: an invented build takes
+             * tens of seconds, and the user's actual request, arriving inside that window,
+             * came back "busy" and never reached the build engine at all. She then says a
+             * build is running, which is true, about a page nobody asked for.
+             *
+             * The brief is what stops her inventing them. This is what stops an invented one
+             * from eating the real request if she does it anyway — and it is better behaviour
+             * regardless, because the last thing said is the thing that is wanted. Aborting
+             * the stream also stops the superseded build costing tokens it can no longer spend.
+             */
+            if (job && job.status !== "done" && job.status !== "failed") {
+              tool(`→ superseding job ${job.id} (${job.status})`);
+              job.abort();
+            }
+            const control = new AbortController();
+            const j = {
+              id: nextJob++, status: "writing", version: 0, errors: "",
+              signal: control.signal, abort: () => control.abort(),
+            };
+            job = j;
+            // Deliberately not awaited: the receipt goes back inside the deadline while the
+            // build keeps its real promise on the panel. The catch is load-bearing — a thrown
+            // fetch mid-stream would otherwise leave this job stuck at "writing", and the
+            // panel would never explain itself.
+            runBuild(j, text).catch((err) => {
+              j.status = "failed";
+              j.errors = String(err?.message ?? err);
+            });
+            tool(`→ job ${j.id} started`);
+            // A receipt, not a page. Saying "started" and not "done" is what keeps her from
+            // announcing a result that is tens of seconds away.
+            return { job: j.id, status: "started" };
+          },
+        },
+
+        check_app: {
+          description:
+            "The state of the studio: how the current build is going, what the page reported when it ran, which versions exist, and which one is on screen. Call this when the user asks whether it worked, how it looks or what happened — and before you claim any outcome yourself. Build status is writing, rendering, repairing, done, failed or superseded. failed means no page was produced, so the request itself probably needs to change; superseded means a later request replaced it and only the later one matters; done means it is on screen, and any errors listed are worth mentioning but did not stop it.",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+          execute: () => {
+            const result = {
+              build: job
+                ? { job: job.id, status: job.status, version: job.version, errors: job.errors.slice(0, 300) }
+                : { status: "idle", message: "nothing built yet — call build_app first" },
+              versions: versions.length,
+              showing,
+            };
+            if (canPublish) result.publish = pub ? { status: pub.status, url: pub.url, error: pub.error.slice(0, 200) } : { status: "unpublished" };
+            tool(`→ ${result.build.status}, ${versions.length} version(s)`);
+            // The 8 KB wire cap is enforced on the ENCODED result and REFUSES, never
+            // truncates — and JSON escaping can sextuple a control character, which a page's
+            // error text is free to be full of. So cap what the encoder will see, not what
+            // the string length claims.
+            while (JSON.stringify(result).length > 7000 && result.build.errors) {
+              result.build.errors = result.build.errors.slice(0, Math.floor(result.build.errors.length / 2));
+            }
+            return result;
+          },
+        },
+
+        restore_version: {
+          description:
+            "Put an earlier version of the app back on screen. Call this when the user asks to undo, go back, or return to how it was. Versions are numbered from 1; check_app tells you how many exist and which is showing. The restored version becomes the one the next build edits from.",
+          parameters: {
+            type: "object",
+            properties: {
+              version: { type: "integer", description: "Which version to show, counting from 1." },
+            },
+            required: ["version"],
+            additionalProperties: false,
+          },
+          execute: ({ version }) => {
+            const n = Number(version);
+            if (!show(n)) {
+              tool(`→ no version ${version}`);
+              return { ok: false, versions: versions.length, message: `there is no version ${version}` };
+            }
+            tool(`→ restored v${n}`);
+            return { ok: true, showing: n, versions: versions.length };
+          },
+        },
+      };
+
+      /**
+       * Only offered when the server says it is configured.
+       *
+       * A tool she can call and that always fails is worse than one that never existed: she
+       * will try it, apologise, and try it again. So an unconfigured deployment ships neither
+       * the verb nor the line about it in her brief.
+       */
+      const PUBLISH_TOOL = {
+        publish_app: {
+          description:
+            "Put the current version of the app on a public URL anyone can open. Call this when the user asks to publish, deploy, ship, or share it. Returns a receipt immediately; it takes about ten seconds. check_app reports the publish status and the live URL when it is ready. Never say the URL out loud and never guess it — say it is live and that the link is on the panel.",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+          execute: () => {
+            if (!currentHtml()) {
+              tool("→ nothing to publish");
+              return { status: "empty", message: "there is no app yet — build one first" };
+            }
+            if (pub?.status === "publishing") return { status: "publishing", message: "already publishing — check_app for progress" };
+            void runPublish();
+            tool("→ publishing…");
+            return { status: "started" };
+          },
+        },
+      };
+
+      // ── the call ───────────────────────────────────────────────────────────────────────
+      $("call").onclick = async () => {
+        $("call").disabled = true;
+        $("dot").className = "dot busy";
+        say("starting…");
+
+        const res = await fetch("/api/call", { method: "POST" });
+        if (res.status === 429) {
+          const q = await res.json(); // a queue, not a failure
+          say(`all slots busy — position ${q.position ?? "?"}, retrying…`);
+          setTimeout(() => {
+            $("call").disabled = false;
+            $("call").click();
+          }, q.retryAfterMs ?? 3000);
+          return;
+        }
+        if (!res.ok) {
+          say(res.status === 402 ? "out of credits" : `could not start (${res.status})`);
+          $("dot").className = "dot";
+          $("call").disabled = false;
+          return;
+        }
+
+        // The body IS the grant, relayed byte-for-byte. Read the wire keys directly.
+        const grant = await res.json();
+        sessionId = grant.session_id; // held from HERE — the pagehide beacon needs it now
+        let sawVideo = false;
+        room = new Room();
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === Track.Kind.Video) {
+            sawVideo = true;
+            track.attach($("her"));
+            $("her").classList.add("on");
+            $("idle").style.display = "none";
+            watchVideo();
+          }
+          if (track.kind === Track.Kind.Audio) $("audio").append(track.attach());
+        });
+
+        // A track can end without the call ending. Unhandled, the element keeps the dead
+        // stream and the stage stays a black rectangle that still claims to be her — the
+        // failure looks identical to a picture that has simply gone dark.
+        //
+        // It is the CLEAN version of losing the picture, and the rarer one. The track going
+        // quiet while staying `live` fires nothing at all, which is what `watchVideo` is for.
+        room.on(RoomEvent.TrackUnsubscribed, (track) => {
+          if (track.kind === Track.Kind.Video) {
+            track.detach($("her")); // detach from OUR element; it stays in the document
+            $("her").classList.remove("on");
+            $("idle").textContent = "her video stopped";
+            $("idle").style.display = "";
+            stopVideoWatch();
+          } else {
+            for (const el of track.detach()) el.remove(); // the audio elements we created
+          }
+        });
+
+        // A reconnect freezes the picture for as long as it takes. Unsaid, that is
+        // indistinguishable from the render having died — and the recovery is invisible too,
+        // so a page that says nothing here trains you to reload a call that was coming back.
+        room.on(RoomEvent.Reconnecting, () => {
+          $("dot").className = "dot busy";
+          say("connection dropped — reconnecting…");
+        });
+        room.on(RoomEvent.Reconnected, () => {
+          $("dot").className = "dot live";
+          say("reconnected — say what you want to build");
+        });
+
+        room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+          const mine = participant?.identity === room.localParticipant.identity;
+          for (const s of segments) {
+            if (!s.final) continue;
+            // A typed turn echoes back as a transcription of ourselves, already logged at
+            // the keystroke — `delete` is the membership test and the cleanup in one move.
+            if (mine && sentByUs.delete(s.text)) continue;
+            log(mine ? "you" : "her", s.text, mine ? "" : "her");
+          }
+        });
+
+        room.on(RoomEvent.Disconnected, () => endedUI("call ended"));
+
+        await room.connect(grant.livekit_url, grant.participant_token);
+        // The GRANT's cap, not the one this server asked for. They are normally the same and
+        // the grant is the one that will actually be enforced — a platform free to clamp a
+        // request downward would otherwise leave the clock running after the media stopped,
+        // which is the exact confusion the clock exists to remove.
+        startClock(Number(grant.max_session_seconds) || maxSeconds);
+
+        // Registered BEFORE the microphone is asked for.
+        //
+        // `setMicrophoneEnabled` is a permission prompt, and a permission prompt is a human
+        // deciding — this page waits up to fifteen seconds for one. She starts talking the
+        // moment she connects, so every second spent here is a second she can call a tool
+        // that is not armed yet, and the failure is silent on both sides: she gets an error
+        // the user never hears, and the panel just stays empty while she talks.
+        //
+        // `attachAvatarTools` waits for the agent by itself, so this does not need timing:
+        // joining the room and ARMING the registration method are not the same instant, and
+        // registering in that gap fails with "method not supported at destination" — the SAME
+        // error a session without the `client_tools` grant produces. It retries because one
+        // attempt cannot tell those apart, and guessing wrong sends you to the wrong layer.
+        try {
+          const reg = await attachAvatarTools(room, canPublish ? { ...TOOLS, ...PUBLISH_TOOL } : TOOLS, {
+            timeoutMs: 15000,
+            onInvoke: (name, args) => tool(`${name}(${JSON.stringify(args)})`),
+          });
+          tool(`armed: ${reg.accepted.join(", ") || "(none)"}`);
+          // A rejected tool is silently uncallable, which reads exactly like her ignoring it.
+          for (const r of reg.rejected) tool(`rejected: ${r.name} — ${r.reason}`);
+        } catch (err) {
+          tool(`not armed: ${err.message}`);
+          say("her tools did not arm — she can talk, but she cannot build.");
+        }
+
+        const mic = await startMic(room);
+        if (!mic.ok) say(`connected, but the microphone did not start. ${mic.why}`);
+        else say("connected — say what you want to build");
+
+        $("dot").className = "dot live";
+        $("hang").disabled = $("say").disabled = $("send").disabled = false;
+        $("publish").disabled = !currentHtml();
+        $("say").focus();
+
+        // A call whose renderer never joined connects, talks, arms its tools, and publishes
+        // no video at all — measured repeatedly, on two different `ready`, video-sourced
+        // avatars, with audio and the tool plane both working. Nothing reports it, and the
+        // stage looks exactly like a call that has not started yet, so the page has to notice
+        // the absence itself.
+        //
+        // It says WHO is in the room and what they published, because the two causes want
+        // different people: a room with no agent in it is capacity or dispatch, and an agent
+        // that joined and published only audio is the renderer. Guessing between those from a
+        // blank rectangle is how an afternoon goes.
+        setTimeout(() => {
+          if (!room || sawVideo) return;
+          const who = [...room.remoteParticipants.values()].map(
+            (p) => `${p.identity}[${[...p.trackPublications.values()].map((t) => t.kind).join("+") || "no tracks"}]`,
+          );
+          $("idle").textContent = "no video track arrived";
+          say("connected and she can hear you, but her renderer never published video.");
+          log("video", `no video within 12s — room holds: ${who.join(", ") || "nobody"}`, "tool");
+        }, 12000);
+      };
+
+      async function sendTyped() {
+        const text = $("say").value.trim();
+        if (!room || !text) return;
+        $("say").value = "";
+        log("you", text);
+        sentByUs.add(text);
+        // A plain turn, nothing more. Whether it is a build is HER call — the page does not
+        // route on keywords, and never has.
+        await room.localParticipant.sendText(text, { topic: "lk.chat" });
+      }
+      $("send").onclick = sendTyped;
+      $("say").addEventListener("keydown", (e) => {
+        // Enter sends, Shift+Enter is a newline — the box is two lines tall for a reason.
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          void sendTyped();
+        }
+      });
+
+      $("hang").onclick = () => endCall();
+      $("publish").onclick = () => void runPublish();
+
+      // What this deployment can do. A separate route because the mint response is the grant,
+      // relayed byte-for-byte — a field of ours folded into it is the reshape the browser SDK
+      // rejects outright.
+      //
+      // It doubles as a version check. This page is served from disk on every request, so a
+      // server left running from before an edit hands you a NEW page on OLD routes: builds
+      // then fail on a field the old handler does not read, and the only symptom is a panel
+      // that never fills. Cheaper to say so than to debug it twice.
+      fetch("/api/config")
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`config ${r.status}`))))
+        .then((cfg) => {
+          canPublish = Boolean(cfg.publish);
+          maxSeconds = Number(cfg.maxSeconds) || 0;
+          $("publish").hidden = !canPublish;
+        })
+        .catch(() => {
+          say("this page is newer than the server serving it — restart the server before building.");
+          $("dot").className = "dot busy";
+        });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,134 @@
+name: Release all packages
+
+# Publishes every public lib at the version committed in its package.json (six of the
+# seven workspaces; libs/contracts is private and bundled into libs/client).
+#
+# release-react.yml is the CONTINUOUS lane: it ships libs/client as an unversioned
+# prerelease on every main push, so consumers can track main. This file is the RELEASE
+# lane: it runs off an annotated `v*` tag and publishes the whole set at their real
+# semver, on the `latest` dist-tag. Splitting them is deliberate — a prerelease train and
+# a release are different decisions and should not share a trigger.
+#
+#   git tag -a v0.2.1 -m "0.2.1" && git push origin v0.2.1   -> publish all 6 at 0.2.1
+#   workflow_dispatch (dry_run defaults true)                -> build + pack, publish nothing
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build + validate only (no publish)"
+        type: boolean
+        default: true
+
+# A tag push and a manual run must never interleave two publishes of the same version.
+concurrency:
+  group: release-all
+  cancel-in-progress: false
+
+jobs:
+  npm:
+    # Publish ONLY from the public repo — same reasoning as release-react.yml: an OIDC
+    # publish writes the source repo and commit into Sigstore's public transparency log,
+    # which is append-only and permanent. Naming the private repo there cannot be undone.
+    if: github.repository == 'theinfluencecompany/realtime-avatar-sdk'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets GitHub mint the OIDC token npm exchanges for short-lived publish credentials.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+          # No `scope:` — every package here is unscoped.
+      # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10.
+      - run: npm install -g npm@latest
+      - run: npm install
+      - run: npm run build
+      # The gate that matters. Scans shipped JS and .d.ts for internal identifiers before
+      # anything leaves the runner. Vacuous without a term list, which is correct for a
+      # fork and is why the armed run also happens at sync time in the private repo.
+      - run: npm run boundary
+      # The other half of the boundary, and the half that scales. `boundary` asks whether
+      # anything shipped mentions a term we listed; this asks whether every name we export
+      # is one we meant to export. A new internal export fails by default.
+      - run: npm run surface
+
+      # The list below is written out rather than globbed, so it has to be kept in step by
+      # hand — and the failure is silent in both directions: a new lib never ships, or one
+      # meant to stay internal does. libs/contracts is exactly that case (marked private,
+      # bundled into libs/client), so this asserts the list IS the set of publishable
+      # workspaces before a tag can act on it.
+      - name: Verify the publish list matches the non-private workspaces
+        run: |
+          set -euo pipefail
+          expected=$(node -e '
+            const {readdirSync,readFileSync}=require("node:fs");
+            const dirs=readdirSync("libs").filter(d=>{
+              try { return !JSON.parse(readFileSync(`libs/${d}/package.json`)).private } catch { return false }
+            });
+            console.log(dirs.sort().join(" "));
+          ')
+          actual=$(printf "%s\n" http-client browser tools proxy mcp client | sort | tr "\n" " " | sed "s/ $//")
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::publish list is [$actual] but the non-private workspaces are [$expected]"
+            exit 1
+          fi
+          echo "publish list matches: $actual"
+
+      # BEFORE publishing, not after: a tag that disagrees with what the packages declare
+      # would otherwise ship 0.2.1 under a v0.3.0 tag, and npm versions cannot be recalled.
+      - name: Verify the tag matches the declared versions
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          fail=0
+          for dir in http-client browser tools proxy mcp client; do
+            version=$(node -p "require('./libs/$dir/package.json').version")
+            if [ "$version" != "$tag" ]; then
+              echo "::error::libs/$dir is $version but the tag says $tag"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      # Dependency order, not alphabetical: proxy and mcp declare a real `realtime-avatar`
+      # dependency, so publishing a dependent before its dependency leaves a window where
+      # `npm i` on it resolves nothing.
+      #
+      # libs/contracts is absent on purpose. It is bundled into libs/client (tsup
+      # noExternal, dts.resolve) and imported by nothing else, so nothing outside this
+      # monorepo can need it — while publishing it would commit us to its whole export list
+      # as a supported public API. It is marked private, and the step above fails if that
+      # ever stops being true; scripts/check-public-surface.mjs bounds what it may export.
+      #
+      # Each package is skipped if that exact version is already on the registry, so a
+      # re-run after a partial failure completes the set instead of aborting on the first
+      # already-published name. npm would reject the duplicate anyway (E403), and a
+      # half-published tag is the state you most want to be able to retry.
+      - name: Publish (or dry-run)
+        env:
+          DRY: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          for dir in http-client browser tools proxy mcp client; do
+            name=$(node -p "require('./libs/$dir/package.json').name")
+            version=$(node -p "require('./libs/$dir/package.json').version")
+            if [ "$DRY" = "true" ]; then
+              echo "::group::dry-run $name@$version"
+              ( cd "libs/$dir" && npm publish --dry-run --access public )
+              echo "::endgroup::"
+              continue
+            fi
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "· $name@$version already published — skipping"
+              continue
+            fi
+            echo "::group::publish $name@$version"
+            ( cd "libs/$dir" && npm publish --access public )
+            echo "::endgroup::"
+          done

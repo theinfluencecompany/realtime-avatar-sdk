@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "realtime-avatar": [
+        "./libs/http-client/src/index.ts"
+      ]
+    },
+    "baseUrl": "."
+  },
+  "include": [
+    "libs/http-client/src",
+    "libs/http-client/test",
+    "libs/proxy/src",
+    "libs/proxy/test",
+    "libs/contracts/src",
+    "libs/tools/src",
+    "libs/tools/test",
+    "libs/browser/src",
+    "libs/browser/test", "libs/mcp/src", "libs/mcp/test"
+  ]
+}

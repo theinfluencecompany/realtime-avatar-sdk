@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>She will die on this hill</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap");
+
+      :root {
+        color-scheme: dark;
+        --pink: #ff5fa2;
+        --pink-soft: #ffb3d2;
+        --cyan: #5fe6ff;
+        --cream: #fff3ec;
+        --ink: #120a12;
+        --card: #180f1acc;
+        --display: "Fredoka", ui-rounded, system-ui, sans-serif;
+        --chrome: linear-gradient(96deg, #ffd9ec 0%, #ff8ec2 30%, #fff0e6 55%, #9fe9ff 82%, #ffd9ec 100%);
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent }
+      body {
+        margin: 0; min-height: 100svh; color: var(--cream);
+        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 16px; padding: 30px 16px 44px; position: relative; overflow-x: hidden;
+        background: #0c070d;
+      }
+      /* The room. A hosted still sits under a warm vignette so text stays legible; the CSS glow
+         is the fallback when the image is absent, so the mood survives offline. */
+      #room {
+        position: fixed; inset: 0; z-index: 0; background-size: cover; background-position: center;
+        background-color: #170d17;
+      }
+      #room::after {
+        content: ""; position: absolute; inset: 0;
+        background:
+          radial-gradient(90% 60% at 50% 42%, transparent, #0c070def 96%),
+          radial-gradient(60% 40% at 18% 8%, #ff5fa233, transparent 60%),
+          radial-gradient(50% 40% at 88% 88%, #5fe6ff1f, transparent 60%);
+      }
+      .wrap { position: relative; z-index: 1; width: min(560px, 96vw); display: flex; flex-direction: column; align-items: center; gap: 14px }
+
+      .badge {
+        font: 600 11px/1 var(--display); letter-spacing: .26em; text-transform: uppercase; color: var(--cyan);
+        padding: 7px 14px; border-radius: 999px; border: 1px solid #5fe6ff5c; background: #06121533;
+        backdrop-filter: blur(3px); text-shadow: 0 0 10px #5fe6ff55;
+      }
+      .hill {
+        margin: 2px 0 4px; text-align: center; font-family: var(--display); font-weight: 700;
+        font-size: clamp(24px, 6.6vw, 40px); line-height: 1.05; letter-spacing: -.01em;
+        background: var(--chrome); background-size: 200% 200%; -webkit-background-clip: text; background-clip: text; color: transparent;
+        filter: drop-shadow(0 2px 14px #ff5fa244); animation: shimmer 7s ease-in-out infinite;
+      }
+      .hill.idle { color: #b79db2; -webkit-text-fill-color: #b79db2; font-weight: 600; font-size: clamp(17px, 4vw, 22px) }
+      @keyframes shimmer { 50% { background-position: 100% 50% } }
+
+      .card {
+        width: 100%; border-radius: 22px; padding: 12px; background: var(--card);
+        border: 1px solid #ffffff1f; backdrop-filter: blur(9px);
+        box-shadow: 0 24px 60px -24px #000, 0 0 0 1px #ffffff10 inset;
+      }
+      .bar { height: 12px; border-radius: 999px; background: #00000066; overflow: hidden; box-shadow: inset 0 1px 3px #000a }
+      .bar > span { display: block; height: 100%; width: 0%; border-radius: 999px;
+        background: linear-gradient(90deg, #7a4bff, var(--pink) 45%, var(--cyan)); transition: width .7s cubic-bezier(.2,.9,.25,1) }
+      .meta { display: flex; justify-content: space-between; align-items: baseline; margin: 7px 2px 10px;
+        font-size: 12px; font-variant-numeric: tabular-nums }
+      .meta .lbl { color: var(--pink-soft); letter-spacing: .02em }
+      .meta .t { color: var(--cyan); font-family: var(--display); font-weight: 500 }
+
+      .stage { position: relative; aspect-ratio: 4/3; border-radius: 15px; overflow: hidden;
+        background: #0b070c center/cover no-repeat; display: grid; place-items: center }
+      .stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .5s }
+      .stage video.on { opacity: 1 }
+      .idle { position: relative; z-index: 1; font-size: 12.5px; color: #cdb6c9; background: #0009; padding: 6px 12px; border-radius: 999px }
+      .idle.hide { display: none }
+      #sound { position: absolute; inset: 0; z-index: 3; display: none; place-items: center; background: #0c070dbb; cursor: pointer }
+      #sound.show { display: grid }
+      #sound span { font-family: var(--display); font-weight: 600; color: var(--cyan); background: #000000aa; padding: 9px 15px; border-radius: 999px }
+
+      .caps { padding: 11px 6px 3px; display: flex; flex-direction: column; gap: 7px; min-height: 20px }
+      .cap { display: flex; gap: 9px; align-items: baseline; font-size: 14px; line-height: 1.4 }
+      .cap b { flex: 0 0 auto; font: 600 10px/1.6 var(--display); letter-spacing: .12em; text-transform: uppercase; padding-top: 1px }
+      .cap.you b { color: var(--cyan) } .cap.her b { color: var(--pink-soft) }
+      .cap.you span { color: #dcefff } .cap.her span { color: var(--cream) }
+      .cap[hidden] { display: none }
+
+      .controls { display: flex; gap: 8px; width: 100%; align-items: center; justify-content: center; flex-wrap: wrap }
+      button, input[type="text"] { font: inherit; font-weight: 600; border-radius: 999px; border: 1px solid #ffffff26; background: #ffffff14; color: var(--cream); padding: 12px 18px }
+      input[type="text"] { flex: 1; min-width: 220px; text-align: left; font-weight: 500 }
+      input::placeholder { color: #ffffff66 }
+      button { cursor: pointer; transition: transform .12s, filter .12s }
+      button:active { transform: scale(.96) }
+      button.primary { background: linear-gradient(135deg, var(--pink), #b06bff); border-color: transparent; color: #fff;
+        font-family: var(--display); font-weight: 600; letter-spacing: .01em; box-shadow: 0 8px 22px -8px #ff5fa2aa; padding: 13px 22px }
+      button.ghost { background: #ffffff12 }
+      button:disabled { opacity: .45; cursor: default; transform: none }
+      [hidden] { display: none !important }
+
+      .won { display: none; width: 100%; text-align: center; padding: 15px 16px; border-radius: 16px; color: #1b0a15; font-weight: 700;
+        background: linear-gradient(135deg, var(--cyan), var(--pink) 70%); box-shadow: 0 14px 40px -14px #ff5fa2aa }
+      .won.on { display: block; animation: pop .5s ease }
+      @keyframes pop { from { transform: translateY(8px); opacity: 0 } }
+      .won .k { font: 600 11px/1 var(--display); letter-spacing: .2em; text-transform: uppercase; opacity: .75 }
+      .won .m { font-family: var(--display); font-size: 18px; margin-top: 3px }
+    </style>
+  </head>
+  <body>
+    <div id="room"></div>
+    <div class="wrap">
+      <div class="badge">She will die on this hill</div>
+      <h1 class="hill idle" id="hill">press start — she picks her hill</h1>
+
+      <div class="card">
+        <div class="bar"><span id="crack"></span></div>
+        <div class="meta"><span class="lbl" id="crack-lbl">conviction: rock solid</span><span class="t" id="timer">0:00</span></div>
+        <div class="stage" id="stage">
+          <video id="her" autoplay playsinline></video>
+          <span class="idle" id="idle">press start</span>
+          <div id="sound"><span>🔊 tap for sound</span></div>
+        </div>
+        <div class="caps">
+          <div class="cap you" id="cap-you" hidden><b>you</b><span></span></div>
+          <div class="cap her" id="cap-her" hidden><b>her</b><span></span></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="primary" id="start">start the argument</button>
+        <input type="text" id="say" placeholder="argue out loud, or type here…" hidden />
+        <button class="ghost" id="hang" hidden>give up</button>
+      </div>
+
+      <div class="won" id="won"><div class="k">✦ she caved ✦</div><div class="m">you changed her mind.</div></div>
+    </div>
+
+    <script type="module">
+      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+      import { attachAvatarTools } from "/sdk/tools.js";
+
+      const $ = (id) => document.getElementById(id);
+      const say = (t) => { $("idle").classList.remove("hide"); $("idle").textContent = t; };
+      const clamp = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+
+      // The scene — a hosted room still and an optional face for the stage. Both come from the
+      // server's env (portable: unset = a CSS-glow room and a live-only stage), so the same page
+      // dresses itself for whatever character a host launches it with.
+      (async () => {
+        try {
+          const s = await (await fetch("/api/scene")).json();
+          if (s.bgUrl) $("room").style.backgroundImage = `url("${s.bgUrl}")`;
+          if (s.posterUrl) $("stage").style.backgroundImage = `url("${s.posterUrl}")`;
+        } catch { /* the CSS fallback already carries the mood */ }
+      })();
+
+      // ── the conviction meter, driven ONLY by her tool calls ────────────────────────────────────
+      function setCrack(pct) {
+        const p = clamp(pct);
+        $("crack").style.width = p + "%";
+        $("crack-lbl").textContent = p >= 100 ? "conviction: cracked" : p <= 3 ? "conviction: rock solid" : `conviction cracking: ${p}%`;
+      }
+      const caps = { you: $("cap-you"), her: $("cap-her") };
+      function caption(who, text) {
+        const el = caps[who === "you" ? "you" : "her"];
+        el.querySelector("span").textContent = text;
+        el.hidden = false;
+      }
+
+      let room = null, sessionId = null, tick = null;
+      const sentByUs = new Set();
+
+      addEventListener("pagehide", () => {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+      });
+
+      // Nobody asks her for a tool. The model that is arguing is the one that decides how it is
+      // going — it cracks its own conviction as points land, and concedes when it has genuinely lost.
+      const TOOLS = {
+        crack: {
+          description:
+            "Report how much your conviction has CRACKED, 0-100 (0 = rock solid, 100 = about to give in). " +
+            "Call it whenever a point genuinely lands and weakens you — never for a repeat or a point you " +
+            "already answered. Small, honest moves. Do not narrate the number.",
+          parameters: { type: "object", properties: { percent: { type: "number", description: "0-100" } }, required: ["percent"] },
+          execute: ({ percent }) => { setCrack(percent); return "noted"; },
+        },
+        concede: {
+          description:
+            "Declare that the user has won and genuinely changed your mind. Call this ONLY when they have " +
+            "made a novel argument that actually defeats your position — then admit it out loud in your own words.",
+          parameters: { type: "object", properties: {} },
+          execute: () => {
+            setCrack(100);
+            $("won").classList.add("on");
+            $("won").scrollIntoView({ behavior: "smooth" });
+            say("she conceded");
+            $("say").disabled = true;
+            return "concession recorded — now say, in your own words, that they changed your mind";
+          },
+        },
+      };
+
+      async function startMic(room) {
+        if (!navigator.mediaDevices) return { ok: false, why: "This page is not a secure context. Use https, or http://localhost." };
+        try {
+          const noAnswer = new Promise((r) => setTimeout(() => r("no-answer"), 15000));
+          const ok = room.localParticipant.setMicrophoneEnabled(true).then(() => "ok");
+          if ((await Promise.race([ok, noAnswer])) === "no-answer") return { ok: false, why: "The mic prompt was not answered — look in the address bar." };
+          return { ok: true };
+        } catch (err) {
+          const m = err?.message ?? String(err);
+          if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError")
+            return { ok: false, why: /by system|system permission/i.test(m) ? "macOS is blocking the browser: System Settings > Privacy & Security > Microphone, then RESTART it." : "This site is blocked from the mic — allow it from the address-bar icon and reload." };
+          if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") return { ok: false, why: "No microphone is available." };
+          if (err?.name === "NotReadableError" || err?.name === "TrackStartError") return { ok: false, why: "Another app or tab is holding the microphone." };
+          return { ok: false, why: m };
+        }
+      }
+
+      $("start").onclick = async () => {
+        $("start").disabled = true;
+        say("finding her…");
+        const res = await fetch("/api/debate", { method: "POST" });
+        if (res.status === 429) {
+          const q = await res.json();
+          say(`all slots busy — position ${q.position ?? "?"}, retrying…`);
+          return void setTimeout(() => { $("start").disabled = false; $("start").click(); }, q.retryAfterMs ?? 3000);
+        }
+        if (res.status === 402) return void (say("out of credits — top up to play 💸"), ($("start").disabled = false));
+        if (!res.ok) return void (say(`could not start (${res.status})`), ($("start").disabled = false));
+        const body = await res.json(); // { grant, claim }
+        $("hill").textContent = body.claim;
+        $("hill").classList.remove("idle");
+        setCrack(0);
+        await join(body.grant);
+      };
+
+      async function join(grant) {
+        sessionId = grant.session_id;
+        room = new Room();
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === Track.Kind.Video) { track.attach($("her")); $("her").classList.add("on"); $("idle").classList.add("hide"); }
+          if (track.kind === Track.Kind.Audio) { const a = track.attach(); a.autoplay = true; document.body.append(a); }
+        });
+        room.on(RoomEvent.AudioPlaybackStatusChanged, () => $("sound").classList.toggle("show", !room.canPlaybackAudio));
+        $("sound").onclick = () => room?.startAudio().then(() => $("sound").classList.remove("show"));
+        room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+          const mine = participant?.identity === room.localParticipant.identity;
+          for (const s of segments) {
+            if (!s.final) continue;
+            if (mine && sentByUs.delete(s.text)) continue;
+            caption(mine ? "you" : "her", s.text);
+          }
+        });
+        room.on(RoomEvent.Disconnected, () => {
+          say("she's gone"); if (tick) clearInterval(tick);
+          $("say").disabled = $("hang").disabled = true;
+          $("start").hidden = false; $("start").disabled = false; $("start").textContent = "🔁 pick a new fight";
+          $("start").onclick = () => location.reload();
+        });
+
+        await room.connect(grant.livekit_url, grant.participant_token);
+        $("start").hidden = true;
+        $("say").hidden = $("hang").hidden = false;
+        const t0 = Date.now();
+        tick = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); $("timer").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 1000);
+
+        const mic = await startMic(room);
+        if (!mic.ok) say(`you're in, but the mic didn't start. ${mic.why}`);
+        try {
+          const reg = await attachAvatarTools(room, TOOLS, { timeoutMs: 15000 });
+          if (!reg.accepted.length) say("connected — but her tools didn't arm (she'll never crack)");
+        } catch { /* the argument still runs without the meter */ }
+        if (mic.ok) { $("idle").classList.add("hide"); }
+        $("say").disabled = $("hang").disabled = false;
+      }
+
+      $("say").addEventListener("keydown", async (e) => {
+        if (e.key !== "Enter" || !room || !$("say").value.trim()) return;
+        const text = $("say").value.trim();
+        $("say").value = "";
+        caption("you", text);
+        sentByUs.add(text);
+        await room.localParticipant.sendText(text, { topic: "lk.chat" });
+      });
+      $("hang").onclick = () => room?.disconnect();
+    </script>
+  </body>
+</html>

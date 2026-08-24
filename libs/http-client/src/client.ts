@@ -1,0 +1,534 @@
+import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
+import type {
+  Asset,
+  ListSessionsOptions,
+  UsageSession,
+  UsageSessionPage,
+  AssetKind,
+  Avatar,
+  CallMode,
+  CallPolicy,
+  ClipSyncResult,
+  CreditBalance,
+  EndCallOptions,
+  StartCallResult,
+} from "./types.ts";
+
+const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
+
+/** Must equal the version in package.json — a test asserts it, so drift fails CI. */
+export const SDK_VERSION = "0.2.1";
+
+/**
+ * Transient upstream failures. **429 is deliberately absent.**
+ *
+ * On the call endpoint a 429 is not a rate limit, it is the QUEUE — `startCall` turns it into
+ * `{ queued: true, position }`. Retrying it here would burn the whole backoff budget and then
+ * hand back the same queued answer, having destroyed `isQueued()` for the caller.
+ */
+const RETRYABLE_STATUS = new Set([408, 500, 502, 503, 504]);
+
+/** Methods that change something, and so carry an idempotency key. */
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+export interface RealtimeAvatarOptions {
+  /** `tic_live_…` or `tic_test_…`. Server-side only — never ship this to a browser. */
+  apiKey: string;
+  baseUrl?: string;
+  fetch?: typeof fetch;
+  /** Per-request timeout. Default 60s; starting a call does real work upstream. */
+  timeoutMs?: number;
+  /**
+   * Extra attempts after a transient failure. Default 2, so 3 attempts in total.
+   *
+   * Set 0 to disable. Every retried write carries the SAME `Idempotency-Key` — but read
+   * that as a correctly-formed request, not as a guarantee: **`startCall` is not currently
+   * de-duplicated on it server-side.** So a 503 that in fact started a call can, on retry,
+   * start a second one and bill for both.
+   *
+   * If that matters more to you than recovering from a blip, pass 0 here and retry in your
+   * own code where you can check first. `endCall` is genuinely idempotent and safe to retry.
+   */
+  maxRetries?: number;
+  /** Appended to the SDK's own User-Agent. Name your app; it shows up in our logs. */
+  userAgent?: string;
+}
+
+export interface StartCallOptions extends CallPolicy {
+  avatarId: string;
+  mode?: CallMode;
+}
+
+/**
+ * The server-side client.
+ *
+ * Deliberately zero-dependency and small enough to read in one sitting. It owns the two
+ * things that are easy to get wrong and impossible to discover from a 4xx: the camelCase →
+ * snake_case translation, and keeping the connection payload intact for relay.
+ *
+ * This class must only ever run on a server. A browser holding the key could start unlimited
+ * calls on your account; the constructor refuses to build in a browser-like runtime so that
+ * mistake fails at the first call rather than in production.
+ */
+export class RealtimeAvatar {
+  readonly #apiKey: string;
+  readonly #baseUrl: string;
+  readonly #fetch: typeof fetch;
+  readonly #timeoutMs: number;
+  readonly #maxRetries: number;
+  readonly #userAgent: string;
+
+  constructor(options: RealtimeAvatarOptions) {
+    if (typeof document !== "undefined") {
+      throw new RealtimeAvatarError(
+        "RealtimeAvatar is server-only — it holds your API key. Call it from your backend " +
+          "and hand the browser only the connection payload it returns.",
+      );
+    }
+    if (!options.apiKey) throw new RealtimeAvatarError("apiKey is required");
+    this.#apiKey = options.apiKey;
+    this.#baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+    this.#fetch = options.fetch ?? globalThis.fetch;
+    this.#timeoutMs = options.timeoutMs ?? 60_000;
+    this.#maxRetries = Math.max(0, options.maxRetries ?? 2);
+    this.#userAgent = [`realtime-avatar-sdk/${SDK_VERSION}`, runtimeTag(), options.userAgent]
+      .filter(Boolean).join(" ");
+  }
+
+  // ── calls ────────────────────────────────────────────────────────────────
+
+  /**
+   * Start a call and get back what the client needs to join.
+   *
+   * Returns `{ queued: true, … }` when every slot is busy — that is a normal state, not a
+   * failure. Render the position and retry after `retryAfterMs`.
+   *
+   * Everything in `options` beyond `avatarId`/`mode` is a POLICY: it is what your server has
+   * decided about this call. Never populate it from a request body.
+   */
+  async startCall(options: StartCallOptions): Promise<StartCallResult> {
+    // `mode` selects VIDEO vs render-free — it is not a duplex switch. Both modes run the
+    // same full-duplex loop: she listens the whole time she speaks and stops when you cut
+    // in. Do not reintroduce a `duplex` option here; see the note on CallMode in types.ts.
+    const body: Record<string, unknown> = {
+      avatar_id: options.avatarId,
+      mode: options.mode ?? "avatar",
+      stt_mode: options.listen === false ? "off" : "server",
+    };
+    if (options.instructions !== undefined) body.instructions = options.instructions;
+    if (options.context !== undefined) {
+      body.initial_context = options.context.map((m) => ({ role: m.role, content: m.content }));
+    }
+    if (options.maxSeconds !== undefined) body.max_session_seconds = Math.floor(options.maxSeconds);
+    if (options.voice !== undefined) body.voice = options.voice;
+    if (options.metadata !== undefined) body.client_metadata = options.metadata;
+    // The grant is the gate: the worker only exposes tool registration for a session whose
+    // mint carried this capability.
+    if (options.clientTools) body.capabilities = ["client_tools"];
+    if (options.transcript !== undefined) {
+      body.transcript_webhook = { url: options.transcript.url, secret: options.transcript.secret };
+    }
+    if (options.video !== undefined) Object.assign(body, videoToWire(options.video));
+
+    const response = await this.#request("POST", "/realtime/livekit/session", { json: body });
+
+    if (response.status === 429) {
+      const busy = (await response.json()) as Record<string, unknown>;
+      return {
+        queued: true,
+        position: typeof busy.queue_position === "number" ? busy.queue_position : null,
+        size: typeof busy.queue_size === "number" ? busy.queue_size : 0,
+        retryAfterMs: typeof busy.recommended_retry_ms === "number" ? busy.recommended_retry_ms : 3000,
+      };
+    }
+
+    const grant = (await this.#json(response)) as Record<string, unknown>;
+    return {
+      status: "ready",
+      sessionId: String(grant.session_id),
+      roomName: String(grant.room_name),
+      livekitUrl: String(grant.livekit_url),
+      participantToken: String(grant.participant_token),
+      participantIdentity: String(grant.participant_identity),
+      maxSessionSeconds: Number(grant.max_session_seconds ?? 0),
+      idleTimeoutSeconds: Number(grant.idle_timeout_seconds ?? 0),
+      reservationExpiresAt: String(grant.reservation_expires_at),
+      // The parsed fields above are for YOUR logic. Relay `raw` to the client untouched:
+      // the browser SDK validates the grant strictly and rejects an added or renamed key.
+      raw: grant,
+    };
+  }
+
+  /**
+   * End a call and free its slot NOW, instead of when a timeout notices.
+   *
+   * The slot is held from the moment `startCall` returns — **including the window before
+   * your user has joined the room**. Someone who closes the tab right there leaves the call
+   * running until the join timeout reclaims it. Give the page a same-origin route that calls
+   * this, hit it with `navigator.sendBeacon` on `pagehide`, and the abandoned call ends the
+   * moment they leave. The demo apps carry the whole pattern.
+   *
+   * Best-effort, like the hang-up it is: `true` when the platform acknowledged the release,
+   * `false` for anything else — never a throw. Ending is idempotent (an unknown or
+   * already-ended session still acks), so a pagehide beacon and a disconnect handler may
+   * both fire for the same call without error. A release that is lost is a slower release,
+   * not a leak — the join timeout is the backstop.
+   *
+   * This ends whatever the id names, so only pass ids YOUR SERVER minted — remember them at
+   * `startCall` time and refuse the rest. A route that relays an arbitrary id from the
+   * request body lets any visitor hang up any call on your account.
+   */
+  async endCall(sessionId: string, options: EndCallOptions = {}): Promise<boolean> {
+    if (!sessionId) return false;
+    // The wire is strict: exactly these keys, absent rather than null when unset.
+    const body: Record<string, unknown> = { session_id: sessionId };
+    if (options.reason !== undefined) body.reason = options.reason;
+    if (options.capacityPool !== undefined) body.capacity_pool = options.capacityPool;
+    try {
+      const response = await this.#request("POST", "/realtime/livekit/session/release", { json: body });
+      // Only the status matters; discard the body so the socket is not held open.
+      await response.body?.cancel().catch(() => {});
+      return response.ok;
+    } catch {
+      return false; // a dropped connection here means the timeout ends it — later, not never
+    }
+  }
+
+  // ── avatars ──────────────────────────────────────────────────────────────
+
+  /**
+   * Register a character from a looping clip you host.
+   *
+   * Use a VIDEO source for anything that will be called live. An avatar built from a still
+   * image reaches `ready`, mints calls, and publishes a BLACK track — the status and the
+   * track dimensions both look fine, only the pixels are wrong. Image sources are for
+   * offline lipsync renders.
+   */
+  async createAvatarFromVideo(input: {
+    displayName: string;
+    videoUrl: string;
+    voice?: unknown;
+  }): Promise<Avatar> {
+    const asset = await this.createRemoteAsset({ kind: "video", remoteUrl: input.videoUrl });
+    return this.createAvatar({
+      displayName: input.displayName,
+      sourceKind: "video",
+      sourceAssetId: asset.id,
+      voice: input.voice,
+    });
+  }
+
+  async createAvatar(input: {
+    displayName: string;
+    sourceKind: "image" | "video";
+    sourceAssetId: string;
+    voice?: unknown;
+  }): Promise<Avatar> {
+    const body: Record<string, unknown> = {
+      displayName: input.displayName,
+      sourceKind: input.sourceKind,
+      sourceAssetId: input.sourceAssetId,
+    };
+    if (input.voice !== undefined) body.voice = input.voice;
+    return toAvatar(await this.#json(await this.#request("POST", "/avatars", { json: body })));
+  }
+
+  async listAvatars(): Promise<Avatar[]> {
+    const data = (await this.#json(await this.#request("GET", "/avatars"))) as { data?: unknown[] };
+    return (data.data ?? []).map(toAvatar);
+  }
+
+  async getAvatar(avatarId: string): Promise<Avatar> {
+    return toAvatar(await this.#json(await this.#request("GET", `/avatars/${avatarId}`)));
+  }
+
+  /**
+   * Reconcile an avatar's clip set after it changes.
+   *
+   * Required, not optional: clips are prepared once and cached by URL hash, and the serve
+   * path only LOADS that cache. A clip that has never been prepared silently does nothing on
+   * the first call after you add it. Idempotent, so calling it on every write is cheap.
+   *
+   * **At most 32 URLs per call.** This is the whole set for the avatar, not a delta, and the
+   * endpoint rejects an oversize list rather than truncating it — so a library that outgrows
+   * 32 needs the set trimmed, not split across two calls.
+   */
+  async syncClips(avatarId: string, clipUrls: readonly string[]): Promise<ClipSyncResult> {
+    const out = (await this.#json(
+      await this.#request("POST", `/avatars/${avatarId}/clips`, { json: { clipUrls } }),
+    )) as ClipSyncResult;
+    return { queued: out.queued ?? [], ready: out.ready ?? [], retired: out.retired ?? [] };
+  }
+
+  // ── assets ───────────────────────────────────────────────────────────────
+
+  /** Hand us a URL and we stream it into storage. Prefer this for anything large. */
+  async createRemoteAsset(input: { kind: AssetKind; remoteUrl: string }): Promise<Asset> {
+    return toAsset(await this.#json(await this.#request("POST", "/assets/remote", { json: input })));
+  }
+
+  /** Upload bytes you already hold. */
+  async uploadAsset(file: Blob, options: { kind?: AssetKind; filename?: string } = {}): Promise<Asset> {
+    const form = new FormData();
+    form.append("file", file, options.filename ?? "upload");
+    if (options.kind) form.append("kind", options.kind);
+    return toAsset(await this.#json(await this.#request("POST", "/assets", { body: form })));
+  }
+
+  // ── billing ──────────────────────────────────────────────────────────────
+
+  /**
+   * Billable sessions, newest first — the itemised half of the bill that `creditBalance`
+   * cannot give you.
+   *
+   * Works with no setup: every session is listed with its times, duration and cost. To also
+   * know WHICH of your users a session belongs to, tag the call when you start it:
+   *
+   * ```ts
+   * await rta.startCall({ avatarId, metadata: { user_id: user.id } });
+   * // ...later
+   * await rta.listSessions({ endUserId: user.id });
+   * ```
+   *
+   * Tagging is optional and nothing degrades without it — you just cannot attribute a
+   * session to one of your users. Requires a key with the `usage:read` scope.
+   */
+  async listSessions(options: ListSessionsOptions = {}): Promise<UsageSessionPage> {
+    const query = new URLSearchParams();
+    if (options.from) query.set("from", options.from);
+    if (options.to) query.set("to", options.to);
+    if (options.limit !== undefined) query.set("limit", String(options.limit));
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.endUserId) query.set("endUserId", options.endUserId);
+    const suffix = query.size > 0 ? `?${query}` : "";
+    const page = await this.#json(await this.#request("GET", `/usage/sessions${suffix}`));
+    return toUsageSessionPage(page);
+  }
+
+  /**
+   * Every session in a window, following the cursor for you.
+   *
+   * An async iterator rather than an array, because a busy month is a lot of rows and a
+   * caller writing a monthly report should not have to hold all of them to start writing.
+   */
+  async *iterateSessions(options: ListSessionsOptions = {}): AsyncGenerator<UsageSession> {
+    let cursor = options.cursor;
+    do {
+      const page = await this.listSessions({ ...options, cursor });
+      yield* page.sessions;
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+  }
+
+  async creditBalance(): Promise<CreditBalance> {
+    return (await this.#json(await this.#request("GET", "/credits/balance"))) as CreditBalance;
+  }
+
+  // ── internals ────────────────────────────────────────────────────────────
+
+  async #request(
+    method: string,
+    path: string,
+    init: { json?: unknown; body?: BodyInit } = {},
+  ): Promise<Response> {
+    const headers: Record<string, string> = {
+      authorization: `Bearer ${this.#apiKey}`,
+      "user-agent": this.#userAgent,
+    };
+    let body = init.body;
+    if (init.json !== undefined) {
+      headers["content-type"] = "application/json";
+      body = JSON.stringify(init.json);
+    }
+    // One key for the whole logical request, REUSED on every retry — that reuse is the entire
+    // point. A fresh key per attempt would let a 503 that actually started a call bill you
+    // again on the retry.
+    if (MUTATING.has(method)) headers["idempotency-key"] = newIdempotencyKey();
+
+    let lastError: unknown;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        // A fresh timeout per attempt: the budget is per try, not shared across the retries.
+        const signal = AbortSignal.timeout(this.#timeoutMs);
+        const response = await this.#fetch(`${this.#baseUrl}${path}`, { method, headers, body, signal });
+        if (attempt >= this.#maxRetries || !RETRYABLE_STATUS.has(response.status)) return response;
+        // Discard the body we are not going to read, or the socket can be held open.
+        await response.body?.cancel().catch(() => {});
+        await sleep(backoffMs(attempt, response.headers.get("retry-after")));
+      } catch (cause) {
+        lastError = cause;
+        // A retry is only safe if the request can be replayed. Streaming bodies cannot be.
+        if (attempt >= this.#maxRetries || !isTransient(cause) || isStream(body)) {
+          throw new RealtimeAvatarError(
+            `${method} ${path} failed after ${attempt + 1} attempt(s): ${(cause as Error).message}`,
+            { cause: lastError },
+          );
+        }
+        await sleep(backoffMs(attempt, null));
+      }
+    }
+  }
+
+  /** Throw a useful error rather than letting a 4xx flow on as `undefined`. */
+  async #json(response: Response): Promise<unknown> {
+    if (response.ok) return response.json();
+    const text = await response.text().catch(() => "");
+    let code: string | undefined;
+    try {
+      code = (JSON.parse(text) as { code?: string }).code;
+    } catch {
+      // Not JSON — an HTML body usually means the route is not served at all.
+    }
+    throw new RealtimeAvatarHttpError(response.status, code, text.slice(0, 400));
+  }
+}
+
+/** The wire is camelCase here; read defensively so a missing field cannot become "undefined". */
+function toUsageSessionPage(raw: unknown): UsageSessionPage {
+  const body = isRecord(raw) ? raw : {};
+  const rows = Array.isArray(body.data) ? body.data : [];
+  return {
+    sessions: rows.filter(isRecord).map((row) => ({
+      sessionId: String(row.sessionId ?? ""),
+      avatarId: typeof row.avatarId === "string" ? row.avatarId : null,
+      status: usageStatus(row.status),
+      startedAt: typeof row.startedAt === "string" ? row.startedAt : null,
+      endedAt: typeof row.endedAt === "string" ? row.endedAt : null,
+      activeSeconds: typeof row.activeSeconds === "number" ? row.activeSeconds : null,
+      billedCreditMicros: typeof row.billedCreditMicros === "number" ? row.billedCreditMicros : null,
+      metadata: isRecord(row.metadata) ? row.metadata : {},
+      createdAt: String(row.createdAt ?? ""),
+    })),
+    nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : null,
+    from: String(body.from ?? ""),
+    to: String(body.to ?? ""),
+  };
+}
+
+const USAGE_STATUSES = ["reserved", "started", "released", "failed"] as const;
+
+function usageStatus(value: unknown): UsageSession["status"] {
+  return USAGE_STATUSES.find((s) => s === value) ?? "failed";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** camelCase video policy -> the strict snake_case wire. */
+function videoToWire(video: NonNullable<CallPolicy["video"]>): Record<string, unknown> {
+  if (video.mode === "generative") return { render_backend: "generative" };
+  // Nothing here may carry media for the call itself. A session names an avatar and reads
+  // the media stored ON it, so top-level source keys are rejected rather than merged.
+  const out: Record<string, unknown> = {};
+  // One option in, one sibling block out — the same mapping as the connect lane. NOT an
+  // early return: `states` still has to be mapped below, and returning here would drop
+  // clip_library for exactly the sessions using the newest feature.
+  if (video.edits) {
+    const edits: Record<string, unknown> = { instruction: video.edits.instruction };
+    if (video.edits.referenceUrl !== undefined) edits.reference_url = video.edits.referenceUrl;
+    // `live` is what makes the look follow the conversation; its PRESENCE is the switch,
+    // so absence means the key is omitted entirely — an empty object would read as
+    // "enabled, permitting nothing".
+    if (video.edits.live !== undefined) {
+      const live: Record<string, unknown> = { rules: video.edits.live.rules };
+      // Floored: the wire is `.int()`, and a caller computing this from a duration should
+      // not 422 on an arithmetic detail unrelated to what they asked for.
+      if (video.edits.live.cooldownSeconds !== undefined) {
+        live.cooldown_seconds = Math.floor(video.edits.live.cooldownSeconds);
+      }
+      if (video.edits.live.renderer !== undefined) live.renderer = video.edits.live.renderer;
+      edits.live_edit = live;
+    }
+    out.support_edits = edits;
+  }
+  if (video.states) {
+    out.clip_library = Object.entries(video.states).map(([id, state]) => {
+      const clip: Record<string, unknown> = {
+        clip_id: id,
+        source_video_url: state.url,
+        trigger: "directive",
+        // `when` is the public name for this cue. The wire also still accepts the older
+        // `hint`; send one name only, and prefer the one the docs and types use.
+        when: state.when,
+      };
+      if (state.weight !== undefined) clip.weight = state.weight;
+      return clip;
+    });
+  }
+  return out;
+}
+
+function toAvatar(raw: unknown): Avatar {
+  const a = raw as Record<string, unknown>;
+  return {
+    id: String(a.id),
+    displayName: String(a.displayName ?? ""),
+    sourceKind: a.sourceKind === "video" ? "video" : "image",
+    status: (a.status as Avatar["status"]) ?? "draft",
+    defaultVoiceId: a.defaultVoiceId ? String(a.defaultVoiceId) : null,
+  };
+}
+
+function toAsset(raw: unknown): Asset {
+  const a = raw as Record<string, unknown>;
+  // The wire field is `publicUrl`. Reading `url` silently produced "undefined" — a string,
+  // so nothing threw and the bad value only surfaced when someone fetched it.
+  const url = a.publicUrl ?? a.url;
+  if (typeof url !== "string" || !url) {
+    throw new RealtimeAvatarError(`asset ${String(a.id)} came back without a public URL`);
+  }
+  return {
+    id: String(a.id),
+    kind: (a.kind as AssetKind) ?? "video",
+    url,
+    status: typeof a.status === "string" ? a.status : "ready",
+    contentType: typeof a.contentType === "string" ? a.contentType : null,
+    sizeBytes: typeof a.sizeBytes === "number" ? a.sizeBytes : null,
+  };
+}
+
+
+/** `node`, `workerd`, `deno`, `bun` — enough to tell where SDK traffic comes from. */
+function runtimeTag(): string {
+  const g: object = globalThis;
+  if ("Deno" in g) return "deno";
+  if ("Bun" in g) return "bun";
+  if ("navigator" in g && typeof navigator?.userAgent === "string"
+      && navigator.userAgent.includes("Cloudflare-Workers")) return "workerd";
+  if ("process" in g && typeof process?.versions?.node === "string") return `node/${process.versions.node}`;
+  return "unknown";
+}
+
+function newIdempotencyKey(): string {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  // Older runtimes: uniqueness is all this needs, not unpredictability.
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/**
+ * Exponential backoff with FULL jitter — `random(0, 2^n * base)`, not `2^n * base`.
+ *
+ * Without jitter every client that failed on the same upstream blip retries in the same
+ * millisecond and knocks it over again, which is how a brief outage becomes a long one.
+ */
+function backoffMs(attempt: number, retryAfter: string | null): number {
+  const server = retryAfter ? Number(retryAfter) * 1000 : NaN;
+  // Honour Retry-After when the server sends one; it knows more than we do.
+  if (Number.isFinite(server) && server >= 0) return Math.min(server, 20_000);
+  return Math.random() * Math.min(500 * 2 ** attempt, 8_000);
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** A dropped connection or a timed-out attempt. A caller's own abort is NOT transient. */
+function isTransient(cause: unknown): boolean {
+  const name = (cause as { name?: string })?.name;
+  return name === "TimeoutError" || name === "TypeError" || name === "FetchError";
+}
+
+/** A stream can only be sent once, so a request carrying one must not be replayed. */
+function isStream(body: BodyInit | undefined): boolean {
+  return typeof ReadableStream !== "undefined" && body instanceof ReadableStream;
+}

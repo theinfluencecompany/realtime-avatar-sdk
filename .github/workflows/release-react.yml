@@ -1,0 +1,84 @@
+name: Release realtime-avatar-react
+
+# Publishes realtime-avatar-react (libs/client) to npm.
+#
+# The contracts package is BUNDLED into the tarball (tsup noExternal), so the published
+# package carries no workspace:* dep and installs standalone — no monorepo needed at the
+# consumer end.
+#
+#   - push to main touching libs/client or libs/contracts -> real publish
+#   - workflow_dispatch (dry_run defaults true) -> build + `npm publish --dry-run`
+#
+# Versions are unique, NON-committed prereleases (0.0.0-main.<UTC-timestamp>.<sha>);
+# the counter is a UTC timestamp, not github.run_number (which resets per repo and
+# would regress in semver across any future publisher move). Nothing is git-bumped.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "libs/client/**"
+      - "libs/contracts/**"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build + validate only (no publish)"
+        type: boolean
+        default: true
+
+# Never let two main pushes race a double-publish.
+concurrency:
+  group: release-react
+  cancel-in-progress: false
+
+jobs:
+  npm:
+    # Publish ONLY from the public repo. This file is carried into it verbatim, so without
+    # this guard it runs in both — and a provenance attestation records the source repo and
+    # commit into Sigstore's public transparency log, which is append-only and permanent
+    # (Linux Foundation Immutable Record). Publishing from the private repo would therefore
+    # put its name and SHAs in front of the whole world, irreversibly.
+    #
+    # npm also requires package.json `repository` to match where you publish from. Ours
+    # points at the public repo, so a private-repo publish fails anyway — but failing by
+    # accident is not a control, and the failure mode here cannot be walked back.
+    if: github.repository == 'theinfluencecompany/realtime-avatar-sdk'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets GitHub mint the OIDC token npm exchanges for short-lived publish credentials.
+      # Without it, trusted publishing fails with an auth error that looks like a bad token.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+          # No `scope:` — these packages are unscoped. setup-node's scope only writes a
+          # `@scope:registry=` line into .npmrc, which would bind a scope nothing uses.
+      # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10.
+      - run: npm install -g npm@latest
+      - run: npm install
+      # contracts first — libs/client bundles its types (tsup noExternal + dts.resolve).
+      - run: npm run build -w libs/contracts
+      - run: npm run build -w libs/client
+      # Re-scan the built artifact before it leaves the runner. Sourcemaps embed original
+      # source via sourcesContent, so a clean source tree can still ship a leaky tarball.
+      - run: npm run boundary
+      # Authenticates via OIDC — there is no NPM_TOKEN here, and there should not be. The
+      # trust relationship is configured on npmjs.com against this repo and this filename,
+      # so credentials are short-lived, scoped to this workflow, and cannot be exfiltrated.
+      # Provenance is emitted automatically on an OIDC publish; --provenance is not needed.
+      - name: Publish (or dry-run)
+        working-directory: libs/client
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm publish --dry-run --access public
+          else
+            npm pkg set version="0.0.0-main.$(date -u +%Y%m%d%H%M%S).$(git rev-parse --short HEAD)"
+            # --tag is REQUIRED: npm refuses to publish a prerelease without an explicit
+            # dist-tag, and this version is always a prerelease. Without it the publish
+            # fails at argument validation, before it ever authenticates.
+            # `next` also keeps these off `latest`, so `npm i` never resolves to a main build.
+            npm publish --access public --tag next
+          fi

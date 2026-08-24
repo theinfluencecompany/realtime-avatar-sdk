@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>practice date ♡</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Bungee&family=Baloo+2:wght@500;700;800&display=swap");
+
+      :root {
+        color-scheme: dark;
+        --hot: #ff2d95;
+        --hot-soft: #ff86cf;
+        --lime: #b6ff2e;
+        --cyan: #37e8ff;
+        --grape: #b06bff;
+        --ink: #16021f;
+        --ink-2: #23012e;
+        --cream: #fff0fb;
+        --display: "Bungee", "Baloo 2", ui-rounded, system-ui, sans-serif;
+        --body: "Baloo 2", ui-rounded, "Segoe UI Rounded", system-ui, sans-serif;
+        --chrome: linear-gradient(150deg, #fbe9ff 0%, #b9c6ff 22%, #e9f7ff 40%, #ffd6f4 60%, #b7f0ff 80%, #fbe9ff 100%);
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent }
+      body {
+        margin: 0; min-height: 100svh; color: var(--cream);
+        font: 16px/1.5 var(--body); font-weight: 500;
+        display: flex; flex-direction: column; align-items: center; gap: 14px;
+        padding: 22px 14px 48px; overflow-x: hidden;
+        background:
+          radial-gradient(120% 80% at 12% 0%, #ff2d9555, transparent 55%),
+          radial-gradient(120% 90% at 92% 8%, #37e8ff44, transparent 52%),
+          radial-gradient(140% 120% at 50% 120%, #b6ff2e2e, transparent 55%),
+          linear-gradient(175deg, var(--ink-2), var(--ink) 60%, #0c0113);
+      }
+      body::before {
+        content: "✦ ✧ ⋆ ♡ ✦ ˚ ✧ ⋆ ｡ ♡ ✦ ✧ ⋆ ˚ ♡ ✦ ✧ ⋆ ♡ ˚ ✦ ✧ ⋆ ｡ ♡";
+        position: fixed; inset: -10%; z-index: 0; pointer-events: none;
+        font-size: 22px; line-height: 3.4; letter-spacing: 2.6em; color: #ffffff26;
+        text-shadow: 0 0 8px #ff2d9555; transform: rotate(-8deg); animation: drift 26s linear infinite;
+      }
+      @keyframes drift { to { transform: rotate(-8deg) translateY(-60px) } }
+      @media (prefers-reduced-motion: reduce) { body::before { animation: none } }
+      .wrap { position: relative; z-index: 1; width: min(460px, 96vw); display: flex; flex-direction: column; align-items: center; gap: 14px }
+
+      .brand { text-align: center; line-height: 1 }
+      .brand .kick { font-family: var(--display); font-size: 12px; letter-spacing: .32em; color: var(--lime); text-shadow: 0 0 10px #b6ff2e77 }
+      .brand h1 {
+        margin: 6px 0 0; font-family: var(--display); font-size: clamp(30px, 9vw, 42px); font-weight: 400;
+        background: var(--chrome); background-size: 200% 200%; -webkit-background-clip: text; background-clip: text; color: transparent;
+        filter: drop-shadow(0 2px 0 #ff2d95) drop-shadow(0 3px 10px #ff2d9566); animation: shimmer 6s ease-in-out infinite;
+      }
+      @keyframes shimmer { 50% { background-position: 100% 50% } }
+      .brand .sub { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--hot-soft) }
+
+      .hud { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
+      .meter { border-radius: 16px; padding: 9px 11px 11px; background: #ffffff12; border: 1.5px solid #ffffff22; backdrop-filter: blur(4px) }
+      .meter .cap { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--display); font-size: 12px; letter-spacing: .12em }
+      .meter .num { font-size: 15px; font-variant-numeric: tabular-nums }
+      .bar { margin-top: 7px; height: 14px; border-radius: 999px; background: #00000055; overflow: hidden; box-shadow: inset 0 1px 3px #0008 }
+      .bar > span { display: block; height: 100%; width: 50%; border-radius: 999px; transition: width .5s cubic-bezier(.2,.9,.25,1) }
+      .rizz .cap { color: var(--lime) } .rizz .bar > span { background: linear-gradient(90deg, var(--lime), var(--cyan) 60%, var(--hot)) }
+      .ick  .cap { color: var(--hot-soft) } .ick  .bar > span { width: 0%; background: linear-gradient(90deg, #7a4bff, var(--hot)) }
+      .meter.hit { animation: pop .4s ease }
+      @keyframes pop { 40% { transform: scale(1.05) } }
+
+      .stage-wrap { width: 100%; padding: 5px; border-radius: 26px; background: var(--chrome); box-shadow: 0 10px 34px -10px #ff2d9566, 0 0 0 2px #ffffff33 inset }
+      .stage { position: relative; aspect-ratio: 3/4; border-radius: 22px; overflow: hidden; background:
+        radial-gradient(120% 90% at 50% 0%, #3a0b46, #14021c); display: grid; place-items: center }
+      video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .4s }
+      video.on { opacity: 1 }
+      .name-tag { position: absolute; top: 10px; left: 10px; z-index: 3; font-family: var(--display); font-size: 12px; letter-spacing: .06em;
+        padding: 5px 11px; border-radius: 999px; background: #ff2d95cc; color: #fff; box-shadow: 0 3px 12px #ff2d9566; display: none }
+      .name-tag.on { display: block }
+      .timer { position: absolute; top: 10px; right: 10px; z-index: 3; font-family: var(--display); font-size: 12px;
+        padding: 5px 10px; border-radius: 999px; background: #00000066; color: var(--lime); font-variant-numeric: tabular-nums; display: none }
+      .timer.on { display: block }
+      .status { position: absolute; inset: auto 0 0 0; z-index: 3; padding: 26px 12px 10px; font-size: 13px; font-weight: 600; color: #ffe9f7;
+        background: linear-gradient(transparent, #16021fdd); display: none }
+      .status.on { display: block }
+      #sound { position: absolute; inset: 0; z-index: 4; display: none; place-items: center; background: #16021fbb; cursor: pointer }
+      #sound.show { display: grid }
+      #sound span { font-family: var(--display); font-size: 15px; color: var(--lime); background: #000000aa; padding: 10px 16px; border-radius: 999px }
+
+      /* ── casting panel (over the stage until a date is ready) ─────────────── */
+      .panel { position: absolute; inset: 0; z-index: 2; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 22px; text-align: center }
+      .panel.on { display: flex }
+      .panel .big { font-family: var(--display); font-size: 19px; color: var(--hot-soft); line-height: 1.15 }
+      .panel .small { font-size: 13px; color: #e7b9dd; max-width: 24ch }
+      .drop { width: 100%; border: 2px dashed #ffffff55; border-radius: 18px; padding: 20px 14px; background: #ffffff0e; cursor: pointer; transition: border-color .15s, background .15s }
+      .drop:hover, .drop.hot { border-color: var(--lime); background: #b6ff2e14 }
+      .drop .emoji { font-size: 34px }
+      .or { font-size: 12px; color: #ffffff77; letter-spacing: .1em }
+      .prog { width: 100%; height: 16px; border-radius: 999px; background: #00000055; overflow: hidden; box-shadow: inset 0 1px 3px #0008 }
+      .prog > span { display: block; height: 100%; width: 4%; border-radius: 999px; background: linear-gradient(90deg, var(--lime), var(--cyan), var(--hot)); background-size: 200% 100%; transition: width .6s ease; animation: slide 2s linear infinite }
+      @keyframes slide { to { background-position: 200% 0 } }
+      .spin { width: 42px; height: 42px; border-radius: 50%; border: 4px solid #ffffff26; border-top-color: var(--lime); animation: spin 1s linear infinite }
+      @keyframes spin { to { transform: rotate(360deg) } }
+
+      .reel { width: 100%; min-height: 40px; display: flex; gap: 7px; overflow-x: auto; padding: 3px 1px 6px; scrollbar-width: thin }
+      .reel:empty::after { content: "moments you make show up here… 💌"; color: #ffffff55; font-size: 12.5px; align-self: center; white-space: nowrap }
+      .chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 700; border: 1.5px solid #ffffff33; animation: chipin .35s ease }
+      @keyframes chipin { from { transform: translateY(6px) scale(.9); opacity: 0 } }
+      .chip.green_flag { background: #b6ff2e22; color: var(--lime); border-color: #b6ff2e66 }
+      .chip.rizz { background: #ff2d9526; color: var(--hot-soft); border-color: #ff2d9577 }
+      .chip.red_flag { background: #ff5b5b26; color: #ffb0b0; border-color: #ff5b5b66 }
+      .chip.ick { background: #7a4bff26; color: #d3c2ff; border-color: #7a4bff77 }
+
+      #chat { width: 100%; display: flex; flex-direction: column; gap: 7px; max-height: 210px; overflow-y: auto; padding: 2px }
+      .msg { max-width: 82%; padding: 8px 13px; border-radius: 18px; font-size: 14px; font-weight: 500; line-height: 1.35; animation: chipin .25s ease }
+      .msg.you { align-self: flex-end; background: linear-gradient(135deg, var(--hot), #ff5db0); color: #26001a; border-bottom-right-radius: 6px; font-weight: 700 }
+      .msg.theo { align-self: flex-start; background: #ffffff16; border: 1.5px solid #ffffff28; color: var(--cream); border-bottom-left-radius: 6px }
+
+      .row { display: flex; gap: 8px; width: 100%; align-items: center }
+      button, input[type="text"] { font: inherit; font-weight: 700; border-radius: 999px; border: 2px solid #ffffff2e; background: #ffffff16; color: var(--cream); padding: 12px 16px }
+      input[type="text"] { flex: 1; min-width: 0; font-weight: 600 }
+      input::placeholder { color: #ffffff66 }
+      button { cursor: pointer; transition: transform .12s, filter .12s }
+      button:active { transform: scale(.95) }
+      button.primary { background: linear-gradient(135deg, var(--hot), var(--grape)); border-color: transparent; color: #fff; box-shadow: 0 6px 20px -6px #ff2d95aa; font-family: var(--display); letter-spacing: .02em }
+      button.ghost { background: #ffffff12 }
+      button:disabled { opacity: .4; cursor: default; transform: none }
+      .hidden { display: none !important }
+
+      #wrapped { display: none; width: 100%; border-radius: 24px; padding: 20px 18px; color: #1c0016;
+        background: linear-gradient(155deg, var(--lime), var(--cyan) 42%, var(--hot) 100%); box-shadow: 0 14px 40px -12px #ff2d95aa; text-align: center }
+      #wrapped.on { display: block; animation: chipin .5s ease }
+      #wrapped .tag { font-family: var(--display); font-size: 13px; letter-spacing: .22em; opacity: .8 }
+      #wrapped h2 { font-family: var(--display); font-weight: 400; margin: 4px 0 2px; font-size: 26px }
+      #wrapped .score { font-family: var(--display); font-size: 58px; line-height: 1; margin: 6px 0 2px; text-shadow: 0 3px 0 #ffffff66 }
+      #wrapped .score small { font-size: 20px; opacity: .7 }
+      #wrapped .ick { margin: 10px auto; max-width: 30ch; font-weight: 700; background: #16021f; color: var(--hot-soft); padding: 8px 12px; border-radius: 14px }
+      #wrapped .flags { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 8px }
+      #wrapped .fl { padding: 5px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 800; background: #16021f22; border: 1.5px solid #16021f44 }
+      #wrapped .note { margin-top: 12px; font-weight: 800; font-style: italic }
+
+      /* Landscape / wide screens: the phone opens into a two-up call — the date on the left, the
+         game (meters, moments, chat) on the right — instead of a tall column with empty margins. */
+      @media (min-width: 900px) and (orientation: landscape) {
+        .wrap {
+          width: min(1060px, 97vw);
+          display: grid;
+          grid-template-columns: minmax(360px, 1.06fr) minmax(300px, 1fr);
+          column-gap: 26px; row-gap: 10px; align-content: center; align-items: start;
+        }
+        .stage-wrap { grid-column: 1; grid-row: 1 / span 9; align-self: center; max-width: 440px; width: 100%; margin: 0 auto }
+        .brand { grid-column: 2; text-align: left; margin-top: 2px }
+        .brand h1 { font-size: clamp(30px, 3.6vw, 40px) }
+        .hud, .reel, #chat, .row, #wrapped { grid-column: 2 }
+        #chat { max-height: 240px }
+        .row { justify-content: flex-start }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="brand">
+        <div class="kick">✦ PRACTICE DATE ✦</div>
+        <h1>rizz &amp; rehearse</h1>
+        <div class="sub">upload anyone's pic → practice the date before it's real 😭</div>
+      </div>
+
+      <div class="hud">
+        <div class="meter rizz" id="m-rizz">
+          <div class="cap"><span>RIZZ 🔥</span><span class="num" id="rizz-n">—</span></div>
+          <div class="bar"><span id="rizz-fill"></span></div>
+        </div>
+        <div class="meter ick" id="m-ick">
+          <div class="cap"><span>ICK 💀</span><span class="num" id="ick-n">0</span></div>
+          <div class="bar"><span id="ick-fill"></span></div>
+        </div>
+      </div>
+
+      <div class="stage-wrap">
+        <div class="stage">
+          <video id="preview" loop muted playsinline></video>
+          <video id="date" autoplay playsinline></video>
+
+          <!-- casting: pick your date -->
+          <div class="panel on" id="cast-intro">
+            <div class="big">who's your date? 💘</div>
+            <label class="drop" id="drop">
+              <div class="emoji">📸</div>
+              <div class="small">drop a pic (a crush, a celeb, your ex…) — we'll bring them to life</div>
+              <input type="file" id="pic" accept="image/*" hidden />
+            </label>
+            <input type="text" id="date-name" placeholder="give them a name (optional) ✨" maxlength="40" autocomplete="off"
+              style="width:100%;text-align:center;padding:9px 14px;font-size:13px" />
+            <div class="or">— or —</div>
+            <button class="ghost" id="blind">🎲 blind date (surprise me)</button>
+          </div>
+
+          <!-- casting: generating -->
+          <div class="panel" id="cast-progress">
+            <div class="spin"></div>
+            <div class="big" id="cast-label">bringing them to life…</div>
+            <div class="prog"><span id="cast-bar"></span></div>
+            <div class="small">first dates take a sec 💅 (~2 min) — worth it, trust</div>
+          </div>
+
+          <div class="name-tag" id="nametag">♡ your date · vibe check</div>
+          <div class="timer" id="timer">0:00</div>
+          <div class="status" id="status"></div>
+          <div id="sound"><span>🔊 tap for sound bestie</span></div>
+        </div>
+      </div>
+
+      <div class="reel" id="reel"></div>
+      <div id="chat"></div>
+
+      <div class="row">
+        <button class="primary hidden" id="start">💘 go on the date</button>
+        <button class="ghost hidden" id="hang" disabled>✌️ leave</button>
+      </div>
+      <div class="row"><input type="text" id="say" placeholder="…or type what you'd say 😭" disabled /></div>
+
+      <div id="wrapped">
+        <div class="tag">✦ RIZZ WRAPPED ✦</div>
+        <h2>how'd it go bestie</h2>
+        <div class="score"><span id="w-score">–</span><small>/100</small></div>
+        <div class="ick" id="w-ick"></div>
+        <div class="flags" id="w-flags"></div>
+        <div class="note" id="w-note"></div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+      import { attachAvatarTools } from "/sdk/tools.js";
+
+      const $ = (id) => document.getElementById(id);
+      const say = (t) => { $("status").classList.add("on"); $("status").textContent = t; };
+      const clamp = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+      const show = (el, on = true) => $(el).classList.toggle("on", on);
+      // Whoever you called your date (or nobody → "your date"). Drives the name tag and the brief.
+      const dateName = () => ($("date-name")?.value || "").trim().replace(/\s+/g, " ").slice(0, 40);
+      const nameTag = (state) => `♡ ${dateName() || "your date"} · ${state}`;
+
+      // ── casting: photo → a live-callable date ─────────────────────────────────────────────────
+      let jobId = null; // the date we cast (null = blind date / fallback avatar)
+
+      const CAST_STEPS = {
+        uploading:     { pct: 10, label: "sending their pic up ✈️" },
+        generating:    { pct: 48, label: "bringing them to life 🎞️" },
+        building:      { pct: 68, label: "getting them camera-ready 🪞" },
+        preprocessing: { pct: 90, label: "almost there bestie 💅" },
+      };
+      function castBar(pct, label) { $("cast-bar").style.width = pct + "%"; if (label) $("cast-label").textContent = label; }
+      function panel(name) { for (const p of ["cast-intro", "cast-progress"]) show(p, p === name); }
+
+      async function startCast(file) {
+        if (!file || !file.type?.startsWith("image/")) return;
+        panel("cast-progress"); castBar(5, "reading the pic 📸");
+        try {
+          const res = await fetch("/api/cast", { method: "POST", headers: { "content-type": file.type }, body: file });
+          if (!res.ok) return castFail((await res.json().catch(() => ({}))).error || `couldn't upload (${res.status})`);
+          jobId = (await res.json()).jobId;
+          pollCast();
+        } catch (e) { castFail(String(e?.message ?? e)); }
+      }
+      async function pollCast() {
+        try {
+          const res = await fetch(`/api/cast/status?job=${encodeURIComponent(jobId)}`);
+          if (!res.ok) return void setTimeout(pollCast, 3000);
+          const c = await res.json();
+          if (c.state === "ready") return castReady(c.loopUrl);
+          if (c.state === "failed") return castFail(c.error || "we couldn't make that one work");
+          const step = CAST_STEPS[c.state];
+          if (step) castBar(step.pct, step.label);
+          setTimeout(pollCast, 3000);
+        } catch { setTimeout(pollCast, 3000); }
+      }
+      function castReady(loopUrl) {
+        panel(null); // hide the casting panels
+        if (loopUrl) { $("preview").src = loopUrl; $("preview").classList.add("on"); $("preview").play?.().catch(() => {}); }
+        show("nametag", true); $("nametag").textContent = nameTag("ready");
+        say("they're here 💘 — tap go on the date");
+        $("start").classList.remove("hidden");
+        $("start").disabled = false;
+        $("start").textContent = "💘 go on the date";
+      }
+      function castFail(why) {
+        panel("cast-intro");
+        say("");
+        $("cast-intro").querySelector(".big").textContent = "hmm, that one didn't take 😬";
+        $("cast-intro").querySelector(".drop .small").textContent = why?.slice(0, 90) || "try another pic";
+      }
+
+      $("pic").addEventListener("change", (e) => startCast(e.target.files?.[0]));
+      // drag & drop onto the dropzone
+      const drop = $("drop");
+      ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("hot"); }));
+      ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove("hot")));
+      drop.addEventListener("drop", (e) => { e.preventDefault(); startCast(e.dataTransfer?.files?.[0]); });
+      // blind date → skip straight to the call with the fallback avatar
+      $("blind").onclick = () => { jobId = null; panel(null); $("preview").classList.remove("on"); startDate(); };
+
+      // ── mic helper (inlined from realtime-avatar-browser so the example stays standalone) ──────
+      async function startMic(room) {
+        if (!navigator.mediaDevices) return { ok: false, why: "This page is not a secure context. Use https, or http://localhost." };
+        try {
+          const noAnswer = new Promise((r) => setTimeout(() => r("no-answer"), 15000));
+          const ok = room.localParticipant.setMicrophoneEnabled(true).then(() => "ok");
+          if ((await Promise.race([ok, noAnswer])) === "no-answer") return { ok: false, why: "The mic prompt was not answered — look in the address bar." };
+          return { ok: true };
+        } catch (err) {
+          const m = err?.message ?? String(err);
+          if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError")
+            return { ok: false, why: /by system|system permission/i.test(m) ? "macOS is blocking the browser: System Settings > Privacy & Security > Microphone, then RESTART it." : "This site is blocked from the mic — allow it from the address-bar icon and reload." };
+          if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") return { ok: false, why: "No microphone is available." };
+          if (err?.name === "NotReadableError" || err?.name === "TrackStartError") return { ok: false, why: "Another app or tab is holding the microphone." };
+          return { ok: false, why: m };
+        }
+      }
+
+      const bubble = (who, text) => {
+        const d = document.createElement("div");
+        d.className = `msg ${who === "you" ? "you" : "theo"}`;
+        d.textContent = text;
+        $("chat").append(d);
+        $("chat").scrollTop = $("chat").scrollHeight;
+      };
+
+      // ── the live HUD, driven ONLY by his tool calls ───────────────────────────────────────────
+      let ick = 0;
+      function setRizz(score) {
+        const s = clamp(score);
+        $("rizz-fill").style.width = s + "%"; $("rizz-n").textContent = s;
+        $("m-rizz").classList.remove("hit"); void $("m-rizz").offsetWidth; $("m-rizz").classList.add("hit");
+      }
+      function bumpIck(by) {
+        ick = clamp(ick + by);
+        $("ick-fill").style.width = ick + "%"; $("ick-n").textContent = Math.round(ick / 20);
+        $("m-ick").classList.remove("hit"); void $("m-ick").offsetWidth; $("m-ick").classList.add("hit");
+      }
+      const CHIP_ICON = { green_flag: "🌱", rizz: "💘", red_flag: "🚩", ick: "💀" };
+      function pushMoment(label, kind) {
+        const k = CHIP_ICON[kind] ? kind : "rizz";
+        const c = document.createElement("div");
+        c.className = `chip ${k}`;
+        c.innerHTML = `<span>${CHIP_ICON[k]}</span>${String(label ?? "").replace(/[<&>]/g, "")}`;
+        $("reel").append(c); $("reel").scrollLeft = $("reel").scrollWidth;
+        if (k === "ick") bumpIck(20);
+        if (k === "rizz") bumpIck(-8);
+      }
+
+      let room = null, sessionId = null, tick = null;
+      const sentByUs = new Set();
+
+      addEventListener("pagehide", () => {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+      });
+
+      // Nobody asks him for a tool — the same model being charming decides how it's going and says
+      // so by calling these. Each returns a short line he then grounds his next words on.
+      const TOOLS = {
+        rate_interest: {
+          description: "Report, 0-100, how into this date you HONESTLY are right now. Call it whenever the vibe genuinely moves — a real laugh pulls it up, a dead pause or an overshare pulls it down. Do not narrate the number.",
+          parameters: { type: "object", properties: { score: { type: "number", description: "0-100" } }, required: ["score"] },
+          execute: ({ score }) => { setRizz(score); return "noted"; },
+        },
+        mark_moment: {
+          description: "Pin a beat the instant it lands. Use for a real green flag, red flag, ick, or a genuinely smooth (rizz) moment — not every sentence.",
+          parameters: { type: "object", properties: { label: { type: "string" }, kind: { type: "string", enum: ["green_flag", "red_flag", "ick", "rizz"] } }, required: ["label", "kind"] },
+          execute: ({ label, kind }) => { pushMoment(label, kind); return "pinned"; },
+        },
+        end_date: {
+          description: "End the date — only when it truly dies or reaches a natural close. After calling this, say a short in-character goodbye and stop.",
+          parameters: { type: "object", properties: { reason: { type: "string" } }, required: [] },
+          execute: ({ reason }) => {
+            say(`he called it — ${String(reason ?? "the date's over").slice(0, 80)}`);
+            $("say").disabled = true;
+            setTimeout(() => room?.disconnect(), 1600);
+            return "date ended — say a short, in-character goodbye, then write the debrief";
+          },
+        },
+        write_debrief: {
+          description: "Write the after-the-date debrief. Call ONCE at the very end. Be specific and kind-but-honest.",
+          parameters: {
+            type: "object",
+            properties: {
+              rizz_score: { type: "number" }, ick_line: { type: "string" },
+              green_flags: { type: "array", items: { type: "string" } },
+              red_flags: { type: "array", items: { type: "string" } },
+              note: { type: "string" },
+            },
+            required: ["rizz_score", "note"],
+          },
+          execute: ({ rizz_score, ick_line, green_flags, red_flags, note }) => {
+            $("w-score").textContent = clamp(rizz_score);
+            $("w-ick").textContent = ick_line ? `the ick 💀 — "${ick_line}"` : "no icks, genuinely 😳";
+            const flags = [...(green_flags ?? []).map((f) => ["🌱", f]), ...(red_flags ?? []).map((f) => ["🚩", f])];
+            $("w-flags").innerHTML = flags.length ? flags.map(([i, f]) => `<span class="fl">${i} ${String(f).replace(/[<&>]/g, "")}</span>`).join("") : "";
+            $("w-note").textContent = note ? `note to self 💅 ${note}` : "";
+            $("wrapped").classList.add("on");
+            $("wrapped").scrollIntoView({ behavior: "smooth" });
+            return "debrief shown";
+          },
+        },
+      };
+
+      async function startDate() {
+        $("start").disabled = true;
+        // Keep the generated idle loop on the stage — it holds the face until the LIVE track paints
+        // a real frame (see join()), so there is no black gap on connect.
+        show("nametag", false);
+        say("finding them… 👀");
+        const res = await fetch("/api/date", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jobId, name: dateName() }) });
+        if (res.status === 429) {
+          const q = await res.json();
+          say(`bar's packed — spot ${q.position ?? "?"}, retrying…`);
+          return void setTimeout(() => { $("start").disabled = false; startDate(); }, q.retryAfterMs ?? 3000);
+        }
+        if (res.status === 402) return void (say("out of credits — top up to date 💸"), ($("start").disabled = false));
+        if (!res.ok) return void (say(`couldn't start (${res.status})`), ($("start").disabled = false));
+        const grant = await res.json(); // the body IS the grant, byte-for-byte
+        await join(grant);
+      }
+
+      async function join(grant) {
+        sessionId = grant.session_id;
+        room = new Room();
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === Track.Kind.Video) {
+            track.attach($("date"));
+            // Reveal the live face only once it actually PAINTS a frame; until then the generated
+            // idle loop underneath holds the stage (no black gap — and a headless capture that never
+            // receives RTP media simply keeps showing the loop instead of a black rectangle).
+            const reveal = () => { $("date").classList.add("on"); $("preview")?.pause?.(); };
+            if ("requestVideoFrameCallback" in $("date")) $("date").requestVideoFrameCallback(reveal);
+            else $("date").addEventListener("loadeddata", reveal, { once: true });
+            show("nametag", true); $("nametag").textContent = nameTag("live");
+          }
+          if (track.kind === Track.Kind.Audio) { const a = track.attach(); a.autoplay = true; document.body.append(a); }
+        });
+        room.on(RoomEvent.AudioPlaybackStatusChanged, () => $("sound").classList.toggle("show", !room.canPlaybackAudio));
+        $("sound").onclick = () => room?.startAudio().then(() => $("sound").classList.remove("show"));
+        room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+          const mine = participant?.identity === room.localParticipant.identity;
+          for (const s of segments) {
+            if (!s.final) continue;
+            if (mine && sentByUs.delete(s.text)) continue;
+            bubble(mine ? "you" : "theo", s.text);
+          }
+        });
+        room.on(RoomEvent.Disconnected, () => {
+          say("that's a wrap 💔"); if (tick) clearInterval(tick);
+          $("say").disabled = $("hang").disabled = true;
+          $("start").disabled = false; $("start").textContent = "🔁 date someone else";
+          $("start").onclick = () => location.reload(); // fresh casting for the next one
+        });
+
+        await room.connect(grant.livekit_url, grant.participant_token);
+        show("timer", true);
+        const t0 = Date.now();
+        tick = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); $("timer").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 1000);
+
+        const mic = await startMic(room);
+        if (!mic.ok) say(`you're in, but the mic didn't start. ${mic.why}`);
+        try {
+          const reg = await attachAvatarTools(room, TOOLS, { timeoutMs: 15000 });
+          if (!reg.accepted.length) say("connected — but his tools didn't arm (the meters won't move)");
+        } catch { /* the date still works without the HUD */ }
+
+        setRizz(50);
+        if (mic.ok) say("you're in — just talk, or type below 💬");
+        $("hang").classList.remove("hidden");
+        $("say").disabled = $("hang").disabled = false;
+      }
+
+      $("start").onclick = () => startDate();
+      $("hang").onclick = () => room?.disconnect();
+
+      $("say").addEventListener("keydown", async (e) => {
+        if (e.key !== "Enter" || !room || !$("say").value.trim()) return;
+        const text = $("say").value.trim();
+        $("say").value = "";
+        bubble("you", text);
+        sentByUs.add(text);
+        await room.localParticipant.sendText(text, { topic: "lk.chat" });
+      });
+    </script>
+  </body>
+</html>

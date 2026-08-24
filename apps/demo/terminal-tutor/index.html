@@ -1,0 +1,1713 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Terminal tutor</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        /* Read on `.cur` and `.num`, both of which live inside the monospace buffer — so `ch`
+           resolves against the terminal's own font and the cursor lands on its column. */
+        --gutter: 4.2ch;
+        --glass: rgb(8 11 14 / 0.74);
+        /* Overwritten at runtime from the video's own dimensions — this is only the width to
+           hold the layout at while there is no track yet. */
+        --kit-w: 38vw;
+        --stage-w: min(46vw, 780px);
+        --stage-h: 60vh;
+        --stage-left: 3vw;
+        --stage-top: 4vh;
+      }
+      * { box-sizing: border-box }
+      html, body { height: 100% }
+      body { margin: 0; overflow: hidden; background: #05070a; color: #e8eef5;
+        font: 14px/1.5 ui-sans-serif, system-ui, sans-serif }
+
+      /* ── the composite ────────────────────────────────────────────────────────────────
+         His own column on the right, sized to him at runtime; the glass to the left of it.
+
+         The first version was full-bleed `object-fit: cover` behind everything, which crops to
+         fill: a portrait clip in a landscape window is scaled until it covers, and what covers
+         is a fraction of a face. He was enormous, off-centre and cut in half by the
+         terminal. `contain` inside a column whose width is exactly what a full-height frame
+         needs shows all of him and never crops — and the left edge is masked to a fade so the
+         video's own rectangle does not read as a pasted-on box.
+      ─────────────────────────────────────────────────────────────────────────────────── */
+      #kit { position: fixed; top: 0; right: 0; height: 100%; width: var(--kit-w);
+        object-fit: contain; object-position: 100% 50%; display: none;
+        filter: brightness(0.86) contrast(1.04) saturate(0.96);
+        -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 17%);
+        mask-image: linear-gradient(to right, transparent 0%, #000 17%) }
+      #kit.on { display: block }
+      #scrim { position: fixed; inset: 0; pointer-events: none;
+        background: linear-gradient(100deg, #05070ad9 0%, #05070aa8 34%, #05070a30 56%, transparent 72%) }
+      #vign { position: fixed; inset: 0; pointer-events: none;
+        box-shadow: inset 0 0 220px 60px #05070a }
+
+      /* ── the glass ─────────────────────────────────────────────────────────────────── */
+      /* Narrow on purpose. Eighty columns of 13px monospace is about 700px; past that the
+         terminal is buying blank space with the room he needs to be a face rather than a
+         texture behind the code. Bottom-anchored so the keycast under it never lands on the
+         caption on a short window. */
+      #stage { position: fixed; left: var(--stage-left); top: var(--stage-top);
+        width: var(--stage-w); height: var(--stage-h);
+        display: flex; flex-direction: column; opacity: 0; transform: translateY(10px);
+        transition: opacity .5s, transform .5s }
+      #stage.on { opacity: 1; transform: none }
+      @media (max-width: 1000px) {
+        #stage { left: 3vw; top: 3vh; width: 94vw; height: auto; bottom: calc(3vh + 96px) }
+        #kit { width: 100%; opacity: .3; -webkit-mask-image: none; mask-image: none }
+      }
+
+      .tmux { flex: 1; display: flex; flex-direction: column; min-height: 0;
+        /* THE INVERSION THAT MAKES THIS READABLE. The panel's BACKGROUND is translucent, never
+           the panel — `opacity` here would take the glyphs down with it and code over a moving
+           face at 40% is unreadable.
+
+           No `backdrop-filter`. It was blurring what is behind the glass, and since he moved
+           into his own column what is behind the glass is a flat gradient — so it bought
+           nothing and charged the compositor for a snapshot-and-blur of the whole panel every
+           time a keystroke changed its contents. */
+        background: var(--glass);
+        border: 1px solid #7fd7ff2e; border-radius: 12px; overflow: hidden;
+        box-shadow: 0 30px 90px -20px #000c, inset 0 1px 0 #ffffff14 }
+      /* `position: relative` is what keeps a zoomed pane inside the panes row. Without it the
+         absolutely-positioned `.pane.zoom` resolves against the viewport and covers the tmux
+         status bar — the one strip that tells you which window you are in. */
+      .panes { position: relative; flex: 1; display: flex; min-height: 0; gap: 1px; background: #7fd7ff20 }
+      .panes.h { flex-direction: column }
+      .pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+        background: rgb(6 9 12 / 0.55); position: relative; transition: flex-grow .22s }
+      .pane.zoom { position: absolute; inset: 0; z-index: 3 }
+      .buf { flex: 1; overflow: hidden; padding: 6px 0 2px;
+        font: 13px/1.42 ui-monospace, SFMono-Regular, Menlo, monospace }
+      .line { position: relative; white-space: pre; padding-right: 8px; color: #cfe0ee }
+      .num { display: inline-block; width: var(--gutter); text-align: right; padding-right: 1.2ch;
+        color: #4c6076; user-select: none }
+      .line.cur-line .num { color: #ffd23f }
+      .cur { position: absolute; top: 0; height: 1.42em; width: 1ch; background: #7cf3d0;
+        mix-blend-mode: screen; border-radius: 1px }
+      .cur.ins { width: 2px; background: #ff8f5a }
+      .sel { position: absolute; top: 0; height: 1.42em; background: #4a7fff4d; border-radius: 2px }
+      /* syntax — a light touch, so it reads as an editor and not as a textarea */
+      .t-kw { color: #c792ea } .t-str { color: #9ae86a } .t-num { color: #ffb86c }
+      .t-com { color: #5b6f83; font-style: italic } .t-fn { color: #7fd7ff }
+
+      .vstat { display: flex; align-items: center; gap: 10px; padding: 2px 9px;
+        font: 11.5px/1.7 ui-monospace, monospace; background: #0e1a24cc;
+        border-top: 1px solid #7fd7ff1f; color: #8fa6ba }
+      .vstat [data-part="mode"] { font-weight: 700; letter-spacing: .06em; color: #05070a;
+        background: #7cf3d0; padding: 0 7px; border-radius: 3px }
+      .vstat.ins [data-part="mode"] { background: #ff8f5a }
+      .vstat.vis [data-part="mode"], .vstat.vln [data-part="mode"] { background: #ffd23f }
+      .vstat.cmd [data-part="mode"] { background: #c792ea }
+      .vstat [data-part="file"] { color: #cfe0ee }
+      .vstat .grow { flex: 1 }
+      .pane.on .vstat { color: #cfe0ee }
+      .pane:not(.on) .buf { opacity: .55 }
+      .pane.on { outline: 1px solid #7cf3d066; outline-offset: -1px }
+      .cmdline { position: absolute; inset: auto 0 0 0; padding: 2px 9px; background: #05070af2;
+        font: 12px/1.7 ui-monospace, monospace; color: #e8eef5; z-index: 4 }
+
+      .tstat { display: flex; align-items: center; gap: 8px; padding: 3px 9px;
+        font: 11.5px/1.7 ui-monospace, monospace; background: #1b3a2ee6; color: #a8e6c8;
+        border-top: 1px solid #7cf3d033 }
+      .tstat .sess { color: #05070a; background: #7cf3d0; padding: 0 6px; border-radius: 2px;
+        font-weight: 700 }
+      .tstat .win { padding: 0 5px; border-radius: 2px; color: #8fbfa6 }
+      .tstat .win.on { background: #7cf3d02e; color: #d8fff0 }
+      .tstat .grow { flex: 1 }
+      .tstat .pfx { background: #ffd23f; color: #05070a; padding: 0 6px; border-radius: 2px;
+        font-weight: 700; opacity: 0; transition: opacity .12s }
+      .tstat .pfx.on { opacity: 1 }
+
+      /* ── keycast: what was just pressed, and a target he can point at ─────────────── */
+      #keys { display: flex; gap: 6px; justify-content: flex-start; padding: 9px 2px 0;
+        min-height: 34px; flex-wrap: wrap }
+      .kc { font: 12px/1 ui-monospace, monospace; padding: 5px 9px; border-radius: 6px;
+        background: #0e1a24d9; border: 1px solid #7fd7ff33; color: #cfe0ee;
+        animation: kin .16s ease-out; white-space: nowrap }
+      .kc.dim { opacity: .38 }
+      @keyframes kin { from { transform: translateY(5px) scale(.94); opacity: 0 } }
+
+      /* ── the ink ──────────────────────────────────────────────────────────────────────
+         Above the glass, because he is drawing on the FRONT of it. pointer-events: none or
+         the terminal underneath stops taking clicks the moment he draws anything.
+      ─────────────────────────────────────────────────────────────────────────────────── */
+      #ink { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 40 }
+      #ink path { fill: none; stroke-linecap: round; stroke-linejoin: round;
+        filter: url(#glow); transition: opacity .45s }
+
+      /* ── HUD ──────────────────────────────────────────────────────────────────────── */
+      #rail { position: fixed; right: 2.2vw; bottom: 3vh; width: min(300px, 30vw);
+        display: flex; flex-direction: column; gap: 9px; z-index: 20 }
+      .card { background: #070b0fd9; border: 1px solid #ffffff1a; border-radius: 11px;
+        padding: 10px 12px; backdrop-filter: blur(6px) }
+      .card h2 { margin: 0 0 5px; font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
+        color: #7f93a6; font-weight: 600 }
+      #lesson { font-size: 14.5px; color: #e8eef5; font-weight: 600 }
+      #teaches { font-size: 12.5px; color: #93a7ba; margin-top: 3px }
+      #phase { font: 11px ui-monospace, monospace; color: #7cf3d0; margin-top: 6px }
+      #phase.you { color: #ffd23f }
+      .bar { height: 4px; background: #ffffff14; border-radius: 99px; margin-top: 8px; overflow: hidden }
+      .bar i { display: block; height: 100%; background: #7cf3d0; width: 0; transition: width .35s }
+      #log { max-height: 22vh; overflow: auto; font: 11.5px/1.55 ui-monospace, monospace;
+        color: #a9bccd }
+      #log b { color: #7fd7ff; font-weight: 600 }
+      #log .his { color: #e8eef5 }
+      #log .t { color: #ffd23f }
+
+      #dock { position: fixed; left: 3.2vw; bottom: 3vh; display: flex; gap: 8px; align-items: center;
+        z-index: 20; flex-wrap: wrap; max-width: 62vw }
+      button, input { font: inherit; border-radius: 999px; border: 1px solid #ffffff26;
+        background: #0e141ad9; color: #e8eef5; padding: 9px 16px }
+      button { cursor: pointer } button:disabled { opacity: .4; cursor: default }
+      button.go { background: #7cf3d0; color: #05070a; border-color: transparent; font-weight: 700 }
+      #say { width: min(360px, 40vw); border-radius: 10px; padding: 9px 13px }
+      #say:focus { outline: 2px solid #7fd7ff88; outline-offset: 1px }
+      #caption { position: fixed; left: 3.2vw; bottom: calc(3vh + 62px); font-size: 12.5px;
+        color: #8fa6ba; max-width: 60vw; z-index: 20 }
+      #caption.bad { color: #ff9b7a }
+      .hint { font-size: 11.5px; color: #6f8496 }
+    </style>
+  </head>
+  <body>
+    <!-- `muted` is not a preference, it is what makes autoplay legal. His audio arrives on its
+         own elements via attachRemoteAudio, so this element has no sound to lose — and an
+         unmuted video element can have play() refused until a gesture, which presents as a
+         character who never appears. -->
+    <video id="kit" autoplay playsinline muted></video>
+    <div id="scrim"></div>
+    <div id="vign"></div>
+
+    <div id="stage">
+      <div class="tmux" id="tmux">
+        <div class="panes" id="panes"></div>
+        <div class="tstat" id="tstat" data-label="the tmux status bar">
+          <span class="sess">tutor</span>
+          <span id="wins" style="display:flex;gap:6px"></span>
+          <span class="grow"></span>
+          <span class="pfx" id="pfx" data-label="the prefix indicator">^B</span>
+          <span id="clock">—</span>
+        </div>
+      </div>
+      <div id="keys"></div>
+    </div>
+
+    <svg id="ink" aria-hidden="true">
+      <defs>
+        <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="4" result="b" />
+          <feMerge><feMergeNode in="b" /><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+    </svg>
+
+    <div id="rail">
+      <div class="card">
+        <h2>Lesson</h2>
+        <div id="lesson">not started</div>
+        <div id="teaches">Press Call. He opens, and he teaches from behind the glass.</div>
+        <div id="phase">idle</div>
+        <div class="bar"><i id="prog"></i></div>
+      </div>
+      <div class="card"><h2>Transcript</h2><div id="log"></div></div>
+    </div>
+
+    <div id="caption">press Call to begin</div>
+    <div id="dock">
+      <button class="go" id="call">Call</button>
+      <button id="hang" disabled>End</button>
+      <input id="say" placeholder="…or type to him" disabled />
+      <span class="hint">click the terminal to type into it · Esc leaves the text box</span>
+    </div>
+
+    <!-- A classic script, deliberately BEFORE the module. A module that throws while evaluating
+         takes every handler defined after it with it — the markup still renders, so you get a
+         finished-looking page with a green button that does nothing. This turns that into a
+         sentence. -->
+    <script>
+      (function () {
+        var said = false;
+        function boom(what) {
+          if (said) return; said = true;
+          var c = document.getElementById("caption");
+          if (c) { c.className = "bad"; c.textContent = "this page failed to start: " + what; }
+        }
+        addEventListener("error", function (e) { boom(e.message || "script error"); });
+        addEventListener("unhandledrejection", function (e) {
+          boom((e.reason && e.reason.message) || String(e.reason));
+        });
+      })();
+    </script>
+
+    <script type="module">
+      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+      import { attachAvatarTools } from "/sdk/tools.js";
+      import { enableMicrophone, attachRemoteAudio } from "/sdk/browser/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const cap = (t, bad = false) => { $("caption").textContent = t; $("caption").className = bad ? "bad" : ""; };
+      // Quotes included, because this also escapes into ATTRIBUTES — a string token like "foo"
+      // in the buffer would otherwise close `data-label` and hand the rest of the line to the
+      // parser as markup.
+      const esc = (s) => String(s).replace(/[<&>"']/g, (c) =>
+        ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c]));
+      /**
+       * The transcript, bounded.
+       *
+       * Every tool call writes a line and a lesson fires several per minute, so over a
+       * seven-minute call this grows without limit — and each append reads `scrollHeight`,
+       * which forces a synchronous layout. Unbounded nodes plus a forced layout per node is a
+       * page that gets steadily heavier the longer the lesson goes.
+       */
+      const LOG_MAX = 120;
+      const log = (who, text, cls = "") => {
+        const host = $("log");
+        const d = document.createElement("div");
+        d.className = cls;
+        d.innerHTML = `<b>${esc(who)}</b> ${esc(text)}`;
+        host.append(d);
+        while (host.childElementCount > LOG_MAX) host.firstElementChild.remove();
+        host.scrollTop = host.scrollHeight;
+      };
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE BUFFER — a vim subset whose modes are real
+
+         Not a mock. `dd` really deletes, `u` really undoes, and `ciw` really finds the word
+         under the cursor — because `check` has to be able to tell whether the learner did the
+         thing, and you can only read editor state you own. It is also why the terminal is DOM
+         rather than a canvas emulator: `highlight("line:14")` needs a rectangle for line 14,
+         and a div has one for free.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      const isW = (c) => /[A-Za-z0-9_]/.test(c ?? "");
+      const isS = (c) => /\s/.test(c ?? "");
+      const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+      function newBuf(file, lines, cy = 0, cx = 0) {
+        return {
+          file, lines: lines.slice(), cy, cx, want: cx,
+          mode: "normal", cmdline: "", pending: "", count: "", vstart: null,
+          reg: { text: "", linewise: false }, undo: [], msg: "", dirty: false, search: "",
+        };
+      }
+      const line = (b) => b.lines[b.cy] ?? "";
+      const snap = (b) => {
+        b.undo.push({ lines: b.lines.slice(), cy: b.cy, cx: b.cx });
+        if (b.undo.length > 60) b.undo.shift();
+      };
+      const fix = (b) => {
+        b.cy = clamp(b.cy, 0, b.lines.length - 1);
+        const max = Math.max(0, line(b).length - (b.mode === "insert" ? 0 : 1));
+        b.cx = clamp(b.cx, 0, max);
+      };
+
+      /** Where a motion lands. Returns {cy,cx} or null when the motion means nothing here. */
+      function motion(b, m, arg, count = 1) {
+        let { cy, cx } = b;
+        const L = () => b.lines[cy] ?? "";
+        for (let n = 0; n < count; n++) {
+          const py = cy, px = cx;
+          if (m === "h") cx = Math.max(0, cx - 1);
+          else if (m === "l") cx = Math.min(Math.max(0, L().length - 1), cx + 1);
+          else if (m === "j") { cy = Math.min(b.lines.length - 1, cy + 1); cx = Math.min(b.want, Math.max(0, L().length - 1)); }
+          else if (m === "k") { cy = Math.max(0, cy - 1); cx = Math.min(b.want, Math.max(0, L().length - 1)); }
+          else if (m === "0") cx = 0;
+          else if (m === "^") cx = Math.max(0, L().search(/\S/));
+          else if (m === "$") cx = Math.max(0, L().length - 1);
+          else if (m === "gg") cy = clamp((count > 1 ? count : 1) - 1, 0, b.lines.length - 1);
+          else if (m === "G") cy = count > 1 ? clamp(count - 1, 0, b.lines.length - 1) : b.lines.length - 1;
+          else if (m === "w" || m === "b" || m === "e") ({ cy, cx } = wordStep(b, m, cy, cx));
+          else if (m === "f" || m === "t") {
+            const i = L().indexOf(arg, cx + 1);
+            if (i < 0) return null;
+            cx = m === "f" ? i : i - 1;
+          } else if (m === "{" || m === "}") {
+            const step = m === "}" ? 1 : -1;
+            let y = cy + step;
+            while (y > 0 && y < b.lines.length - 1 && b.lines[y].trim() !== "") y += step;
+            cy = clamp(y, 0, b.lines.length - 1); cx = 0;
+          } else return null;
+          // Wedged against an edge, or the motion was absolute: no number of further repeats
+          // can move it, so stop counting. This is the second guard on a runaway count and is
+          // independent of the cap on how large one can get.
+          if (cy === py && cx === px) break;
+        }
+        return { cy, cx };
+      }
+
+      /**
+       * w / b / e, wrapping across lines the way vim does.
+       *
+       * `b` and `e` are the SAME walk in opposite directions — leave where you are, skip any
+       * whitespace, then run to the far end of whatever you landed in. Written as "step back
+       * one character kind" instead, `b` stops one short of the word start, and the lesson
+       * that asks the learner to land on a word can never be passed.
+       */
+      function wordStep(b, m, cy, cx) {
+        const at = (y, x) => (b.lines[y] ?? "")[x];
+        const kind = (c) => (c === undefined ? 0 : isS(c) ? 0 : isW(c) ? 1 : 2);
+        const fwd = m !== "b";
+        let y = cy, x = cx;
+        const step = () => {
+          if (fwd) {
+            x++;
+            if (x >= (b.lines[y] ?? "").length) { if (y >= b.lines.length - 1) return false; y++; x = 0; }
+          } else {
+            x--;
+            if (x < 0) { if (y <= 0) return false; y--; x = Math.max(0, (b.lines[y] ?? "").length - 1); }
+          }
+          return true;
+        };
+
+        if (m === "w") {
+          const k0 = kind(at(y, x));
+          while (k0 !== 0 && kind(at(y, x)) === k0 && step());
+          while (kind(at(y, x)) === 0 && step());
+          return { cy: y, cx: x };
+        }
+        if (!step()) return { cy: y, cx: x };
+        while (kind(at(y, x)) === 0 && step());
+        const k = kind(at(y, x));
+        while (k !== 0) {
+          const py = y, px = x;
+          if (!step()) break;
+          if (kind(at(y, x)) !== k) { y = py; x = px; break; }
+        }
+        return { cy: y, cx: x };
+      }
+
+      /** The word under the cursor — what `iw` and `aw` operate on. */
+      function innerWord(b, around) {
+        const s = line(b);
+        let a = b.cx, z = b.cx;
+        if (!s.length) return null;
+        const k = isW(s[a]) ? isW : isS(s[a]) ? isS : (c) => !isW(c) && !isS(c);
+        while (a > 0 && k(s[a - 1])) a--;
+        while (z < s.length - 1 && k(s[z + 1])) z++;
+        if (around) while (z < s.length - 1 && isS(s[z + 1])) z++;
+        return { a, z };
+      }
+
+      /** d / c / y over a charwise or linewise range. */
+      function operate(b, op, range) {
+        snap(b);
+        if (range.linewise) {
+          const a = Math.min(range.y0, range.y1), z = Math.max(range.y0, range.y1);
+          b.reg = { text: b.lines.slice(a, z + 1).join("\n"), linewise: true };
+          if (op === "y") { b.cy = a; return; }
+          b.lines.splice(a, z - a + 1);
+          if (op === "c") { b.lines.splice(a, 0, ""); b.cy = a; b.cx = 0; enter(b, "insert"); return; }
+          if (!b.lines.length) b.lines = [""];
+          b.cy = clamp(a, 0, b.lines.length - 1); b.cx = 0; b.dirty = true;
+          return;
+        }
+        const s = b.lines[range.y] ?? "";
+        const a = Math.min(range.a, range.z), z = Math.max(range.a, range.z);
+        b.reg = { text: s.slice(a, z + 1), linewise: false };
+        if (op === "y") { b.cx = a; return; }
+        b.lines[range.y] = s.slice(0, a) + s.slice(z + 1);
+        b.cy = range.y; b.cx = a; b.dirty = true;
+        if (op === "c") enter(b, "insert");
+      }
+
+      function enter(b, mode) {
+        b.mode = mode;
+        if (mode === "visual" || mode === "vline") b.vstart = { cy: b.cy, cx: b.cx };
+        if (mode === "normal") { b.vstart = null; fix(b); }
+      }
+
+      function put(b, after) {
+        snap(b);
+        if (b.reg.linewise) {
+          const rows = b.reg.text.split("\n");
+          b.lines.splice(b.cy + (after ? 1 : 0), 0, ...rows);
+          b.cy += after ? 1 : 0; b.cx = 0;
+        } else {
+          const s = line(b), at = after ? b.cx + 1 : b.cx;
+          b.lines[b.cy] = s.slice(0, at) + b.reg.text + s.slice(at);
+          b.cx = at + b.reg.text.length - 1;
+        }
+        b.dirty = true;
+      }
+
+      /* ── the key machine ──────────────────────────────────────────────────────────────
+         `pending` accumulates until it is a complete command. The whole reason this is a real
+         parser and not a lookup table: `d` alone must WAIT, `dw` must act, and a learner who
+         presses `d` and then thinks about it for four seconds has to see the editor waiting.
+      ─────────────────────────────────────────────────────────────────────────────────── */
+      const OPS = "dcy";
+      const NEEDS_ARG = "ft";
+
+      function feed(b, k) {
+        b.msg = "";
+        if (b.mode === "insert") return insertKey(b, k);
+        if (b.mode === "command") return commandKey(b, k);
+        return normalKey(b, k);
+      }
+
+      function insertKey(b, k) {
+        if (k === "Esc") { b.cx = Math.max(0, b.cx - 1); enter(b, "normal"); return "Esc"; }
+        if (k === "CR") {
+          snap(b);
+          const s = line(b);
+          b.lines.splice(b.cy, 1, s.slice(0, b.cx), s.slice(b.cx));
+          b.cy++; b.cx = 0; b.dirty = true; return "CR";
+        }
+        if (k === "BS") {
+          if (b.cx > 0) { const s = line(b); b.lines[b.cy] = s.slice(0, b.cx - 1) + s.slice(b.cx); b.cx--; b.dirty = true; }
+          else if (b.cy > 0) { const prev = b.lines[b.cy - 1]; b.cx = prev.length;
+            b.lines.splice(b.cy - 1, 2, prev + line(b)); b.cy--; b.dirty = true; }
+          return "BS";
+        }
+        if (k === "Tab") k = "  ";
+        if (k.length > 2) return null;
+        const s = line(b);
+        b.lines[b.cy] = s.slice(0, b.cx) + k + s.slice(b.cx);
+        b.cx += k.length; b.dirty = true; b.want = b.cx;
+        return k;
+      }
+
+      function commandKey(b, k) {
+        if (k === "Esc") { b.cmdline = ""; enter(b, "normal"); return "Esc"; }
+        if (k === "BS") {
+          b.cmdline = b.cmdline.slice(0, -1);
+          if (!b.cmdline) enter(b, "normal");
+          return "BS";
+        }
+        if (k === "CR") {
+          const c = b.cmdline;
+          b.cmdline = ""; enter(b, "normal");
+          return runEx(b, c);
+        }
+        if (k.length === 1) { b.cmdline += k; return null; }
+        return null;
+      }
+
+      /** `:` and `/` both land here. Returns the completed command, for the keycast. */
+      function runEx(b, c) {
+        if (c.startsWith("/")) {
+          b.search = c.slice(1);
+          searchNext(b, +1);
+          return c;
+        }
+        const cmd = c.slice(1).trim();
+        if (cmd === "w" || cmd === "wq" || cmd === "x") { b.dirty = false; b.msg = `"${b.file}" written`; }
+        if (cmd === "q" || cmd === "q!" || cmd === "wq" || cmd === "x") b.msg = b.dirty && cmd === "q"
+          ? "E37: no write since last change" : b.msg || "would close the pane";
+        if (cmd === "sp") Tmux.split("h");
+        if (cmd === "vs") Tmux.split("v");
+        return c;
+      }
+
+      function searchNext(b, dir) {
+        if (!b.search) return;
+        const n = b.lines.length;
+        for (let i = 1; i <= n; i++) {
+          const y = (b.cy + dir * i + n * 2) % n;
+          const x = b.lines[y].indexOf(b.search);
+          if (x >= 0) { b.cy = y; b.cx = x; b.want = x; return; }
+        }
+        b.msg = `E486: pattern not found: ${b.search}`;
+      }
+
+      function normalKey(b, k) {
+        // A count prefix. `0` is a motion when no count is building, a digit when one is.
+        //
+        // CAPPED AT FOUR DIGITS, and the cap is load-bearing. The OS repeats a held key about
+        // thirty times a second, so a second and a half resting on the 5 key builds "555…" —
+        // a forty-digit number — and `for (n = 0; n < 5e39; n++)` is not a slow motion, it is
+        // a tab that never comes back. It presented as a random freeze while typing because
+        // the number row sits directly above the keys this app spends its whole time teaching.
+        if (/^[1-9]$/.test(k) || (k === "0" && b.count)) {
+          if (b.count.length < 4) b.count += k;
+          return null;
+        }
+        if (k === "Esc") { b.pending = ""; b.count = ""; enter(b, "normal"); return "Esc"; }
+
+        b.pending += k;
+        const p = b.pending;
+        const count = Number(b.count || 1);
+        const done = (label) => { b.pending = ""; b.count = ""; b.want = b.cx; fix(b); return label ?? p; };
+        const wait = () => null;
+
+        // ── visual-mode operators ──
+        // BEFORE the incomplete-command waits, not after. In visual mode `d` is a complete
+        // command — there is already a range — so falling into the "an operator alone is
+        // incomplete" branch below would leave `v w d` waiting forever for a motion.
+        const vis = b.mode === "visual" || b.mode === "vline";
+        if (vis && (OPS.includes(p) || p === "x")) {
+          const op = p === "x" ? "d" : p;
+          const vs = b.vstart ?? { cy: b.cy, cx: b.cx };
+          const range = b.mode === "vline"
+            ? { linewise: true, y0: vs.cy, y1: b.cy }
+            : vs.cy === b.cy
+              ? { y: b.cy, a: vs.cx, z: b.cx }
+              : { linewise: true, y0: vs.cy, y1: b.cy };
+          const wasLine = b.mode === "vline";
+          b.vstart = null;
+          b.mode = "normal";
+          operate(b, op, range);
+          if (b.mode !== "insert") enter(b, "normal");
+          return done(`${wasLine ? "V" : "v"}${p}`);
+        }
+
+        // Incomplete by construction — wait for the rest rather than guessing at it.
+        if (OPS.includes(p) || p === "g" || p === "f" || p === "t" || p === "Z") return wait();
+        // `di`/`ca` want a text object, `dg` wants the second g, `dt` wants a character.
+        if (p.length === 2 && OPS.includes(p[0]) && ("iag".includes(p[1]) || NEEDS_ARG.includes(p[1]))) return wait();
+
+        // ── mode entries ──
+        if (p === "i") { snap(b); enter(b, "insert"); return done(); }
+        if (p === "a") { snap(b); b.cx = Math.min(line(b).length, b.cx + 1); enter(b, "insert"); return done(); }
+        if (p === "I") { snap(b); b.cx = Math.max(0, line(b).search(/\S/)); enter(b, "insert"); return done(); }
+        if (p === "A") { snap(b); b.cx = line(b).length; enter(b, "insert"); return done(); }
+        if (p === "o" || p === "O") {
+          snap(b);
+          const indent = (line(b).match(/^\s*/) ?? [""])[0];
+          b.lines.splice(b.cy + (p === "o" ? 1 : 0), 0, indent);
+          if (p === "o") b.cy++;
+          b.cx = indent.length; b.dirty = true; enter(b, "insert"); return done();
+        }
+        if (p === "v") { enter(b, b.mode === "visual" ? "normal" : "visual"); return done(); }
+        if (p === "V") { enter(b, b.mode === "vline" ? "normal" : "vline"); return done(); }
+        if (p === ":" || p === "/") { b.cmdline = p; enter(b, "command"); return done(); }
+
+        // ── one-key edits ──
+        if (p === "x") { snap(b); const s = line(b);
+          b.reg = { text: s[b.cx] ?? "", linewise: false };
+          b.lines[b.cy] = s.slice(0, b.cx) + s.slice(b.cx + 1); b.dirty = true; return done(); }
+        if (p === "D") { snap(b); const s = line(b);
+          b.reg = { text: s.slice(b.cx), linewise: false };
+          b.lines[b.cy] = s.slice(0, b.cx); b.dirty = true; return done(); }
+        if (p === "C") { snap(b); b.lines[b.cy] = line(b).slice(0, b.cx); b.dirty = true;
+          enter(b, "insert"); return done(); }
+        if (p === "J" && b.cy < b.lines.length - 1) { snap(b);
+          b.cx = line(b).length;
+          b.lines.splice(b.cy, 2, line(b) + " " + b.lines[b.cy + 1].replace(/^\s+/, ""));
+          b.dirty = true; return done(); }
+        if (p === "p" || p === "P") { put(b, p === "p"); return done(); }
+        if (p === "u") {
+          const prev = b.undo.pop();
+          if (prev) { b.lines = prev.lines; b.cy = prev.cy; b.cx = prev.cx; b.msg = "1 change; before"; }
+          else b.msg = "Already at oldest change";
+          return done();
+        }
+        if (p === "n" || p === "N") { searchNext(b, p === "n" ? +1 : -1); return done(); }
+
+        // ── operator + motion ──
+        if (OPS.includes(p[0]) && p.length > 1) {
+          const op = p[0], rest = p.slice(1);
+          if (rest === op) { operate(b, op, { linewise: true, y0: b.cy, y1: clamp(b.cy + count - 1, 0, b.lines.length - 1) }); return done(); }
+          if (rest === "iw" || rest === "aw") {
+            const w = innerWord(b, rest === "aw");
+            if (!w) return done();
+            operate(b, op, { y: b.cy, a: w.a, z: w.z });
+            return done();
+          }
+          if (rest === "G" || rest === "gg") {
+            const to = motion(b, rest, null, count);
+            if (to) operate(b, op, { linewise: true, y0: b.cy, y1: to.cy });
+            return done();
+          }
+          const arg = NEEDS_ARG.includes(rest[0]) ? rest[1] : null;
+          const mk = NEEDS_ARG.includes(rest[0]) ? rest[0] : rest;
+          const to = motion(b, mk, arg, count);
+          if (!to) { b.msg = "no"; return done(); }
+          if (to.cy !== b.cy) operate(b, op, { linewise: true, y0: b.cy, y1: to.cy });
+          else {
+            // `dw` stops before the character it lands on; `de`/`d$` include it.
+            const exclusive = mk === "w" || mk === "h" || mk === "0";
+            const a = Math.min(b.cx, to.cx), z = Math.max(b.cx, to.cx) - (exclusive ? 1 : 0);
+            operate(b, op, { y: b.cy, a, z: Math.max(a, z) });
+          }
+          return done();
+        }
+
+        // ── plain motions ──
+        const mk = NEEDS_ARG.includes(p[0]) && p.length === 2 ? p[0] : p;
+        const arg = mk !== p ? p[1] : null;
+        const to = motion(b, mk, arg, count);
+        if (to) { b.cy = to.cy; b.cx = to.cx; if (!"jk".includes(mk)) b.want = to.cx; return done(); }
+        b.pending = ""; b.count = "";
+        return null;
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         TMUX — panes and windows, enough of them to teach the prefix
+
+         Deliberately not a layout tree. One split direction per window and up to four panes
+         covers `%`, `"`, `o`, `z` and the arrows, which is the entire lesson. A real layout
+         tree would be more code than the vim engine and teach nothing extra.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      const Tmux = {
+        windows: [], cur: 0, prefix: false, zoom: false,
+        reset(spec) {
+          this.windows = [{ name: spec.name ?? "editor", split: spec.split ?? "v",
+            panes: spec.panes.map((p) => newBuf(p.file, p.lines, p.cy ?? 0, p.cx ?? 0)), active: 0 }];
+          this.cur = 0; this.prefix = false; this.zoom = false;
+        },
+        win() { return this.windows[this.cur]; },
+        buf() { const w = this.win(); return w.panes[w.active]; },
+        split(dir) {
+          const w = this.win();
+          if (w.panes.length >= 4) return;
+          w.split = dir;
+          const src = w.panes[w.active];
+          w.panes.splice(w.active + 1, 0, newBuf(src.file, src.lines, src.cy, src.cx));
+          w.active++; this.zoom = false;
+        },
+        /** The prefix key machine. Returns a keycast label, or null while it is still arming. */
+        key(k) {
+          if (k === "C-b") { this.prefix = true; return "^B"; }
+          if (!this.prefix) return null;
+          this.prefix = false;
+          const w = this.win();
+          if (k === "%") { this.split("v"); return "^B %"; }
+          if (k === '"') { this.split("h"); return '^B "'; }
+          if (k === "o") { w.active = (w.active + 1) % w.panes.length; this.zoom = false; return "^B o"; }
+          if (k === "z") { if (w.panes.length > 1) this.zoom = !this.zoom; return "^B z"; }
+          if (k === "x") {
+            if (w.panes.length > 1) { w.panes.splice(w.active, 1); w.active = Math.max(0, w.active - 1); this.zoom = false; }
+            return "^B x";
+          }
+          if (k === "c") {
+            const src = w.panes[w.active];
+            this.windows.push({ name: "shell", split: "v", panes: [newBuf("~", ["$ "], 0, 2)], active: 0 });
+            this.cur = this.windows.length - 1; this.zoom = false; void src; return "^B c";
+          }
+          if (k === "n" || k === "p") {
+            const d = k === "n" ? 1 : -1;
+            this.cur = (this.cur + d + this.windows.length) % this.windows.length;
+            this.zoom = false; return `^B ${k}`;
+          }
+          if (k === "d") { return "^B d"; }
+          if (["Left", "Right", "Up", "Down"].includes(k)) {
+            const along = (w.split === "v") === (k === "Left" || k === "Right");
+            if (along) {
+              const d = (k === "Right" || k === "Down") ? 1 : -1;
+              w.active = clamp(w.active + d, 0, w.panes.length - 1);
+              this.zoom = false;
+            }
+            return `^B ${k}`;
+          }
+          return `^B ${k}`;
+        },
+      };
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         RENDER — and, as a side effect, the geometry he points at
+
+         Every addressable thing gets a `data-*` hook and a `data-label` in plain words. The
+         label is what comes back to him in the tool result, so he can say what he drew on
+         without the page having to teach his its own id scheme.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      const KW = /^(const|let|var|function|return|if|else|for|while|import|export|from|await|async|class|new|of|in|typeof|null|true|false|undefined)$/;
+      const TOK = /(\/\/[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)|(\s+)|([^\s])/g;
+
+      /**
+       * Tokenise for colour AND for pointing at.
+       *
+       * Only real words get a `data-word` index. Counting punctuation into it looked harmless
+       * and was not: `word:7:9` on a line of `setTimeout(() => fn(...args), delay)` resolves to
+       * "(" rather than to the tenth WORD, and he has no way to find that out except by
+       * drawing on the wrong thing. `data-tok` carries the text, so `text:delay` — which is how
+       * he actually thinks about it — skips the counting entirely.
+       */
+      function lineHTML(text, ln) {
+        let html = "", wi = 0, m;
+        TOK.lastIndex = 0;
+        while ((m = TOK.exec(text))) {
+          const [t, com, str, num, word, space] = m;
+          if (space) { html += esc(t); continue; }
+          let cls = "";
+          if (com) cls = "t-com";
+          else if (str) cls = "t-str";
+          else if (num) cls = "t-num";
+          else if (word) cls = KW.test(t) ? "t-kw" : text[m.index + t.length] === "(" ? "t-fn" : "";
+          const addressable = Boolean(word || num);
+          const idx = addressable ? ` data-word="${ln}:${wi++}"` : "";
+          html += `<span class="${cls}"${idx} data-tok="${esc(t)}"`
+            + ` data-label="&quot;${esc(t)}&quot; on line ${ln}">${esc(t)}</span>`;
+        }
+        return html || "";
+      }
+
+      const MODE_NAME = { normal: "NORMAL", insert: "INSERT", visual: "VISUAL", vline: "V-LINE", command: "COMMAND" };
+      const MODE_CLS = { insert: "ins", visual: "vis", vline: "vln", command: "cmd" };
+      /** Positional names, so `pane:left` means what it looks like. */
+      const paneNames = (w) => {
+        const n = w.panes.length;
+        if (n === 1) return ["main"];
+        const set = w.split === "v" ? ["left", "right", "third", "fourth"] : ["top", "bottom", "third", "fourth"];
+        return set.slice(0, n);
+      };
+
+      function render() {
+        const w = Tmux.win();
+        const names = paneNames(w);
+        const host = $("panes");
+        host.className = "panes" + (w.split === "h" ? " h" : "");
+        host.innerHTML = w.panes.map((b, i) => {
+          const zoomed = Tmux.zoom && i === w.active;
+          const hidden = Tmux.zoom && i !== w.active;
+          const modeCls = MODE_CLS[b.mode] ?? "";
+          const status = b.msg || (b.mode === "command" ? "" : "");
+          return `<div class="pane${i === w.active ? " on" : ""}${zoomed ? " zoom" : ""}"
+                       data-pane="${names[i]}" data-index="${i + 1}"
+                       data-label="the ${names[i]} pane"
+                       style="${hidden ? "visibility:hidden" : ""}">
+              <div class="buf" data-label="the ${names[i]} pane's text">${
+                b.lines.map((t, y) => {
+                  const isCur = i === w.active && y === b.cy;
+                  const sel = selSpan(b, y, i === w.active);
+                  const cur = isCur
+                    ? `<span class="cur${b.mode === "insert" ? " ins" : ""}" data-label="the cursor"
+                             style="left:calc(var(--gutter) + ${b.cx}ch)"></span>`
+                    : "";
+                  return `<div class="line${isCur ? " cur-line" : ""}" data-line="${y + 1}"
+                               data-label="line ${y + 1}"><span class="num">${y + 1}</span>${sel}${cur}<span class="txt">${lineHTML(t, y + 1)}</span></div>`;
+                }).join("")
+              }</div>
+              ${b.mode === "command" ? `<div class="cmdline" data-label="the command line">${esc(b.cmdline)}</div>` : ""}
+              <div class="vstat ${modeCls}">
+                <span data-part="mode" data-label="the mode indicator">${MODE_NAME[b.mode]}</span>
+                <span data-part="file" data-label="the file name">${esc(b.file)}${b.dirty ? " [+]" : ""}</span>
+                <span class="grow" data-part="msg" data-label="the message area">${esc(status)}</span>
+                <span data-part="pos" data-label="the cursor position">${b.cy + 1}:${b.cx + 1}</span>
+              </div>
+            </div>`;
+        }).join("");
+
+        $("wins").innerHTML = Tmux.windows.map((x, i) =>
+          `<span class="win${i === Tmux.cur ? " on" : ""}" data-win="${i}"
+                 data-label="tmux window ${i}, ${x.name}">${i}:${esc(x.name)}${i === Tmux.cur ? "*" : ""}</span>`).join("");
+        $("pfx").classList.toggle("on", Tmux.prefix);
+        Ink.redraw();   // marks are anchored to targets, and the targets just moved
+      }
+
+      /**
+       * One render per frame, however many keys arrived in it.
+       *
+       * `render()` rebuilds the panes wholesale and then relays every ink mark, which forces a
+       * synchronous layout. A held key repeats about thirty times a second and each repeat was
+       * paying for all of that; coalescing collapses a burst into one. Tools go through
+       * `flushRender` first, because `highlight` resolves a target against the live DOM and
+       * must not be handed the frame before last.
+       */
+      let renderPending = 0;
+      function scheduleRender() {
+        if (renderPending) return;
+        renderPending = requestAnimationFrame(() => { renderPending = 0; render(); });
+      }
+      function flushRender() {
+        if (!renderPending) return;
+        cancelAnimationFrame(renderPending);
+        renderPending = 0;
+        render();
+      }
+
+      function selSpan(b, y, active) {
+        if (!active || !b.vstart || (b.mode !== "visual" && b.mode !== "vline")) return "";
+        const a = Math.min(b.vstart.cy, b.cy), z = Math.max(b.vstart.cy, b.cy);
+        if (y < a || y > z) return "";
+        if (b.mode === "vline") return `<span class="sel" style="left:var(--gutter);width:${Math.max(1, (b.lines[y] ?? "").length)}ch"></span>`;
+        if (a !== z) {
+          const len = Math.max(1, (b.lines[y] ?? "").length);
+          return `<span class="sel" style="left:var(--gutter);width:${len}ch"></span>`;
+        }
+        const x0 = Math.min(b.vstart.cx, b.cx), x1 = Math.max(b.vstart.cx, b.cx);
+        return `<span class="sel" style="left:calc(var(--gutter) + ${x0}ch);width:${x1 - x0 + 1}ch"></span>`;
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         SCREEN — the resolver
+
+         THIS is the demo. He never sends a coordinate; he sends a NAME, and the page — the
+         only thing here that can actually see — turns it into a rectangle. Hand a language
+         model {x1,y1,x2,y2} for a screen it cannot see and it will draw somewhere confident
+         and wrong, every time, and never know.
+
+         The failure path matters as much as the happy one: a miss returns what IS addressable,
+         so his second attempt is a pick from a list rather than a second guess.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      const Screen = {
+        activePane() { return $("panes").querySelector(".pane.on") ?? $("panes").querySelector(".pane"); },
+        resolve(target) {
+          const t = String(target ?? "").trim().toLowerCase();
+          const P = this.activePane();
+          if (!t) return null;
+          if (t === "cursor") return P?.querySelector(".cur") ?? null;
+          if (t === "screen" || t === "terminal") return $("tmux");
+          if (t === "tmux:status") return $("tstat");
+          if (t === "tmux:prefix") return $("pfx");
+
+          let m;
+          if ((m = t.match(/^tmux:window:(\d+)$/))) return $("wins").querySelector(`[data-win="${m[1]}"]`);
+          if ((m = t.match(/^pane:(.+)$/))) {
+            const k = m[1];
+            if (k === "active" || k === "current") return P;
+            return $("panes").querySelector(`[data-pane="${k}"]`) ?? $("panes").querySelector(`[data-index="${k}"]`);
+          }
+          if ((m = t.match(/^status:(\w+)$/))) return P?.querySelector(`[data-part="${m[1]}"]`) ?? null;
+          if ((m = t.match(/^key:(.+)$/))) {
+            const want = m[1];
+            return [...$("keys").querySelectorAll(".kc")].reverse()
+              .find((el) => (el.dataset.key ?? "").toLowerCase() === want) ?? null;
+          }
+          // The one he reaches for most: name the word, not its index.
+          if ((m = t.match(/^(?:text|word):([^:@]+)(?:@(\w+))?$/)) && !/^\d+$/.test(m[1])) {
+            const host = m[2] ? $("panes").querySelector(`[data-pane="${m[2]}"]`) : P;
+            const want = m[1];
+            return [...(host?.querySelectorAll("[data-tok]") ?? [])]
+              .find((el) => (el.dataset.tok ?? "").toLowerCase() === want) ?? null;
+          }
+          // line:14 · line:14@right · word:14:2
+          if ((m = t.match(/^word:(\d+):(\d+)(?:@(\w+))?$/))) {
+            const host = m[3] ? $("panes").querySelector(`[data-pane="${m[3]}"]`) : P;
+            return host?.querySelector(`[data-word="${m[1]}:${m[2]}"]`) ?? null;
+          }
+          if ((m = t.match(/^line:(\d+)(?:@(\w+))?$/))) {
+            const host = m[2] ? $("panes").querySelector(`[data-pane="${m[2]}"]`) : P;
+            return host?.querySelector(`[data-line="${m[1]}"]`) ?? null;
+          }
+          return null;
+        },
+        /** Bounded on purpose. Forty line ids teach his nothing that forty bytes of shape does not. */
+        list() {
+          const w = Tmux.win(), b = Tmux.buf();
+          return {
+            best: "text:<the word itself>, e.g. text:delay — no counting, and it is what you said out loud",
+            panes: paneNames(w).map((n) => `pane:${n}`).concat("pane:active"),
+            lines: `line:1 … line:${b.lines.length} (active pane; add @left / @right for another)`,
+            words: "word:<line>:<index>, counting WORDS from 0 along the line — punctuation is not counted",
+            status: ["status:mode", "status:file", "status:pos", "status:msg", "cursor"],
+            tmux: ["tmux:status", "tmux:prefix", ...Tmux.windows.map((_, i) => `tmux:window:${i}`)],
+            keys: [...$("keys").querySelectorAll(".kc")].map((el) => `key:${el.dataset.key}`).slice(-6),
+          };
+        },
+      };
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         INK — the lightboard
+
+         He has no hand and cannot see, so freehand is out: what he gets is a target and a
+         shape, and the PAGE draws the stroke. The hand-drawn feel is manufactured — the rect is
+         wobbled, the path is drawn on over a third of a second, and the glow filter does the
+         marker. Anchored to a target rather than to pixels, so it survives the buffer changing
+         underneath it: `redraw` re-resolves and re-lays every live mark on every render.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      const Ink = (() => {
+        const svg = $("ink");
+        const COLORS = ["#ff4fd8", "#38f0ff", "#ffd23f", "#7cff6b", "#c084fc"];
+        const MAX = 4;
+        let ci = 0;
+        const marks = [];   // { target, style, color, el }
+
+        const jit = (n) => (Math.random() - 0.5) * n;
+        const smooth = (pts) => {
+          let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+          for (let i = 1; i < pts.length - 1; i++) {
+            const [x, y] = pts[i], [nx, ny] = pts[i + 1];
+            d += `Q${x.toFixed(1)} ${y.toFixed(1)} ${((x + nx) / 2).toFixed(1)} ${((y + ny) / 2).toFixed(1)}`;
+          }
+          const [lx, ly] = pts[pts.length - 1];
+          return d + `L${lx.toFixed(1)} ${ly.toFixed(1)}`;
+        };
+
+        /**
+         * The rectangle to draw around, which is not always the element's own.
+         *
+         * A `.line` is a block: its rect runs to the right edge of the pane, so a box around
+         * line 3 of a 20-column line is mostly box around nothing. Its `.txt` span is inline
+         * and hugs the glyphs, so the left edge comes from the line (to take in the number)
+         * and the right edge from the text.
+         */
+        function rectOf(el) {
+          const r = el.getBoundingClientRect();
+          const txt = el.classList?.contains("line") ? el.querySelector(".txt") : null;
+          const t = txt?.getBoundingClientRect();
+          const right = t && t.width > 0 ? t.right : r.right;
+          return { left: r.left, top: r.top, right, bottom: r.bottom,
+                   width: right - r.left, height: r.height };
+        }
+
+        function pathFor(r, style) {
+          // Asymmetric. A line box is ~18px tall and 7px of vertical padding puts the stroke
+          // through the middle of its neighbours — the highlight then reads as three lines.
+          const px = 7, py = Math.min(5, Math.max(2, r.height * 0.16));
+          const x0 = r.left - px, y0 = r.top - py, x1 = r.right + px, y1 = r.bottom + py;
+          if (style === "underline" || style === "strike") {
+            const y = style === "strike" ? r.top + r.height / 2 : r.bottom + 3;
+            const pts = [];
+            for (let i = 0; i <= 8; i++) pts.push([r.left - 4 + ((r.width + 8) * i) / 8, y + jit(3)]);
+            return smooth(pts);
+          }
+          if (style === "circle") {
+            const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+            const rx = r.width / 2 + 12, ry = r.height / 2 + Math.min(10, r.height * 0.45);
+            const N = 16, over = 4;  // a few samples past the start: a real marker overshoots
+            const pts = [];
+            for (let i = 0; i <= N + over; i++) {
+              const a = (i / N) * Math.PI * 2 - Math.PI * 0.55;
+              const k = 1 + jit(0.07);
+              pts.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k]);
+            }
+            return smooth(pts);
+          }
+          if (style === "arrow") {
+            // Into the empty margin beside the target, on a shallow arc. Aimed from the far
+            // corner of the frame it looks like the reference — and drags a glowing stroke
+            // diagonally through four lines of the code it is supposed to be pointing at.
+            const stage = $("stage").getBoundingClientRect();
+            const fromRight = stage.right - r.right > 90;
+            const tipX = fromRight ? r.right + 9 : r.left - 9;
+            const sx = fromRight ? Math.min(stage.right - 12, r.right + 185)
+                                 : Math.max(stage.left + 12, r.left - 185);
+            const ty = r.top + r.height / 2;
+            const sy = ty - Math.min(30, r.height * 1.5);
+            const pts = [[sx, sy], [(sx + tipX) / 2 + jit(14), sy + (ty - sy) * 0.55 + jit(6)], [tipX, ty]];
+            const dir = fromRight ? 1 : -1;
+            const head = `M${tipX + dir * 12} ${ty - 8}L${tipX} ${ty}L${tipX + dir * 12} ${ty + 8}`;
+            return smooth(pts) + head;
+          }
+          // box
+          const a = 3.4;
+          const edge = (ax, ay, bx, by) => {
+            const mx = (ax + bx) / 2, my = (ay + by) / 2;
+            const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy) || 1;
+            const o = jit(a);
+            return `Q${(mx - (dy / L) * o).toFixed(1)} ${(my + (dx / L) * o).toFixed(1)} ${bx.toFixed(1)} ${by.toFixed(1)}`;
+          };
+          return `M${(x0 + jit(5)).toFixed(1)} ${(y0 + jit(3)).toFixed(1)}`
+            + edge(x0, y0, x1, y0) + edge(x1, y0, x1, y1)
+            + edge(x1, y1, x0, y1) + edge(x0, y1, x0, y0 - 5 - Math.abs(jit(6)));
+        }
+
+        function lay(mark, animate) {
+          const el = Screen.resolve(mark.target);
+          if (!el) { mark.el.style.opacity = "0"; return false; }
+          const r = rectOf(el);
+          if (!r.width && !r.height) { mark.el.style.opacity = "0"; return false; }
+          mark.el.setAttribute("d", pathFor(r, mark.style));
+          mark.el.style.opacity = "1";
+          if (animate) {
+            const len = mark.el.getTotalLength();
+            mark.el.style.transition = "none";
+            mark.el.style.strokeDasharray = len;
+            mark.el.style.strokeDashoffset = len;
+            void mark.el.getBoundingClientRect();
+            mark.el.style.transition = "stroke-dashoffset 380ms cubic-bezier(.32,.72,.36,1), opacity .45s";
+            mark.el.style.strokeDashoffset = "0";
+          } else {
+            // A relaid mark must not re-animate — the buffer moves on every keystroke, and a
+            // box that redraws itself forty times a second is a strobe, not a highlight.
+            mark.el.style.strokeDasharray = "none";
+            mark.el.style.strokeDashoffset = "0";
+          }
+          return true;
+        }
+
+        return {
+          draw(target, style) {
+            const color = COLORS[ci++ % COLORS.length];
+            const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            el.setAttribute("stroke", color);
+            el.setAttribute("stroke-width", style === "underline" || style === "strike" ? "3.4" : "2.8");
+            svg.append(el);
+            const mark = { target, style, color, el };
+            if (!lay(mark, true)) { el.remove(); return false; }
+            marks.push(mark);
+            while (marks.length > MAX) {
+              const old = marks.shift();
+              old.el.style.opacity = "0";
+              setTimeout(() => old.el.remove(), 500);
+            }
+            return true;
+          },
+          clear() {
+            while (marks.length) {
+              const m = marks.pop();
+              m.el.style.opacity = "0";
+              setTimeout(() => m.el.remove(), 500);
+            }
+          },
+          count() { return marks.length; },
+          redraw() { for (const m of marks) lay(m, false); },
+        };
+      })();
+      /**
+       * Compose the frame around whatever character showed up.
+       *
+       * His aspect ratio is not knowable from here — it is whatever the source clip was, and
+       * this demo ships to people whose avatar is not this one. So: give him a column exactly
+       * as wide as a full-height frame needs (`contain` then fills it with no crop and no
+       * letterbox), and centre the terminal in what is left rather than pinning it to the
+       * margin. Pinned left, a portrait clip on a wide monitor leaves a 480px hole in the
+       * middle of the shot; balanced, the same empty space reads as composition.
+       */
+      function fitKit() {
+        const v = $("kit");
+        const ar = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 0;
+        // Capped, so a wide clip cannot push the terminal off its own screen.
+        const herW = ar ? Math.min(innerWidth * 0.52, innerHeight * ar) : innerWidth * 0.38;
+        const stageW = Math.min(innerWidth * 0.46, 780);
+        const left = Math.max(innerWidth * 0.03, (innerWidth - herW - stageW) / 2);
+        // Give the glass an aspect instead of stretching it to the available height. Filling
+        // the column top to bottom leaves a narrow box that is two thirds empty under eleven
+        // lines of code, and reads as a broken layout rather than as a roomy terminal.
+        const bandTop = innerHeight * 0.04;
+        const band = innerHeight - bandTop - (innerHeight * 0.03 + 96);
+        const stageH = Math.min(band, stageW * 0.82);
+        const root = document.documentElement.style;
+        root.setProperty("--kit-w", `${Math.round(herW)}px`);
+        root.setProperty("--stage-w", `${Math.round(stageW)}px`);
+        root.setProperty("--stage-h", `${Math.round(stageH)}px`);
+        root.setProperty("--stage-left", `${Math.round(left)}px`);
+        root.setProperty("--stage-top", `${Math.round(bandTop + (band - stageH) / 2)}px`);
+      }
+      addEventListener("resize", () => { fitKit(); Ink.redraw(); });
+
+      /* ── keycast ─────────────────────────────────────────────────────────────────────
+         Half teaching aid, half tool target: `key:dd` is a thing he can circle while saying
+         "that is the one you missed".
+      ─────────────────────────────────────────────────────────────────────────────────── */
+      const Keys = {
+        push(label) {
+          if (!label) return;
+          const el = document.createElement("span");
+          el.className = "kc";
+          el.dataset.key = label.toLowerCase();
+          el.textContent = label === " " ? "space" : label;
+          $("keys").append(el);
+          const all = $("keys").querySelectorAll(".kc");
+          if (all.length > 9) all[0].remove();
+          all.forEach((k, i, xs) => k.classList.toggle("dim", i < xs.length - 3));
+        },
+        clear() { $("keys").innerHTML = ""; },
+      };
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE CURRICULUM
+
+         Lessons register HERE, in the page, not in his brief. Adding a tenth costs one object
+         and zero tools — the verb list below does not name a lesson, a key or a pane, and it
+         never will.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      const FILE = [
+        "// debounce.js — the file we are learning on",
+        "export function debounce(fn, delay) {",
+        "  let tmp = null",
+        "",
+        "  return function (...args) {",
+        "    clearTimeout(tmp)",
+        "    tmp = setTimeout(() => fn(...args), delay)",
+        "  }",
+        "}",
+        "",
+        "const save = debounce(write, 300)",
+      ];
+      const one = (over = {}) => ({ split: "v", panes: [{ file: "debounce.js", lines: FILE, cy: 2, cx: 6, ...over }] });
+
+      const LESSONS = [
+        {
+          id: "modes", title: "Normal and insert mode",
+          teaches: "vim starts in NORMAL, where the letters are commands. i goes in, Esc comes out.",
+          scene: () => one({ cy: 2, cx: 6 }),
+          demo: ["i", "c", "o", "u", "n", "t", " ", "Esc"],
+          task: "Press i, type anything, then press Escape to come back out.",
+          // `sinceHandover` collapses insert-mode typing to "<text>", so this cannot be
+          // satisfied by them typing the letter i inside insert mode — which is exactly the
+          // false pass a naive "did they press i" check hands out.
+          check: (S) => {
+            const entered = S.keys.some((k) => ["i", "a", "I", "A", "o", "O"].includes(k));
+            if (!entered) return { ok: false, missing: "i", why: "still in normal mode — i goes in" };
+            if (!S.changed) return { ok: false, why: "in insert mode, but nothing typed yet" };
+            if (S.buf.mode !== "normal") return { ok: false, missing: "Esc", why: "still in insert mode — Escape gets out" };
+            return { ok: true };
+          },
+        },
+        {
+          id: "motions", title: "Moving by words",
+          teaches: "h j k l move a step. w b e move a WORD, which is what you actually use.",
+          scene: () => one({ cy: 6, cx: 4 }),
+          demo: ["w", "w", "b", "0", "$", "b"],
+          task: "Land the cursor on the word delay on line 7 — w and b move by words, and $ is the end of the line.",
+          check: (S) => {
+            const on = (S.buf.lines[S.buf.cy] ?? "").slice(S.buf.cx).startsWith("delay");
+            if (!on) return { ok: false, why: "not on delay yet", where: `${S.buf.cy + 1}:${S.buf.cx + 1}` };
+            if (!S.keys.some((k) => "wbe".includes(k))) return { ok: false, why: "got there, but with arrows — do it with w" };
+            return { ok: true };
+          },
+        },
+        {
+          id: "dd", title: "Delete a line, and put it back",
+          teaches: "dd cuts a whole line into the register. p puts it back after the cursor.",
+          scene: () => one({ cy: 2, cx: 2 }),
+          demo: ["d", "d", "j", "j", "p"],
+          task: "Move line 3 down so it sits under the return line — dd, then p where you want it.",
+          check: (S) => {
+            const i = S.buf.lines.findIndex((l) => l.includes("let tmp"));
+            if (!S.keys.includes("dd")) return { ok: false, missing: "dd", why: "the line has not been cut yet" };
+            if (i < 0) return { ok: false, missing: "p", why: "it was cut but never put back" };
+            return i > 3 ? { ok: true } : { ok: false, why: "cut and put back in the same place", at: i + 1 };
+          },
+        },
+        {
+          id: "ciw", title: "Change a word without deleting it letter by letter",
+          teaches: "ciw = change inner word. The cursor can be anywhere in the word.",
+          scene: () => one({ cy: 2, cx: 7 }),
+          demo: ["c", "i", "w", "t", "i", "m", "e", "r", "Esc"],
+          task: "Rename tmp to timer. Put the cursor on it and press c, i, w.",
+          check: (S) => {
+            const has = S.buf.lines.some((l) => /\btimer\b/.test(l));
+            if (!has) return { ok: false, why: "no timer in the file yet" };
+            return S.keys.includes("ciw")
+              ? { ok: true }
+              : { ok: false, why: "renamed, but the long way — ciw does it in three keys" };
+          },
+        },
+        {
+          id: "search", title: "Search, and jump between hits",
+          teaches: "/word jumps to the next one. n repeats it, N goes back.",
+          scene: () => one({ cy: 0, cx: 0 }),
+          demo: ["/", "t", "m", "p", "CR", "n", "n"],
+          task: "Search for tmp and press n until you are on the third one.",
+          check: (S) => {
+            if (!S.keys.includes("/tmp") && !S.keys.some((k) => k.startsWith("/"))) return { ok: false, missing: "/", why: "no search run yet" };
+            const nth = S.keys.filter((k) => k === "n").length;
+            return nth >= 2 ? { ok: true } : { ok: false, why: `pressed n ${nth} time(s), needs two more hits` };
+          },
+        },
+        {
+          id: "undo", title: "Undo, and write the file",
+          teaches: "u takes back one change. :w writes. The [+] in the status line is the unsaved marker.",
+          scene: () => one({ cy: 2, cx: 6 }),
+          demo: ["d", "d", "u", ":", "w", "CR"],
+          task: "Delete a line, undo it with u, then save with colon w and Enter.",
+          check: (S) => {
+            if (!S.keys.includes("u")) return { ok: false, missing: "u", why: "nothing undone yet" };
+            if (S.buf.dirty) return { ok: false, missing: ":w", why: "still shows [+] — not written" };
+            return { ok: true };
+          },
+        },
+        {
+          id: "split", title: "tmux: two panes",
+          teaches: "Every tmux command starts with the prefix, Ctrl-b. Then % splits side by side.",
+          scene: () => one({ cy: 2, cx: 2 }),
+          demo: ["C-b", "%"],
+          task: "Split this into two panes side by side — Ctrl-b, then the percent sign.",
+          check: (S) => S.win.panes.length >= 2 && S.win.split === "v"
+            ? { ok: true }
+            : { ok: false, why: S.win.panes.length < 2 ? "still one pane" : "split the other way — % is side by side" },
+        },
+        {
+          id: "nav", title: "tmux: move between panes, and zoom one",
+          teaches: "Ctrl-b o cycles panes. Ctrl-b z blows the current one up full-screen and back.",
+          scene: () => ({ split: "v", panes: [
+            { file: "debounce.js", lines: FILE, cy: 2, cx: 6 },
+            { file: "test.js", lines: ["import { debounce } from './debounce.js'", "", "let hits = 0", "const bump = debounce(() => hits++, 50)", "", "bump(); bump(); bump()"], cy: 3, cx: 4 },
+          ] }),
+          demo: ["C-b", "o", "C-b", "z"],
+          task: "Jump to the other pane with Ctrl-b o, then zoom it with Ctrl-b z.",
+          // On the KEYS, not on the ending state: zoom is a toggle, and a learner who tries it
+          // twice has still learned it. Checking `zoom === true` fails the person who pressed
+          // it once too often, which is the opposite of the lesson.
+          check: (S) => {
+            if (!S.keys.includes("^B o") && S.win.active === 0) return { ok: false, missing: "^B o", why: "still in the first pane" };
+            if (!S.keys.includes("^B z")) return { ok: false, missing: "^B z", why: "moved, but not zoomed yet" };
+            return { ok: true };
+          },
+        },
+        {
+          id: "windows", title: "tmux: windows are tabs",
+          teaches: "Ctrl-b c opens a window, Ctrl-b n and p walk between them. The bar at the bottom lists them.",
+          scene: () => one({ cy: 2, cx: 2 }),
+          demo: ["C-b", "c", "C-b", "n"],
+          task: "Open a second window with Ctrl-b c, then come back to window zero.",
+          check: (S) => {
+            if (S.windows.length < 2) return { ok: false, missing: "^B c", why: "still one window" };
+            return S.window === 0 ? { ok: true } : { ok: false, why: `on window ${S.window} — Ctrl-b p goes back` };
+          },
+        },
+      ];
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         LESSON STATE
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      let li = -1;                 // index into LESSONS
+      let phase = "idle";          // idle | demo | yours | passed
+      let playing = null;          // the demo timer, while it runs
+      let sinceHandover = [];      // every key the LEARNER pressed since hand_over
+      let baseline = "";           // the buffer at hand_over, so `changed` means something
+      let wrongRun = 0;
+      const lesson = () => LESSONS[li] ?? null;
+
+      function loadScene(spec) {
+        Tmux.reset(spec);
+        Keys.clear();
+        Ink.clear();
+        render();
+      }
+
+      function hud() {
+        const L = lesson();
+        $("lesson").textContent = L ? L.title : "not started";
+        $("teaches").textContent = L ? L.teaches : "Press Call. He opens, and he teaches from behind the glass.";
+        $("phase").textContent = phase === "demo" ? "watch — he is driving"
+          : phase === "yours" ? "your turn — type into the terminal"
+          : phase === "passed" ? "done" : "idle";
+        $("phase").className = phase === "yours" ? "you" : "";
+        $("prog").style.width = `${(Math.max(0, li) / LESSONS.length) * 100}%`;
+      }
+
+      /**
+       * Replay a lesson's keystrokes on the real engine.
+       *
+       * Returns nothing and is never awaited by a tool — the platform abandons a tool call at
+       * 2.5s and this runs for eight. `demonstrate` answers "it is playing now" inside the
+       * deadline and he narrates over the top of it, which is the format anyway.
+       */
+      function play(keys, done) {
+        if (playing) clearTimeout(playing);
+        let i = 0;
+        const tick = () => {
+          if (i >= keys.length) { playing = null; done?.(); return; }
+          const k = keys[i++];
+          const label = apply(k);
+          Keys.push(label);
+          render();
+          playing = setTimeout(tick, k === "Esc" || k === "CR" ? 420 : 180);
+        };
+        playing = setTimeout(tick, 380);
+      }
+
+      /** One key into whichever machine owns it. Tmux gets first refusal — the prefix wins. */
+      function apply(k) {
+        if (k === "C-b" || Tmux.prefix) {
+          const label = Tmux.key(k);
+          if (label !== null) return label;
+        }
+        return feed(Tmux.buf(), k);
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         WHAT THEY DID WHILE HE WAS NOT ASKING
+
+         The page cannot talk to him — the tool plane has two RPCs and neither runs page → agent.
+         So the learner's keystrokes ride home on his NEXT tool call, whichever one it is.
+
+         The quiet gate is the part that is not obvious. Typing arrives in bursts; handed over
+         raw, he interrupts halfway through `ciw` to say it is wrong. Nothing goes over until
+         they have stopped for QUIET_MS, and until then he is told they are still typing —
+         which his brief says means stay quiet.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      const QUIET_MS = 1100, PENDING_MAX = 200;
+      const Activity = (() => {
+        let pending = [], lastAt = 0;
+        return {
+          note(label) {
+            if (!label) return;
+            pending.push(label);
+            // Bounded. Between his tool calls nothing drains this, so a learner practising
+            // `hjkl` for two minutes with no tool call in between grows it without limit —
+            // and only the tail is ever read anyway.
+            if (pending.length > PENDING_MAX) pending.splice(0, pending.length - PENDING_MAX);
+            lastAt = performance.now();
+          },
+          busy() { return pending.length > 0 && performance.now() - lastAt < QUIET_MS; },
+          collect() {
+            if (!pending.length) return null;
+            if (performance.now() - lastAt < QUIET_MS) {
+              return { still_typing: true, note: "their hands are still moving — say nothing about it yet" };
+            }
+            const keys = pending.slice(-24);
+            pending = [];
+            return { since_last_call: { they_pressed: keys.join(" ") } };
+          },
+        };
+      })();
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE VERBS
+
+         Seven, and the list does not grow with the curriculum. Not one of them names a lesson,
+         a key, a pane or a file — `highlight` takes a target it does not know the meaning of,
+         and `check` asks the LESSON whether the learner did it. A tenth lesson is a tenth entry
+         in LESSONS and nothing here changes, and neither does his brief.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      const VERBS = {
+        next_lesson: {
+          description:
+            "Take the next lesson. Call it to start, and again after they have got one right. Returns the title and what it teaches — say that in one sentence, then demonstrate.",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+          execute: () => {
+            if (li >= LESSONS.length - 1 && phase === "passed") {
+              return { finished: true, note: "that was the last one — say so and congratulate them" };
+            }
+            li = Math.min(li + 1, LESSONS.length - 1);
+            wrongRun = 0;
+            phase = "demo";
+            const L = lesson();
+            loadScene(L.scene());
+            hud();
+            return { lesson: L.title, teaches: L.teaches, number: li + 1, of: LESSONS.length,
+                     next: "call demonstrate — you go first" };
+          },
+        },
+
+        demonstrate: {
+          description:
+            "You do it yourself: the keys play across the terminal over several seconds. Returns straight away — narrate the keys as they land and highlight what changes, then hand_over. Use it again when they get stuck twice.",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+          execute: () => {
+            const L = lesson();
+            if (!L) return { ok: false, error: "no lesson yet — call next_lesson" };
+            phase = "demo";
+            loadScene(L.scene());
+            hud();
+            // Deliberately not awaited. The worker abandons a tool at 2.5s and this runs for
+            // roughly eight; awaiting it would be pure dead air and then a failure.
+            play(L.demo, () => { hud(); });
+            const seconds = Math.round((L.demo.length * 0.22 + 0.4) * 10) / 10;
+            return { ok: true, playing_now: true, keys: L.demo.join(" "), takes_about_seconds: seconds,
+                     note: "it is moving on screen — talk over it, then call hand_over" };
+          },
+        },
+
+        hand_over: {
+          description:
+            "Give them the keyboard. Resets the screen to the start of the lesson and returns the task in plain words — say it, short. After this, check tells you what they did.",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+          execute: () => {
+            const L = lesson();
+            if (!L) return { ok: false, error: "no lesson yet — call next_lesson" };
+            if (playing) { clearTimeout(playing); playing = null; }
+            phase = "yours";
+            loadScene(L.scene());
+            sinceHandover = [];
+            baseline = Tmux.buf().lines.join("\n");
+            hud();
+            $("say").blur();
+            return { ok: true, task: L.task, note: "they have the keyboard now — check when they go quiet" };
+          },
+        },
+
+        highlight: {
+          description:
+            "Draw on the terminal, over the thing you are naming. Call it EVERY time you mention something on screen. target is a NAME, never a coordinate — easiest is text:<the word>, e.g. text:delay. Also: line:14 · word:14:2 · pane:left · pane:active · status:mode · status:file · cursor · key:dd · tmux:status · tmux:prefix. If the target is not there you get back the list of what is — pick from it.",
+          parameters: {
+            type: "object",
+            properties: {
+              target: { type: "string", description: "What to draw over, by name. Prefer text:delay over counting words." },
+              style: { type: "string", enum: ["box", "circle", "underline", "arrow", "strike"],
+                       description: "box for a line or pane, circle for a word or a key, underline to stress, arrow to point, strike for something to remove" },
+            },
+            required: ["target"], additionalProperties: false,
+          },
+          execute: ({ target, style }) => {
+            const s = ["box", "circle", "underline", "arrow", "strike"].includes(style) ? style : "box";
+            const el = Screen.resolve(target);
+            if (!el) {
+              // The whole point of returning the list: his next attempt is a pick, not a
+              // second guess at a screen he cannot see.
+              return { ok: false, error: `nothing on screen called "${target}"`, on_screen_now: Screen.list() };
+            }
+            const drew = Ink.draw(target, s);
+            if (!drew) return { ok: false, error: `"${target}" is on screen but not visible right now`, on_screen_now: Screen.list() };
+            return { ok: true, drew: s, over: el.dataset.label ?? target, marks_on_screen: Ink.count() };
+          },
+        },
+
+        clear_marks: {
+          description: "Wipe your drawings off the terminal. Do it when you move on to a new point, so the screen does not fill up with ink.",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+          execute: () => { Ink.clear(); return { ok: true }; },
+        },
+
+        check: {
+          description:
+            "Did they do the task? Reads the real editor — modes, buffer, panes, and every key they have pressed since you handed over. NEVER say right or wrong before this answers. still_typing means wait and ask again.",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+          execute: () => {
+            const L = lesson();
+            if (!L) return { ok: false, error: "no lesson yet" };
+            // Asked twice about a lesson already passed, answer the same way twice. Returning
+            // an error saying "hand over first" reads to him as an instruction, and re-handing
+            // over wipes the screen out from under a learner who only asked whether they had
+            // got it right.
+            if (phase === "passed") {
+              return { verdict: "correct", lesson: L.title, already_checked: true,
+                       remaining: LESSONS.length - li - 1,
+                       next: li < LESSONS.length - 1 ? "move on with next_lesson" : "that was the last one" };
+            }
+            if (phase !== "yours") return { ok: false, error: "you have not handed over yet — call hand_over first" };
+            if (Activity.busy()) {
+              return { verdict: "still_typing", note: "their hands are still moving — wait a few seconds and check again" };
+            }
+            const b = Tmux.buf();
+            // Everything a lesson may look at, handed over rather than reached for. A check that
+            // closes over the live Tmux instead cannot be tested away from a browser — and the
+            // test that catches a lesson whose own demonstration fails its own check is the one
+            // worth being able to run.
+            const S = { buf: b, win: Tmux.win(), zoom: Tmux.zoom,
+                        windows: Tmux.windows, window: Tmux.cur,
+                        keys: sinceHandover,
+                        changed: b.lines.join("\n") !== baseline };
+            const out = L.check(S);
+            if (out.ok) {
+              phase = "passed"; wrongRun = 0; hud();
+              return { verdict: "correct", lesson: L.title, remaining: LESSONS.length - li - 1,
+                       next: li < LESSONS.length - 1 ? "praise in one line, then next_lesson" : "that was the last one" };
+            }
+            wrongRun++;
+            return {
+              verdict: "not_yet", why: out.why ?? "not there yet", missing_key: out.missing,
+              they_pressed: sinceHandover.slice(-12).join(" ") || "nothing yet",
+              mode: b.mode, cursor: `${b.cy + 1}:${b.cx + 1}`,
+              next: wrongRun >= 2 ? "they are stuck — demonstrate it again" : "say the key they are missing and highlight where it goes",
+            };
+          },
+        },
+
+        progress: {
+          description: "How far through the course they are.",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+          execute: () => ({ lesson: lesson()?.title ?? "not started", number: li + 1, of: LESSONS.length,
+                            phase, remaining: LESSONS.length - li - 1 }),
+        },
+      };
+
+      /**
+       * Every result carries the news, and every result is size-checked.
+       *
+       * The 8 KB wire cap is enforced on the ENCODED result and REFUSES rather than truncating —
+       * and `on_screen_now` grows with the file. A refused result reads to him exactly like a
+       * tool that did nothing.
+       */
+      const TOOLS = Object.fromEntries(Object.entries(VERBS).map(([name, def]) => [name, {
+        ...def,
+        execute: async (args, ctx) => {
+          flushRender();   // he resolves targets against the DOM; give him this frame, not the last
+          let out = await def.execute(args ?? {}, ctx);
+          const news = Activity.collect();
+          if (news && out && typeof out === "object") out = { ...out, ...news };
+          let encoded = JSON.stringify(out);
+          if (encoded.length > 7000 && out.on_screen_now) {
+            out = { ...out, on_screen_now: { note: "too much on screen to list", panes: out.on_screen_now.panes } };
+            encoded = JSON.stringify(out);
+          }
+          log("tool", `${name} → ${encoded.slice(0, 140)}`, "t");
+          return out;
+        },
+      }]));
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE KEYBOARD
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      function keyName(e) {
+        if (e.ctrlKey && e.key.toLowerCase() === "b") return "C-b";
+        if (e.key === "Escape") return "Esc";
+        if (e.key === "Enter") return "CR";
+        if (e.key === "Backspace") return "BS";
+        if (e.key === "Tab") return "Tab";
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return e.key.slice(5);
+        if (e.key.length === 1) return e.key;
+        return null;
+      }
+
+      addEventListener("keydown", (e) => {
+        if (document.activeElement === $("say")) {
+          if (e.key === "Escape") $("say").blur();
+          return;                                   // the text box owns the keyboard while focused
+        }
+        if (playing) return;                        // he is driving; the learner is watching
+        const k = keyName(e);
+        if (!k) return;
+        if (e.metaKey || (e.ctrlKey && k !== "C-b")) return;   // leave the browser's own keys alone
+        e.preventDefault();
+
+        const arrowsAsMotion = { Left: "h", Right: "l", Up: "k", Down: "j" };
+        const eff = !Tmux.prefix && arrowsAsMotion[k] ? arrowsAsMotion[k] : k;
+        // Captured BEFORE the key lands: whether this keystroke was text or a command is a fact
+        // about the mode it was pressed in, and `apply` is about to change that mode.
+        const wasInsert = Tmux.buf().mode === "insert";
+        const label = apply(eff);
+        // Two different records from one keystroke. The keycast shows the letter, because that
+        // is the teaching aid; `sinceHandover` collapses a whole typed word to one token,
+        // because a lesson asking "did they press i" must not be satisfied by them TYPING an
+        // "i" inside insert mode — and he does not need the letters either way.
+        const recorded = arrowsAsMotion[k] && !Tmux.prefix ? `<${k}>`
+          : wasInsert && label && label !== "Esc" ? "<text>"
+          : label;
+        if (label || recorded) { Keys.push(label ?? k); }
+        if (recorded) {
+          // Bounded for the same reason `Activity` is: only the tail is ever read, and a
+          // learner can hold a key for a long time between one hand_over and the next.
+          sinceHandover.push(recorded);
+          if (sinceHandover.length > 200) sinceHandover.splice(0, sinceHandover.length - 200);
+          Activity.note(recorded);
+        }
+        scheduleRender();
+      });
+
+      // Clicking the glass gives it the keyboard back.
+      $("stage").addEventListener("mousedown", () => $("say").blur());
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE CALL
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      let room = null;
+      let sessionId = null;
+      const sentByUs = new Set();
+
+      // The slot is held from the moment the grant lands — BEFORE the room exists. A tab closed
+      // in that gap tells nobody, and the seat stays taken until the join timeout notices.
+      // `pagehide` + sendBeacon is the one goodbye that outlives a closing page.
+      addEventListener("pagehide", () => {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+      });
+
+      $("call").onclick = async () => {
+        $("call").disabled = true;
+        cap("starting…");
+
+        const res = await fetch("/api/call", { method: "POST" });
+        if (res.status === 429) {
+          const q = await res.json();               // the queue, not a failure
+          cap(`every seat is busy — you are ${q.position ?? "?"} in line, retrying…`);
+          setTimeout(() => { $("call").disabled = false; $("call").click(); }, q.retryAfterMs ?? 3000);
+          return;
+        }
+        if (res.status === 402) { cap("this key is out of credits.", true); $("call").disabled = false; return; }
+        if (!res.ok) { cap(`could not start (${res.status})`, true); $("call").disabled = false; return; }
+
+        const grant = await res.json();             // the grant, read by its wire keys
+        sessionId = grant.session_id;               // held from HERE — the beacon needs it now
+        room = new Room();
+
+        // BEFORE connect, and INTO the document. `track.attach()` hands back a detached element:
+        // left out of the DOM there is nothing to play and nothing to click when autoplay blocks
+        // it. Subscribing after connect also drops tracks that arrive during it — a race that
+        // only shows up on a fast connection, and shows up as a silent call rather than an error.
+        attachRemoteAudio(room, {
+          onPlaybackBlocked: (unblock) => {
+            // Called once at attach time too, before anything is blocked — so only the BLOCKED
+            // case says anything. Reporting the clear case here would overwrite "starting…"
+            // with "connected" while the connect is still in flight.
+            if (!unblock) return;
+            cap("click anywhere to let the sound play");
+            addEventListener("pointerdown", () => { unblock(); cap("connected — he has the floor."); },
+              { once: true });
+          },
+        });
+
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === Track.Kind.Video) {
+            track.attach($("kit"));
+            $("kit").classList.add("on");
+            // The dimensions are not there at attach time — the element has no frame yet. Both,
+            // because a track that is already flowing may never fire `loadedmetadata` again.
+            $("kit").addEventListener("loadedmetadata", () => { fitKit(); Ink.redraw(); }, { once: true });
+            fitKit();
+          }
+        });
+        room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+          const mine = participant?.identity === room.localParticipant.identity;
+          for (const s of segments) {
+            if (!s.final) continue;
+            if (mine && sentByUs.delete(s.text)) continue;   // our own typed turn, echoed back
+            log(mine ? "you" : "kit", s.text, mine ? "" : "his");
+          }
+        });
+        room.on(RoomEvent.Disconnected, () => {
+          cap("call ended");
+          $("hang").disabled = $("say").disabled = true;
+          $("call").disabled = false;
+          phase = "idle"; hud();
+          room = null; sessionId = null;
+        });
+
+        await room.connect(grant.livekit_url, grant.participant_token);
+
+        // Registered BEFORE the microphone is asked for. His brief tells him to open the moment
+        // he connects, so he is already reaching for next_lesson while a permission prompt is
+        // a human deciding — and that human can hold the await for fifteen seconds. Anything
+        // waited on before the manifest is armed is time he spends calling tools that are not
+        // there, which from the outside is a terminal that stays blank while he talks.
+        try {
+          const reg = await attachAvatarTools(room, TOOLS, {
+            timeoutMs: 15000,
+            onInvoke: (name, args) => log("→", `${name}${args && Object.keys(args).length ? " " + JSON.stringify(args) : ""}`, "t"),
+          });
+          log("tools", `armed: ${reg.accepted.join(", ") || "(none)"}`, "t");
+          // A rejected tool is silently uncallable, which reads exactly like his ignoring it.
+          for (const r of reg.rejected) log("tools", `REJECTED ${r.name}: ${r.reason}`, "t");
+        } catch (err) {
+          log("tools", `not armed: ${err.message}`, "t");
+          cap("his tools did not arm — he can talk, but he cannot draw.", true);
+        }
+
+        const mic = await enableMicrophone(room);
+        if (!mic.ok) cap(`connected, but the microphone did not start (${mic.reason}). ${mic.hint}`, true);
+        else cap("connected — he has the floor. Click the terminal to type into it.");
+
+        $("stage").classList.add("on");
+        $("hang").disabled = $("say").disabled = false;
+      };
+
+      $("say").addEventListener("keydown", async (e) => {
+        if (e.key !== "Enter" || !room || !$("say").value.trim()) return;
+        const text = $("say").value.trim();
+        $("say").value = "";
+        log("you", text);
+        sentByUs.add(text);
+        await room.localParticipant.sendText(text, { topic: "lk.chat" });
+      });
+
+      $("hang").onclick = () => room?.disconnect();
+
+      // ── boot ──
+      const clock = () => {
+        const d = new Date();
+        $("clock").textContent = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      };
+      clock(); setInterval(clock, 20000);
+      fitKit();               // compose the empty frame too, not just the one with him in it
+      loadScene(one());
+      hud();
+      $("stage").classList.add("on");
+
+      /**
+       * The whole loop, without spending a call.
+       *
+       * `highlight` and `check` are the two things worth seeing here and both are reachable
+       * only through a live session, which makes "does the drawing look right" and "does this
+       * lesson actually pass" questions you have to pay to ask. From the console:
+       *
+       *   tutor.play("ciw")     watch a lesson demonstrate itself
+       *   tutor.handOver()      take the keyboard, as he would hand it to you
+       *   tutor.check()         what he would be told about what you just did
+       *   tutor.draw("text:delay", "circle")
+       *   tutor.screen()        every target that resolves right now
+       */
+      window.tutor = {
+        draw: (target, style) => { flushRender(); return VERBS.highlight.execute({ target, style }); },
+        clear: () => Ink.clear(),
+        screen: () => Screen.list(),
+        check: () => VERBS.check.execute({}),
+        handOver: () => VERBS.hand_over.execute({}),
+        lessons: LESSONS.map((l) => l.id),
+        play(id) {
+          const L = LESSONS.find((x) => x.id === id);
+          if (!L) return `no lesson "${id}" — try one of ${LESSONS.map((x) => x.id).join(", ")}`;
+          li = LESSONS.indexOf(L);
+          phase = "demo"; loadScene(L.scene()); hud(); play(L.demo, hud);
+          return L.title;
+        },
+      };
+    </script>
+  </body>
+</html>

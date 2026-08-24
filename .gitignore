@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# Compiled output must never sit next to source. An earlier build emitted here and the
+# files were committed; tsc then type-checks BOTH copies and the duplicates diverge.
+libs/*/src/*.js
+libs/*/src/*.d.ts

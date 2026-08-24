@@ -1,0 +1,106 @@
+{
+  "name": "realtime-avatar-react",
+  "version": "0.2.1",
+  "description": "React and React Native client for Realtime Avatar.",
+  "license": "MIT",
+  "author": "The Influence Company",
+  "homepage": "https://realtimeavatar.ai/docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theinfluencecompany/realtime-avatar-sdk.git",
+    "directory": "libs/client"
+  },
+  "bugs": {
+    "url": "https://github.com/theinfluencecompany/realtime-avatar-sdk/issues"
+  },
+  "keywords": [
+    "ai",
+    "avatar",
+    "realtime",
+    "voice",
+    "video",
+    "agent",
+    "full-duplex",
+    "livekit",
+    "react",
+    "react-native",
+    "hooks",
+    "webrtc"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./react-native": {
+      "types": "./dist/react-native/index.d.ts",
+      "import": "./dist/react-native/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "peerDependencies": {
+    "@livekit/components-react": "^2.9.0",
+    "@livekit/react-native": "^2.11.0",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "react-native": ">=0.78"
+  },
+  "dependencies": {
+    "livekit-client": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@livekit/components-react": "2.9.21",
+    "@livekit/react-native": "^2.11.1",
+    "realtime-avatar-contracts": "0.2.1",
+    "@types/react": "19.2.7",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-native": "0.81.5",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
+  },
+  "peerDependenciesMeta": {
+    "@livekit/components-react": {
+      "optional": true
+    },
+    "@livekit/react-native": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    }
+  }
+}

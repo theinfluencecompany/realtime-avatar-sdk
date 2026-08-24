@@ -1,0 +1,59 @@
+# The complete list of names libs/contracts may export.
+#
+# An ALLOWLIST, not a denylist. A denylist has to name what it excludes, which makes the
+# file an inventory of the private estate — the mistake that let 36 orchestration and
+# storage symbols sit in the public tree unnoticed. This file names only what already
+# ships, so it discloses nothing, and a newly added export is refused BY DEFAULT instead
+# of admitted by default.
+#
+# Enforced by scripts/check-public-surface.mjs (part of `npm run check`).
+# Adding a line here widens the public API. That is a review decision, not a build fix.
+ApproachingEndReason
+AvatarSourceKind
+BreezeVoiceSpec
+CapacityBusyResponse
+CartesiaTtsModel
+CartesiaVoiceSpec
+ClientMetadata
+FishTtsModel
+FishVoiceSpec
+KnownBehaviorState
+LLMConfig
+LLMProvider
+LLMSelection
+LLMSelectionForProvider
+LLM_PROVIDERS
+LiveKitCapacitySnapshot
+LiveKitInitialContextMessage
+LiveKitSessionGrant
+LiveKitSessionReleaseReason
+LiveKitSessionRequest
+LiveKitSessionRequestInput
+LiveKitSessionWireRequestInput
+LiveKitSttMode
+RTA_CLOSING_TURN_ATTR
+RTA_LIFECYCLE_TOPIC
+RTA_TURN_ID_ATTR
+RTA_TURN_INSTRUCTIONS_ATTR
+RenderBackend
+SessionBehavior
+SessionClip
+SessionEndReasonLabel
+TranscriptWebhook
+VoiceSpec
+VoiceSpecInput
+capacityBusyResponseSchema
+knownBehaviorStates
+lifecycleServerFrameSchema
+liveKitCapacitySnapshotSchema
+liveKitSessionGrantSchema
+liveKitSessionRequestSchema
+liveKitSessionWireRequestSchema
+llmConfigSchema
+llmProviderSchema
+llmSelectionSchema
+renderBackendSchema
+sessionBehaviorSchema
+sessionClipSchema
+toLiveKitSessionWireRequest
+voiceSpecSchema

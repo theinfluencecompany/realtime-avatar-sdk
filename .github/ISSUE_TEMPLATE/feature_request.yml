@@ -1,0 +1,39 @@
+name: Feature request
+description: Something the SDK should be able to do and can't
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The public surface here is deliberately narrower than what the API can express, so
+        "add this field" is a product conversation rather than a patch. Telling us what
+        you're building is the fastest route to a yes.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to build?
+      description: The end goal, not the API change. It often turns out there's already a way.
+    validations:
+      required: true
+
+  - type: textarea
+    id: blocked
+    attributes:
+      label: Where does it stop working today?
+      description: The specific point where the current surface runs out.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you want it to look like?
+      description: Optional. A sketch of the call you wish you could write.
+      render: ts
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What are you doing instead?
+      description: Optional, but a painful workaround is a strong argument.

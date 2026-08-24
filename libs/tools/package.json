@@ -1,0 +1,52 @@
+{
+  "name": "realtime-avatar-tools",
+  "version": "0.2.1",
+  "description": "Browser tool plane for Realtime Avatar — your page's functions, callable by the avatar. No React required.",
+  "license": "MIT",
+  "author": "The Influence Company",
+  "homepage": "https://realtimeavatar.ai/docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theinfluencecompany/realtime-avatar-sdk.git",
+    "directory": "libs/tools"
+  },
+  "bugs": {
+    "url": "https://github.com/theinfluencecompany/realtime-avatar-sdk/issues"
+  },
+  "keywords": [
+    "ai",
+    "avatar",
+    "realtime",
+    "voice",
+    "video",
+    "agent",
+    "full-duplex",
+    "livekit",
+    "tool-calling",
+    "function-calling",
+    "browser"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  }
+}

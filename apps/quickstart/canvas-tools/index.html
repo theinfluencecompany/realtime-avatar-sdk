@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Canvas tools</title>
+    <style>
+      :root { color-scheme: dark }
+      * { box-sizing: border-box }
+      body { margin: 0; min-height: 100svh; background: #0d0f14; color: #e8ecf4;
+        font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; display: flex; flex-direction: column;
+        align-items: center; gap: 12px; padding: 22px 16px 40px }
+      h1 { font-size: 19px; margin: 0; font-weight: 600 }
+      .sub { color: #93a0b8; font-size: 13px; margin: -6px 0 2px; max-width: 640px; text-align: center }
+      .split { display: grid; grid-template-columns: 300px 1fr; gap: 14px; width: min(1000px, 96vw) }
+      @media (max-width: 780px) { .split { grid-template-columns: 1fr } }
+      .stage { aspect-ratio: 3/4; background: #07090d; border: 1px solid #ffffff18; border-radius: 14px;
+        overflow: hidden; position: relative; display: grid; place-items: center }
+      video { width: 100%; height: 100%; object-fit: cover; display: none }
+      video.on { display: block }
+      .idle { color: #61708c; font-size: 13px }
+      .status { position: absolute; inset: auto 0 0 0; padding: 7px 10px; font-size: 12px;
+        background: linear-gradient(transparent, #000000cc); color: #d6dded }
+      .right { display: flex; flex-direction: column; gap: 10px; align-items: center }
+      canvas { width: min(520px, 90vw); aspect-ratio: 1; background: #11141b; border-radius: 12px;
+        border: 1px solid #ffffff18; touch-action: none }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center }
+      button { background: #1a1f2b; color: #e8ecf4; border: 1px solid #ffffff22; border-radius: 9px;
+        padding: 8px 14px; font: inherit; cursor: pointer }
+      button.primary { background: #3b6cf6; border-color: transparent }
+      button.ok { background: #2f9e5f; border-color: transparent }
+      button:disabled { opacity: .45; cursor: default }
+      input { background: #11141b; color: inherit; border: 1px solid #ffffff22; border-radius: 9px;
+        padding: 9px 12px; font: inherit; width: min(520px, 90vw) }
+      #approval { display: none; width: min(520px, 90vw); padding: 10px 12px; border-radius: 10px;
+        background: #241d0e; border: 1px solid #d9a03955; font-size: 13px; gap: 8px;
+        align-items: center; justify-content: space-between }
+      #approval.on { display: flex }
+      #log { width: min(1000px, 96vw); max-height: 30vh; overflow: auto; font: 12px/1.55 ui-monospace,
+        SFMono-Regular, Menlo, monospace; background: #090b10; border: 1px solid #ffffff14;
+        border-radius: 10px; padding: 10px 12px; color: #9fb0cc; white-space: pre-wrap }
+      .args { color: #7f8ea8 }
+      .her { color: #cfe0ff }
+      .warn { color: #f0a35e }
+    </style>
+  </head>
+  <body>
+    <h1>Canvas tools</h1>
+    <p class="sub">
+      Four functions that live in this page, on a canvas she cannot see. She calls them; they run
+      here, closing over the live 2D context; she speaks from what they returned.
+    </p>
+
+    <div class="split">
+      <div class="stage">
+        <video id="her" playsinline autoplay></video>
+        <div class="idle" id="idle">she'll appear here</div>
+        <div class="status" id="status">not connected</div>
+      </div>
+      <div class="right">
+        <canvas id="canvas" width="640" height="640"></canvas>
+        <div class="row">
+          <button class="primary" id="call">Call</button>
+          <button id="hang" disabled>Hang up</button>
+          <button id="wipe">Clear canvas</button>
+        </div>
+        <div id="approval">
+          <span id="approval-text"></span>
+          <span class="row">
+            <button class="ok" id="approve">Approve</button>
+            <button id="decline">Decline</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row"><input id="say" placeholder="ask her to draw something — or just talk" disabled /></div>
+    <div id="log">the tools she calls will appear here</div>
+
+    <script type="module">
+      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+      // The non-React tool plane, served by this app's own server from the installed package.
+      // In a bundled app this is a plain import of "realtime-avatar-tools".
+      import { attachAvatarTools, TOOL_DEADLINE_MS } from "/sdk/tools.js";
+
+      const $ = (id) => document.getElementById(id);
+      const say = (t) => ($("status").textContent = t);
+      const esc = (s) => String(s).replace(/[<&]/g, (c) => (c === "<" ? "&lt;" : "&amp;"));
+      const trace = (html) => {
+        if ($("log").dataset.used !== "1") { $("log").textContent = ""; $("log").dataset.used = "1"; }
+        $("log").insertAdjacentHTML("beforeend", html + "\n");
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      // Why the microphone did not start. Published as realtime-avatar-browser;
+      // inlined so this example stays standalone. It returns a reason instead of throwing because
+      // "the mic won't start" is one sentence covering six causes with six different fixes — and
+      // one of them is not in the browser at all. Left unguarded, the rejection is an unhandled
+      // promise nobody watches and the page simply stops mid-connect.
+      async function startMic(room) {
+        if (!navigator.mediaDevices) return { ok: false, why: "This page is not a secure context. Use https, or http://localhost — a LAN address will not do." };
+        try {
+          // Per spec getUserMedia may neither resolve nor reject if the prompt is ignored.
+          const noAnswer = new Promise((r) => setTimeout(() => r("no-answer"), 15000));
+          const started = room.localParticipant.setMicrophoneEnabled(true).then(() => "ok");
+          if (await Promise.race([started, noAnswer]) === "no-answer") return { ok: false, why: "The microphone prompt was not answered — look for it in the address bar." };
+          return { ok: true };
+        } catch (err) {
+          const message = err?.message ?? String(err);
+          if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+            // Chromium reports a macOS system denial as NotAllowedError too, and THAT one the
+            // address bar cannot fix — so the two must never share a message.
+            return /by system|system permission/i.test(message)
+              ? { ok: false, why: "macOS is blocking the browser itself: System Settings > Privacy & Security > Microphone, then RESTART the browser." }
+              : { ok: false, why: "This site is blocked from the microphone — allow it from the address-bar icon and reload." };
+          }
+          if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") return { ok: false, why: "No microphone is available." };
+          if (err?.name === "NotReadableError" || err?.name === "TrackStartError") return { ok: false, why: "Another app or tab is holding the microphone." };
+          return { ok: false, why: message };
+        }
+      }
+
+      let room = null;
+      let sessionId = null;
+
+      // The slot is held from the moment the grant lands — BEFORE the room exists. A tab
+      // closed in that gap tells no one. `pagehide` + sendBeacon is the one goodbye that
+      // outlives a closing page; the server ends the call and the slot frees now instead of
+      // at the join timeout. Ending is idempotent, so firing after a normal hang-up is fine.
+      addEventListener("pagehide", () => {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+      });
+
+      // ── the canvas, and the four tools that close over it ────────────────────────────────
+      const canvas = $("canvas");
+      const ctx = canvas.getContext("2d");
+      /** What is on the canvas, in the words she will use to talk about it. */
+      const drawn = [];
+
+      function paintShape({ shape, color, x, y, size }) {
+        const px = x * canvas.width;
+        const py = y * canvas.height;
+        const r = (size * Math.min(canvas.width, canvas.height)) / 2;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        if (shape === "circle") {
+          ctx.arc(px, py, r, 0, Math.PI * 2);
+        } else if (shape === "square") {
+          ctx.rect(px - r, py - r, r * 2, r * 2);
+        } else {
+          ctx.moveTo(px, py - r);
+          ctx.lineTo(px + r, py + r);
+          ctx.lineTo(px - r, py + r);
+          ctx.closePath();
+        }
+        ctx.fill();
+      }
+
+      async function paintImage(url) {
+        const image = new Image();
+        image.crossOrigin = "anonymous";
+        await new Promise((resolve, reject) => {
+          image.onload = resolve;
+          image.onerror = () => reject(new Error("the generated image failed to load"));
+          image.src = url;
+        });
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      }
+
+      function wipe() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawn.length = 0;
+      }
+
+      /**
+       * Approval, without blocking.
+       *
+       * The website version of this example used `window.confirm()`. That cannot work here:
+       * `confirm` blocks the main thread, the tool has TOOL_DEADLINE_MS to answer, and a human
+       * reading a dialog takes longer than that every time. The call would time out and she
+       * would apologise for a tool that was still waiting on the user.
+       *
+       * So approval is the SAME pattern as slowness — return now, deliver later. The tool asks,
+       * returns immediately, and the fal call only happens if the button is pressed. Under a
+       * hard deadline, "this is slow" and "a human must agree first" are one problem.
+       */
+      let pending = null;
+      function askApproval(prompt) {
+        pending = prompt;
+        $("approval-text").textContent = `Generate “${prompt.slice(0, 60)}”? This costs a credit.`;
+        $("approval").classList.add("on");
+      }
+      function closeApproval() {
+        pending = null;
+        $("approval").classList.remove("on");
+      }
+
+      $("approve").onclick = async () => {
+        const prompt = pending;
+        if (!prompt) return;
+        closeApproval();
+        trace(`<span class="args">approved: generating “${esc(prompt)}”…</span>`);
+        try {
+          const response = await fetch("/api/draw/generate", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ prompt }),
+          });
+          if (!response.ok) throw new Error(`the image route answered ${response.status}`);
+          const { imageUrl } = await response.json();
+          await paintImage(imageUrl);
+          drawn.push(`an image of ${prompt}`);
+          trace(`<span class="args">image painted</span>`);
+        } catch (err) {
+          // She finds out in words, on her next describe_canvas — there is no way to push a
+          // tool result after the call has returned, and inventing one would be a worse lesson.
+          drawn.push(`an image of ${prompt} that failed to generate (${err.message})`);
+          trace(`<span class="warn">generate failed: ${esc(err.message)}</span>`);
+        }
+      };
+
+      $("decline").onclick = () => {
+        const prompt = pending;
+        if (!prompt) return;
+        closeApproval();
+        drawn.push(`a request for “${prompt}” that the user declined`);
+        trace(`<span class="args">declined: ${esc(prompt)}</span>`);
+      };
+
+      $("wipe").onclick = () => { wipe(); trace(`<span class="args">canvas cleared by hand</span>`); };
+
+      /**
+       * The tools.
+       *
+       * `parameters` is plain JSON Schema, NOT a zod schema. `attachAvatarTools` reads
+       * `tool.parameters` and passes it straight to the manifest — a tool authored with an
+       * `inputSchema` registers successfully and then shows the model no arguments at all,
+       * which reads exactly like her refusing to use it. With the Vercel AI SDK, pass
+       * `z.toJSONSchema(schema)`.
+       */
+      const TOOLS = {
+        draw_shape: {
+          description: "Draw one shape on the canvas the user is looking at.",
+          parameters: {
+            type: "object",
+            properties: {
+              shape: { type: "string", enum: ["circle", "square", "triangle"] },
+              color: { type: "string", description: "any CSS color, e.g. '#ff5a5f' or 'tomato'" },
+              x: { type: "number", minimum: 0, maximum: 1, description: "0 = left, 1 = right" },
+              y: { type: "number", minimum: 0, maximum: 1, description: "0 = top, 1 = bottom" },
+              size: { type: "number", minimum: 0.02, maximum: 0.8, description: "fraction of the canvas" },
+            },
+            required: ["shape", "color", "x", "y"],
+          },
+          execute: ({ shape, color, x, y, size = 0.2 }) => {
+            paintShape({ shape, color, x, y, size });
+            drawn.push(`a ${color} ${shape}`);
+            trace(`<span class="args">draw_shape(${esc(shape)}, ${esc(color)})</span>`);
+            // Return WORDS. The result is fed straight back to the model, which speaks from
+            // it — `{ok:true}` gives it nothing to say; this gives it a sentence.
+            return { drew: `a ${color} ${shape}`, total_shapes: drawn.length };
+          },
+        },
+
+        generate_image: {
+          description:
+            "Ask the user's permission to generate an image from a text prompt and paint it " +
+            "onto the canvas. Returns immediately with a request, never with a picture.",
+          parameters: {
+            type: "object",
+            properties: { prompt: { type: "string", maxLength: 400 } },
+            required: ["prompt"],
+          },
+          execute: ({ prompt }) => {
+            // THE DEADLINE RULE. A tool has TOOL_DEADLINE_MS (2500) before the worker gives up
+            // and she apologises. Generation takes ~6s, and a human pressing Approve takes
+            // longer still. So ask, return NOW, and paint when it lands — she covers the gap
+            // conversationally instead of standing mute and then reporting a timeout.
+            askApproval(prompt);
+            trace(`<span class="args">generate_image(${esc(prompt)}) — awaiting approval</span>`);
+            return {
+              status: "awaiting_confirmation",
+              tell_the_user: "I've asked them to confirm it, since it costs a credit.",
+            };
+          },
+        },
+
+        describe_canvas: {
+          description: "Read back what is currently on the canvas, so you can talk about it.",
+          parameters: { type: "object", properties: {} },
+          execute: () => {
+            trace(`<span class="args">describe_canvas() → ${drawn.length} item(s)</span>`);
+            return { on_the_canvas: drawn.slice(-12), count: drawn.length };
+          },
+        },
+
+        clear_canvas: {
+          description: "Wipe the canvas.",
+          parameters: { type: "object", properties: {} },
+          execute: () => {
+            wipe();
+            trace(`<span class="args">clear_canvas()</span>`);
+            return { cleared: true };
+          },
+        },
+      };
+
+      // ── the call ─────────────────────────────────────────────────────────────────────────
+      $("call").onclick = async () => {
+        $("call").disabled = true;
+        say("connecting…");
+
+        const res = await fetch("/api/avatar-session", { method: "POST" });
+        if (res.status === 429) {
+          const q = await res.json(); // a queue, not a failure
+          say(`all slots busy — position ${q.position ?? "?"}, retrying…`);
+          setTimeout(() => {
+            $("call").disabled = false;
+            $("call").click();
+          }, q.retryAfterMs ?? 3000);
+          return;
+        }
+        if (!res.ok) {
+          say(`could not start (${res.status})`);
+          $("call").disabled = false;
+          return;
+        }
+
+        // The body IS the grant, relayed byte-for-byte. Read the wire keys directly.
+        const grant = await res.json();
+        sessionId = grant.session_id; // held from HERE — the pagehide beacon needs it now
+        room = new Room();
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === Track.Kind.Video) {
+            track.attach($("her"));
+            $("her").classList.add("on");
+            $("idle").style.display = "none";
+          }
+          if (track.kind === Track.Kind.Audio) document.body.append(track.attach());
+        });
+        room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+          if (participant?.identity === room.localParticipant.identity) return;
+          for (const s of segments) if (s.final) trace(`<span class="her">🎨 ${esc(s.text)}</span>`);
+        });
+        room.on(RoomEvent.Disconnected, () => {
+          say("she left");
+          $("hang").disabled = $("say").disabled = true;
+          $("call").disabled = false;
+          closeApproval();
+        });
+
+        await room.connect(grant.livekit_url, grant.participant_token);
+        const mic = await startMic(room);
+        if (!mic.ok) say(`connected, but the microphone did not start. ${mic.why}`);
+
+        // Register once connected. `attachAvatarTools` waits for the agent by itself: joining
+        // the room and ARMING the registration method are not the same instant, and registering
+        // in that gap fails with "method not supported at destination" — the SAME error a
+        // session without the `client_tools` grant produces. It retries because one attempt
+        // cannot tell those apart, and guessing wrong sends you to the wrong layer entirely.
+        try {
+          const reg = await attachAvatarTools(room, TOOLS, { timeoutMs: 15000 });
+          trace(`<span class="args">tools armed: ${esc(reg.accepted.join(", ")) || "(none)"}</span>`);
+          // A rejected tool is silently uncallable, which reads exactly like her ignoring it.
+          for (const r of reg.rejected) trace(`<span class="warn">tool rejected: ${esc(r.name)} — ${esc(r.reason)}</span>`);
+        } catch (err) {
+          trace(`<span class="warn">tools not armed: ${esc(err.message)}</span>`);
+        }
+
+        say(`connected — ask her to draw something (tools answer within ${TOOL_DEADLINE_MS}ms)`);
+        $("hang").disabled = $("say").disabled = false;
+      };
+
+      $("say").addEventListener("keydown", async (e) => {
+        if (e.key !== "Enter" || !room || !$("say").value.trim()) return;
+        const text = $("say").value.trim();
+        $("say").value = "";
+        trace(`<span class="args">you: ${esc(text)}</span>`);
+        await room.localParticipant.sendText(text, { topic: "lk.chat" });
+      });
+
+      $("hang").onclick = () => room?.disconnect();
+    </script>
+  </body>
+</html>

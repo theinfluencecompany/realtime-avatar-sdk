@@ -1,0 +1,53 @@
+{
+  "name": "realtime-avatar-browser",
+  "version": "0.2.1",
+  "description": "Browser audio for Realtime Avatar — start the microphone, play the character, and say what went wrong. No React, no livekit-client dependency.",
+  "license": "MIT",
+  "author": "The Influence Company",
+  "homepage": "https://realtimeavatar.ai/docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theinfluencecompany/realtime-avatar-sdk.git",
+    "directory": "libs/browser"
+  },
+  "bugs": {
+    "url": "https://github.com/theinfluencecompany/realtime-avatar-sdk/issues"
+  },
+  "keywords": [
+    "ai",
+    "avatar",
+    "realtime",
+    "voice",
+    "video",
+    "agent",
+    "full-duplex",
+    "livekit",
+    "microphone",
+    "getusermedia",
+    "webaudio",
+    "browser"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  }
+}

@@ -1,0 +1,1345 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pair programmer</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #06070a;
+        --glass: rgb(9 12 16 / 0.74);
+        --line: #ffffff1c;
+        --edge: #7fd7ff2e;
+        --ink: #e8eef5;
+        --dim: #8fa1b2;
+        --dim2: #6b7c8c;
+        --accent: #ff6a3d;
+        --link: #7ec8ff;
+        --ok: #3ddc84;
+        /* All of these are overwritten at runtime by fit(), from the video's own dimensions
+           and from measured element heights. These are only what to hold the layout at for
+           the first paint, before fit() has run. */
+        --avatar-w: 30vw;
+        --pane-w: min(62vw, 1100px);
+        --pane-h: 76vh;
+        --pane-left: 3vw;
+        --pane-top: 5vh;
+        --caption-bottom: calc(3vh + 60px);
+        --rail-bottom: calc(3vh + 96px);
+        --pane-bottom: calc(3vh + 260px);
+      }
+      * { box-sizing: border-box }
+      html, body { height: 100% }
+      body { margin: 0; overflow: hidden; background: var(--bg); color: var(--ink);
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif }
+
+      /* ── the composite ────────────────────────────────────────────────────────────────
+         Their own column on the right, sized to them at runtime; the app on glass to the left
+         of it. This is `apps/demo/terminal-tutor`'s frame, and it is here for the same
+         reason: `object-fit: cover` full-bleed crops to FILL, so a portrait clip in a
+         landscape window is scaled until it covers and what covers is a fraction of a face.
+         `contain` inside a column exactly as wide as a full-height frame needs shows all of
+         them and never crops, and the left edge is masked to a fade so the video's own
+         rectangle does not read as a pasted-on box.
+      ─────────────────────────────────────────────────────────────────────────────────── */
+      #avatar { position: fixed; top: 0; right: 0; height: 100%; width: var(--avatar-w);
+        object-fit: contain; object-position: 100% 50%; display: none;
+        filter: brightness(0.9) contrast(1.03) saturate(0.98);
+        -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 18%);
+        mask-image: linear-gradient(to right, transparent 0%, #000 18%) }
+      #avatar.on { display: block }
+      #scrim { position: fixed; inset: 0; pointer-events: none;
+        background: linear-gradient(100deg, #06070adb 0%, #06070aab 34%, #06070a33 57%, transparent 73%) }
+      #vign { position: fixed; inset: 0; pointer-events: none;
+        box-shadow: inset 0 0 220px 60px var(--bg) }
+      /* The character's audio elements live here, never on <body> — and they are not display:none,
+         because a hidden media element is subject to the same autoplay rules and only loses
+         the browser's own affordance. Off-screen, one pixel, still in the document. */
+      #audio { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; overflow: hidden }
+
+      /* ── the app, on glass ──────────────────────────────────────────────────────────── */
+      #pane { position: fixed; left: var(--pane-left); top: var(--pane-top);
+        width: var(--pane-w); height: var(--pane-h);
+        display: flex; flex-direction: column; min-height: 0;
+        /* The panel's BACKGROUND is translucent, never the panel. `opacity` here would take
+           the code down with it, and a document over a moving face at 40% is unreadable.
+           No `backdrop-filter`: what is behind the glass is a flat gradient, so it would buy
+           nothing and charge the compositor for a snapshot-and-blur of the whole panel every
+           time a build repaints it. */
+        background: var(--glass);
+        border: 1px solid var(--edge); border-radius: 14px; overflow: hidden;
+        box-shadow: 0 40px 100px -24px #000d, inset 0 1px 0 #ffffff12;
+        opacity: 0; transform: translateY(10px); transition: opacity .5s, transform .5s }
+      #pane.on { opacity: 1; transform: none }
+
+      .chrome { flex: none; display: flex; align-items: center; gap: 7px; padding: 8px 10px;
+        border-bottom: 1px solid var(--line); background: #0b0f14a6 }
+      .seg { display: flex; background: #ffffff0f; border: 1px solid var(--line);
+        border-radius: 9px; padding: 2px; flex: none }
+      .seg button { border: 0; background: none; padding: 4px 12px; border-radius: 7px;
+        font-size: 12.5px; color: var(--dim) }
+      .seg button.on { background: #ffffff1c; color: var(--ink) }
+      .vers { display: flex; gap: 4px; align-items: center; margin-left: 2px;
+        overflow: auto; max-width: 38%; scrollbar-width: none }
+      .vers::-webkit-scrollbar { display: none }
+      .vers button { padding: 4px 9px; font-size: 11.5px; border-radius: 7px; color: var(--dim);
+        flex: none; background: none; border: 1px solid transparent }
+      .vers button.on { background: #ffffff1c; color: var(--ink); border-color: #ffffff22 }
+      .ghost { padding: 5px 9px; font-size: 13px; color: var(--dim); background: none;
+        border: 1px solid transparent }
+      .ghost:hover:not(:disabled) { background: #ffffff12; color: var(--ink) }
+
+      .view { flex: 1; min-height: 0; position: relative }
+      /* Hidden until there is a document. An empty iframe is an opaque white rectangle, which
+         would put a blank sheet of paper on the glass before anything has been built. */
+      iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0;
+        display: none; background: #fff }
+      .view.filled iframe { display: block }
+      body.tab-code iframe { visibility: hidden }
+      /* The one screen the glass is actually FOR. A document streaming over the scene is the
+         moment this layout exists to show; a rendered page underneath is opaque and cannot be. */
+      pre.code { position: absolute; inset: 0; margin: 0; padding: 15px 17px; overflow: auto;
+        background: rgb(6 9 12 / 0.5); color: #cfe0ee;
+        font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
+        white-space: pre-wrap; word-break: break-word; display: none }
+      body.tab-code pre.code { display: block }
+      .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+        color: #61748a; font-size: 13px; padding: 30px; line-height: 1.7 }
+
+      .notes { flex: none; display: none; padding: 7px 12px; border-top: 1px solid var(--line);
+        background: #1b0f0bcc; color: #ff9d84; font: 11.5px/1.5 ui-monospace, monospace;
+        max-height: 90px; overflow: auto; white-space: pre-wrap }
+      .notes.on { display: block }
+      .strip { flex: none; display: none; align-items: center; gap: 9px; padding: 8px 12px;
+        border-top: 1px solid var(--line); background: #0b0f14cc; font-size: 12.5px }
+      .strip.on { display: flex }
+      .strip a { color: var(--link); text-decoration: none; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap }
+      .strip .err { color: #ff8b6f }
+
+      /* ── HUD ──────────────────────────────────────────────────────────────────────── */
+      #clock { position: fixed; top: 2.2vh; right: 2vw; z-index: 20; padding: 3px 9px;
+        border-radius: 999px; background: #000000a6; border: 1px solid var(--line);
+        color: #cfd8e2; font: 11.5px/1.5 ui-monospace, monospace; letter-spacing: .04em }
+      #clock:empty { display: none }
+      #clock.low { color: #ffb9a5; background: #4a1a10cc; border-color: #ff6a3d44 }
+
+      #rail { position: fixed; right: 2vw; bottom: 3vh; width: min(310px, 32vw);
+        display: flex; flex-direction: column; gap: 9px; z-index: 20 }
+      .card { background: #070b0fd9; border: 1px solid var(--line); border-radius: 12px;
+        backdrop-filter: blur(6px) }
+      .card > h2 { margin: 0; padding: 10px 12px 5px; font-size: 11px; letter-spacing: .09em;
+        text-transform: uppercase; color: var(--dim2); font-weight: 600;
+        display: flex; align-items: center; gap: 7px }
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: #3c4650; flex: none }
+      .dot.live { background: var(--ok); box-shadow: 0 0 0 3px #3ddc8422 }
+      .dot.busy { background: var(--accent); box-shadow: 0 0 0 3px #ff6a3d22 }
+      #build { padding: 0 12px; font-size: 13.5px; color: var(--ink) }
+      #build.bad { color: #ff9d84 }
+      #vinfo { padding: 2px 12px 0; font-size: 11.5px; color: var(--dim) }
+      .bar { height: 3px; margin: 8px 12px 10px; background: #ffffff14; border-radius: 99px;
+        overflow: hidden; opacity: 0; transition: opacity .2s }
+      .bar.on { opacity: 1 }
+      .bar i { display: block; height: 100%; width: 38%; border-radius: 99px;
+        background: var(--accent); animation: slide 1.15s ease-in-out infinite }
+      @keyframes slide { 0% { transform: translateX(-110%) } 100% { transform: translateX(330%) } }
+
+      /* Not a <details>. Chrome renders its content inside a `::details-content` box, so a
+         child's `flex: 1 1 0` applies to nothing — the log takes its content height and spills
+         past the border instead of scrolling. A plain container and a <button> behave the same
+         in every engine and keep the keyboard affordance <summary> was providing. */
+      .card-head { width: 100%; background: none; border: 0; border-radius: 0; cursor: pointer;
+        padding: 10px 12px; font: inherit; font-size: 11px; letter-spacing: .09em;
+        text-transform: uppercase; color: var(--dim2); font-weight: 600;
+        display: flex; align-items: center; gap: 7px; text-align: left; user-select: none }
+      .card-head:hover { background: #ffffff08 }
+      .chev { font-size: 9px; transition: transform .15s }
+      .thread.open .chev { transform: rotate(90deg) }
+      .badge { margin-left: auto; background: #ffffff12; border-radius: 999px; padding: 1px 7px;
+        font-size: 10.5px; letter-spacing: 0 }
+      #log { max-height: 26vh; overflow: auto; padding: 0 12px 11px; font-size: 12px;
+        display: flex; flex-direction: column; gap: 8px; color: #a9bccd }
+      .thread:not(.open) #log { display: none }
+      #log .who { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim2) }
+      #log .agent .who { color: var(--accent) }
+      #log .agent div + div { color: var(--ink) }
+      #log .tool { color: var(--dim2); font: 11px/1.5 ui-monospace, monospace }
+
+      /* ── dock ─────────────────────────────────────────────────────────────────────── */
+      /* Every offset here is a variable that fit() writes from a MEASURED height, never a
+         guess. The dock wraps — at a narrow width its four controls become two rows — so a
+         caption pinned a fixed 60px up is drawn underneath "Hang up" rather than above it. */
+      #caption { position: fixed; left: 3vw; bottom: var(--caption-bottom); font-size: 12.5px;
+        color: var(--dim); max-width: 56vw; z-index: 20 }
+      #caption.bad { color: #ff9b7a }
+      #dock { position: fixed; left: 3vw; bottom: 3vh; display: flex; gap: 8px; align-items: center;
+        z-index: 20; flex-wrap: wrap; max-width: 64vw }
+      button, input { font: inherit; border-radius: 999px; border: 1px solid var(--line);
+        background: #0e141ad9; color: var(--ink); padding: 9px 16px }
+      button { cursor: pointer } button:disabled { opacity: .4; cursor: default }
+      button:hover:not(:disabled) { background: #161d26 }
+      button.go { background: var(--accent); color: #1a0803; border-color: transparent; font-weight: 700 }
+      button.go:hover:not(:disabled) { background: #ff7d55 }
+      #say { width: min(340px, 38vw); border-radius: 10px; padding: 9px 13px }
+      #say:focus { outline: 2px solid #ff6a3d66; outline-offset: 1px }
+
+      /* Narrow: the character goes behind everything at low opacity and the app takes the width. The
+         rail lies down flat above the dock rather than covering the app it describes, and the
+         panel stops above the rail — `--rail-bottom` and `--pane-bottom` are both measured,
+         because a stack of four fixed layers cannot be guessed at in CSS and every wrong guess
+         is one element drawn on top of another. */
+      @media (max-width: 1000px) {
+        #pane { left: 3vw; top: 3vh; width: 94vw; height: auto; bottom: var(--pane-bottom) }
+        #avatar { width: 100%; opacity: .2; -webkit-mask-image: none; mask-image: none }
+        #rail { left: 3vw; right: 3vw; width: auto; bottom: var(--rail-bottom);
+          flex-direction: row; align-items: stretch }
+        #rail > * { flex: 1; min-width: 0 }
+        /* A fixed height, not a max — the rail's height is what the panel above it is sized
+           against, and a log that grows as the call goes on would walk the panel up the screen. */
+        .thread.open #log { height: 11vh; max-height: none }
+        #caption { max-width: 94vw }
+        #dock { max-width: 94vw }
+        #say { width: min(340px, 52vw) }
+      }
+    </style>
+  </head>
+  <body class="tab-preview">
+    <!-- `muted` is not a preference, it is what makes autoplay legal. The voice arrives on its
+         own elements via attachRemoteAudio, so this element has no sound to lose — and an
+         unmuted video element can have play() refused until a gesture, which presents as a
+         character who never appears. -->
+    <video id="avatar" autoplay playsinline muted></video>
+    <div id="scrim"></div>
+    <div id="vign"></div>
+    <div id="audio"></div>
+
+    <section id="pane">
+      <div class="chrome">
+        <div class="seg">
+          <button id="tabPreview" class="on">Preview</button>
+          <button id="tabCode">Code</button>
+        </div>
+        <div class="vers" id="vers"></div>
+        <span style="flex:1"></span>
+        <button class="ghost" id="reload" title="Re-render" disabled>⟳</button>
+        <button class="ghost" id="pop" title="Open in a new tab" disabled>↗</button>
+        <button id="publish" disabled hidden>Publish</button>
+      </div>
+
+      <div class="view" id="view">
+        <!-- allow-scripts and NOTHING else. Adding allow-same-origin next to it would hand the
+             generated page this document's origin — and a `srcdoc` frame with both is not a
+             sandbox at all, it can reach straight into `parent`. -->
+        <iframe id="frame" sandbox="allow-scripts" title="App preview"></iframe>
+        <pre class="code" id="code"></pre>
+        <div class="empty" id="empty">Nothing built yet.<br />Start a call and describe an app.</div>
+      </div>
+
+      <div class="notes" id="notes"></div>
+      <div class="strip" id="strip"></div>
+    </section>
+
+    <div id="clock"></div>
+
+    <div id="rail">
+      <div class="card">
+        <h2><span class="dot" id="dot"></span> Build</h2>
+        <div id="build">nothing built yet</div>
+        <div id="vinfo">press Call, then say what you want</div>
+        <div class="bar" id="bar"><i></i></div>
+      </div>
+      <div class="card thread open" id="thread">
+        <button class="card-head" id="threadToggle" aria-expanded="true" aria-controls="log">
+          <span class="chev" aria-hidden="true">▸</span> Conversation
+          <span class="badge" id="count">0</span>
+        </button>
+        <div id="log" role="log" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <div id="caption">press Call, then say what you want to build</div>
+    <div id="dock">
+      <button class="go" id="call">Call</button>
+      <button id="hang" disabled>Hang up</button>
+      <input id="say" placeholder="…or type it" disabled />
+      <button id="send" disabled>Send</button>
+    </div>
+
+    <!-- A classic script, deliberately BEFORE the module. A module that throws while evaluating
+         takes every handler defined after it with it — the markup still renders, so you get a
+         finished-looking page with a button that does nothing. This turns that into a sentence. -->
+    <script>
+      (function () {
+        var said = false;
+        function boom(what) {
+          if (said) return; said = true;
+          var c = document.getElementById("caption");
+          if (c) { c.className = "bad"; c.textContent = "this page failed to start: " + what; }
+        }
+        addEventListener("error", function (e) { boom(e.message || "script error"); });
+        addEventListener("unhandledrejection", function (e) {
+          boom((e.reason && e.reason.message) || String(e.reason));
+        });
+      })();
+    </script>
+
+    <script type="module">
+      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+      // The non-React tool plane and the browser audio helpers, served by this app's own server
+      // from the installed packages. In a bundled app both are plain imports of
+      // "realtime-avatar-tools" and "-browser".
+      import { attachAvatarTools } from "/sdk/tools.js";
+      import { enableMicrophone, attachRemoteAudio } from "/sdk/browser/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const cap = (t, bad = false) => {
+        $("caption").textContent = t;
+        $("caption").className = bad ? "bad" : "";
+      };
+
+      /**
+       * What to call the character on screen.
+       *
+       * The avatar is a CONFIG choice — `AVATAR_ID` points this app at whoever you like, and
+       * this one is shipped cast with Kit, the hoodie engineer `terminal-tutor` teaches from.
+       * So nothing the user reads asserts a gender: the transcript is labelled with this name
+       * and every status line names the video, the renderer or the tools rather than a person.
+       * Recasting is then one line here and one in `.env`, not a pass over the prose.
+       */
+      const CHARACTER = "Kit";
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE COMPOSITE
+
+         The aspect ratio is not knowable from here — it is whatever the source clip was, and
+         this demo ships to people whose avatar is not the one it was built against. So the
+         column is made exactly as wide as a FULL-HEIGHT frame needs and `contain` fills it
+         with no crop and no letterbox; the app takes everything to the left of it.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      function fit() {
+        const root = document.documentElement.style;
+        const gapY = Math.max(14, innerHeight * 0.03);
+
+        // The dock is the floor, and everything above it is stacked off its MEASURED height.
+        // It wraps: at a narrow width its four controls become two rows, and a caption pinned
+        // a fixed distance up is then drawn underneath a button rather than above it.
+        const dockH = $("dock").offsetHeight || 41;
+        const captionBottom = gapY + dockH + 10;
+        root.setProperty("--caption-bottom", `${Math.round(captionBottom)}px`);
+
+        if (innerWidth <= 1000) {
+          // Narrow: the media query owns left/top/width, and the same measure-don't-guess rule
+          // owns the two vertical offsets. The rail sits above the caption and the panel stops
+          // above the rail — four fixed layers in one column, none of them guessed.
+          const railBottom = captionBottom + ($("caption").offsetHeight || 19) + 10;
+          root.setProperty("--rail-bottom", `${Math.round(railBottom)}px`);
+          root.setProperty("--pane-bottom", `${Math.round(railBottom + ($("rail").offsetHeight || 150) + 12)}px`);
+          return;
+        }
+
+        const v = $("avatar");
+        const ar = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 0;
+        // Capped harder than the tutor caps its own column. There the terminal is eighty
+        // columns of monospace and anything wider is bought blank space; here the panel is a
+        // rendered web page, which uses every pixel it is given.
+        const herW = ar ? Math.min(innerWidth * 0.42, innerHeight * ar) : innerWidth * 0.3;
+        const left = Math.max(22, innerWidth * 0.028);
+        // The first 18% of the column is masked to transparent, so the panel may sit a little
+        // way into it without landing on the face. The cap is what stops a 2560px monitor giving
+        // the panel more width than a web page has any use for — but it was 1180, which left
+        // 300px of dead scene between the panel and the character on exactly that monitor.
+        const paneW = Math.max(340, Math.min(1400, innerWidth - herW + herW * 0.1 - left * 2));
+        const top = Math.max(18, innerHeight * 0.05);
+        // Fill the band. The tutor gives its terminal an ASPECT because eleven lines of code in
+        // a full-height box reads as broken; a rendered page takes whatever height it is given
+        // and a preview that is short is a preview that lies about the layout.
+        const paneH = Math.max(220, innerHeight - top - (captionBottom + ($("caption").offsetHeight || 19) + 12));
+        root.setProperty("--avatar-w", `${Math.round(herW)}px`);
+        root.setProperty("--pane-w", `${Math.round(paneW)}px`);
+        root.setProperty("--pane-h", `${Math.round(paneH)}px`);
+        root.setProperty("--pane-left", `${Math.round(left)}px`);
+        root.setProperty("--pane-top", `${Math.round(top)}px`);
+      }
+      addEventListener("resize", fit);
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE TRANSCRIPT
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      let turns = 0;
+      /** Bounded. Every tool call writes a line and a build writes several, so over a long
+       *  call this grows without limit — and each append reads `scrollHeight`, which forces a
+       *  synchronous layout. Unbounded nodes plus a forced layout per node is a page that gets
+       *  heavier the longer you talk. The badge counts turns, not surviving nodes. */
+      const LOG_MAX = 140;
+      /** Only chase the bottom if the reader is already there — yanking someone who scrolled up
+       *  to read what was said two turns ago is worse than not following. */
+      const atBottom = () => {
+        const el = $("log");
+        return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+      };
+      const log = (who, text, cls = "") => {
+        const open = $("thread").classList.contains("open");
+        // Reading scrollHeight forces a layout, so measure only while it is on screen — a
+        // collapsed log has nothing to scroll and nothing to see.
+        const follow = open && atBottom();
+        const d = document.createElement("div");
+        d.className = cls;
+        d.append(Object.assign(document.createElement("div"), { className: "who", textContent: who }));
+        d.append(Object.assign(document.createElement("div"), { textContent: text }));
+        $("log").append(d);
+        while ($("log").childElementCount > LOG_MAX) $("log").firstElementChild.remove();
+        if (follow) $("log").scrollTop = $("log").scrollHeight;
+        $("count").textContent = ++turns;
+      };
+      const tool = (text) => log("tool", text, "tool");
+
+      $("threadToggle").onclick = () => {
+        const open = $("thread").classList.toggle("open");
+        $("threadToggle").setAttribute("aria-expanded", String(open));
+        if (open) $("log").scrollTop = $("log").scrollHeight;
+        // The rail just changed height, and on a narrow window the panel is sized against it.
+        fit();
+      };
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         IS THERE A PICTURE, AND IS IT STILL MOVING?
+
+         Two different failures wear the same face here, and NEITHER raises an event.
+
+         BLACK. An avatar can reach `ready`, start a call, and publish a track that is live,
+         decoding, and advancing — and every frame of it black. `readyState` is 4, `videoWidth`
+         is a plausible 700, `paused` is false, and nothing in the API says a word. Observed on
+         a `ready`, `sourceKind: "video"` avatar, so the source kind is not the whole story and
+         must not be trusted as the check.
+
+         STALLED. The frames simply stop arriving. `readyState` is still 4, `paused` is still
+         false, the MediaStreamTrack is still `live` and unmuted, and `TrackUnsubscribed` does
+         not fire. Measured when a call reached its `maxSeconds` cap: the frame counter stopped
+         dead at 7457 and the page went on claiming to be connected until the tab was closed.
+         It is also what a lost render worker looks like.
+
+         So the picture is watched for the WHOLE call. The two checks retire differently on
+         purpose: black reads 32x32 pixels a second and stops the moment it sees a picture,
+         because black-for-the-whole-call is the case it exists for and a GPU readback every
+         second after that buys nothing; stall reads a frame COUNTER, which costs nothing, and
+         therefore never stops.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      const STALL_MS = 4000;
+      let healthTimer = null;
+      let videoStalled = false;
+      const stopVideoWatch = () => {
+        clearInterval(healthTimer);
+        healthTimer = null;
+        videoStalled = false;
+      };
+      /** Frames decoded so far. `currentTime` is a fallback: it moves for the same reasons. */
+      const framesSeen = (v) => v.getVideoPlaybackQuality?.().totalVideoFrames ?? Math.round(v.currentTime * 30);
+
+      function watchVideo() {
+        stopVideoWatch();
+        const canvas = Object.assign(document.createElement("canvas"), { width: 32, height: 32 });
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        let checkBlack = true;
+        let blackSince = null;
+        let lastFrames = -1;
+        let stillSince = null;
+
+        healthTimer = setInterval(() => {
+          const v = $("avatar");
+          if (!v.videoWidth) return;
+
+          // ── still moving? ───────────────────────────────────────────────────────────────
+          const frames = framesSeen(v);
+          if (frames !== lastFrames) {
+            lastFrames = frames;
+            stillSince = null;
+            if (videoStalled) {
+              videoStalled = false;
+              cap("connected — say what you want to build");
+              tool("video: picture is back");
+            }
+          } else {
+            stillSince ??= Date.now();
+            if (!videoStalled && Date.now() - stillSince >= STALL_MS) {
+              videoStalled = true;
+              // The element is left alone: the frozen frame is still the character, and blanking it would
+              // throw away the only thing on screen. What was missing was the sentence.
+              cap("the video has stopped moving — the render may have dropped, or the call may be over", true);
+              tool(`video: stalled at ${frames} frames, track still live`);
+            }
+            return; // a frozen frame is not evidence about brightness
+          }
+
+          // ── anything in it? ─────────────────────────────────────────────────────────────
+          if (!checkBlack || v.paused) return;
+          let brightest = 0;
+          try {
+            ctx.drawImage(v, 0, 0, 32, 32);
+            const { data } = ctx.getImageData(0, 0, 32, 32);
+            for (let i = 0; i < data.length; i += 4) {
+              const lum = data[i] + data[i + 1] + data[i + 2];
+              if (lum > brightest) brightest = lum;
+            }
+          } catch {
+            checkBlack = false; // a tainted canvas is not worth failing a call over
+            return;
+          }
+          if (brightest > 12) return void (checkBlack = false); // proven to have a picture in it
+          blackSince ??= Date.now();
+          if (Date.now() - blackSince < 6000) return;
+          checkBlack = false;
+          $("avatar").classList.remove("on");
+          cap("connected, and your mic is live — but the video has no picture in it. Try a different AVATAR_ID.", true);
+          tool("video: black track — live and decoding, every frame empty");
+        }, 1000);
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE CALL CLOCK
+
+         The call has a hard cap, and hitting it does not look like an ending — it looks like
+         the stall above. At `maxSeconds` the media stops, the video element keeps `readyState`
+         4 and `paused` false, the track stays `live`, and `Disconnected` does not arrive for
+         seconds (measured against a 300s cap at `activeSeconds: 299.693`). Counting it down is
+         the whole fix: the number is on screen the entire call, so the freeze arrives already
+         explained — and the page hangs up itself rather than waiting to be told about an ending
+         it could have predicted to the second.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      let clockTimer = null;
+      const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      const stopClock = () => {
+        clearInterval(clockTimer);
+        clockTimer = null;
+        $("clock").textContent = "";
+        $("clock").classList.remove("low");
+      };
+      function startClock(seconds) {
+        stopClock();
+        if (!seconds) return;
+        const endsAt = Date.now() + seconds * 1000;
+        const paint = () => {
+          const left = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+          $("clock").textContent = mmss(left);
+          $("clock").classList.toggle("low", left <= 30);
+          if (left > 0) return;
+          stopClock();
+          endedUI(`this call reached its ${mmss(seconds)} limit — press Call to start another`);
+          endCall();
+        };
+        paint();
+        clockTimer = setInterval(paint, 1000);
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE DOCUMENT, AND ITS HISTORY
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      /** Every build lands here. `html` is the CLEAN document — what gets published. */
+      const versions = []; // { n, html, label }
+      let showing = 0; // 1-based; 0 means nothing built yet
+      const currentHtml = () => versions[showing - 1]?.html ?? "";
+
+      /**
+       * The preview preamble.
+       *
+       * Injected for the PREVIEW only and never for the published page, so what goes on the
+       * public URL is exactly the document the model wrote. It does two jobs:
+       *
+       * 1. Reports back. A page that throws on line 40 still renders the first 39 lines, so
+       *    "did it work" cannot be read off the frame — the frame has to say so.
+       * 2. Stands in for storage. This frame has an OPAQUE origin, where touching
+       *    `localStorage` THROWS rather than returning null, and a model asked for a todo list
+       *    reaches for it every time. An in-memory shim keeps that from being fatal, and
+       *    behaves the way the published page will, because the model is told to keep state in
+       *    memory there too.
+       */
+      const PREAMBLE = `<script>(() => {
+  const send = (kind, text) => { try { parent.postMessage({ __studio: 1, kind, text: String(text).slice(0, 600) }, "*") } catch (e) {} };
+  // A FACTORY, called once per storage. One shared Map would make sessionStorage.setItem
+  // visible to localStorage.getItem and give both a combined length — which no browser does,
+  // so a page that used both would behave here in a way it never would once published.
+  const store = () => { const mem = new Map(); return {
+    getItem: (k) => mem.has(String(k)) ? mem.get(String(k)) : null,
+    setItem: (k, v) => void mem.set(String(k), String(v)), removeItem: (k) => void mem.delete(String(k)),
+    clear: () => mem.clear(), key: (i) => [...mem.keys()][i] ?? null, get length() { return mem.size } }; };
+  for (const n of ["localStorage", "sessionStorage"]) {
+    try { Object.defineProperty(window, n, { value: store(), configurable: true }) } catch (e) {}
+  }
+  window.alert = (m) => send("log", "alert: " + m);
+  window.confirm = () => true;
+  window.prompt = () => null;
+  addEventListener("error", (e) => send("error", e.message + " (line " + e.lineno + ")"));
+  addEventListener("unhandledrejection", (e) => send("error", "unhandled rejection: " + (e.reason && e.reason.message || e.reason)));
+  const ce = console.error.bind(console);
+  console.error = (...a) => { send("error", a.map(String).join(" ")); ce(...a) };
+})();<\/script>`;
+
+      /**
+       * Put the preamble inside the document, not in front of it.
+       *
+       * Prepending would push the doctype out of first position and drop the frame into quirks
+       * mode — the preview would then lay out differently from the published page, which is the
+       * one thing a preview may not do.
+       */
+      function withPreamble(html) {
+        // A FUNCTION replacement, not a string one: `$&` and friends are special in a
+        // replacement string, and the preamble is not something we want scanned for them.
+        const head = html.match(/<head[^>]*>/i);
+        if (head) return html.replace(head[0], () => head[0] + PREAMBLE);
+        const open = html.match(/<html[^>]*>/i) ?? html.match(/<!doctype[^>]*>/i);
+        return open ? html.replace(open[0], () => open[0] + PREAMBLE) : PREAMBLE + html;
+      }
+
+      /** Errors the running page reported since the last render. */
+      let liveErrors = [];
+      addEventListener("message", (e) => {
+        // The frame's origin is the string "null" — it has an opaque one, by design. So the
+        // sender is identified by its WINDOW, which cannot be spoofed, not by its origin.
+        if (e.source !== $("frame").contentWindow) return;
+        const d = e.data;
+        if (!d || d.__studio !== 1) return;
+        if (d.kind === "error") {
+          liveErrors.push(d.text);
+          $("notes").textContent = liveErrors.join("\n");
+          $("notes").classList.add("on");
+        }
+      });
+
+      function render(html) {
+        liveErrors = [];
+        $("notes").classList.remove("on");
+        $("notes").textContent = "";
+        $("empty").style.display = html ? "none" : "";
+        $("view").classList.toggle("filled", Boolean(html));
+        $("frame").srcdoc = html ? withPreamble(html) : "";
+        $("reload").disabled = $("pop").disabled = !html;
+        $("publish").disabled = !html || !sessionId;
+      }
+
+      function paintVersions() {
+        $("vers").replaceChildren(
+          ...versions.map((v) => {
+            const b = document.createElement("button");
+            b.textContent = `v${v.n}`;
+            b.title = v.label;
+            b.className = v.n === showing ? "on" : "";
+            b.onclick = () => show(v.n);
+            return b;
+          }),
+        );
+        $("vers").scrollLeft = 1e9;
+      }
+
+      function show(n) {
+        const v = versions[n - 1];
+        if (!v) return false;
+        showing = n;
+        $("code").textContent = v.html;
+        render(v.html);
+        paintVersions();
+        hud();
+        return true;
+      }
+
+      function addVersion(html, label) {
+        versions.push({ n: versions.length + 1, html, label });
+        show(versions.length);
+        return versions.length;
+      }
+
+      const setTab = (which) => {
+        document.body.classList.toggle("tab-code", which === "code");
+        document.body.classList.toggle("tab-preview", which !== "code");
+        $("tabPreview").classList.toggle("on", which !== "code");
+        $("tabCode").classList.toggle("on", which === "code");
+      };
+      $("tabPreview").onclick = () => setTab("preview");
+      $("tabCode").onclick = () => setTab("code");
+      $("reload").onclick = () => render(currentHtml());
+      $("pop").onclick = () => {
+        const url = URL.createObjectURL(new Blob([currentHtml()], { type: "text/html" }));
+        open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      };
+
+      /** The build card. The one place the panel says what it is doing rather than showing it. */
+      const BUSY = ["writing", "rendering", "repairing"];
+      function hud() {
+        const status = job ? job.status : "idle";
+        const busy = BUSY.includes(status);
+        // With no job, the VERSIONS decide the wording. `restore_version` and a hand-loaded
+        // document both put a page on the panel without a build behind it, and a card reading
+        // "nothing built yet" directly above "v1 of 1" contradicts itself and the screen.
+        $("build").textContent = job
+          ? { writing: "writing the page…", rendering: "rendering it…", repairing: "repairing it…",
+              done: "on screen", failed: "no page was produced", superseded: "replaced by a later request" }[status] ?? status
+          : versions.length ? "on screen" : "nothing built yet";
+        $("build").className = status === "failed" ? "bad" : "";
+        $("vinfo").textContent = versions.length
+          ? `v${showing} of ${versions.length}${liveErrors.length ? ` · ${liveErrors.length} error(s) noted` : ""}`
+          : room ? "say what you want to build" : "press Call, then say what you want";
+        $("bar").classList.toggle("on", busy);
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE BUILD
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      /**
+       * Ask the code model for a whole document and stream it into the Code tab.
+       *
+       * It sends STRINGS — a request, the current document, the errors — and never a turn with
+       * a role on it. A `system` turn in a request body would sit beside the build engine's own
+       * prompt and quietly outrank it; here there is no field to put one in.
+       */
+      async function writeDoc(request, errors = "", signal) {
+        setTab("code");
+        // One text node for the whole stream, kept and appended to. See `paint` below for why
+        // it is not just `$("code").textContent = ""` and a fresh assignment per frame.
+        const sink = document.createTextNode("");
+        $("code").replaceChildren(sink);
+        // The "nothing built yet" card covers the whole view. On a FIRST build it would sit on
+        // top of the code streaming in behind it, so the one visible sign that anything is
+        // happening would be hidden for the twenty seconds it matters most.
+        $("empty").style.display = "none";
+        let res;
+        try {
+          res = await fetch("/api/code", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ request, current: currentHtml(), errors }),
+            signal,
+          });
+        } catch (err) {
+          if (signal?.aborted) return { ok: false, doc: "", aborted: true, error: "superseded" };
+          return { ok: false, doc: "", error: `could not reach the build engine — ${err.message}` };
+        }
+        if (!res.ok || !res.body) {
+          // Say WHICH refusal it was. Swallowing this leaves an empty panel and no account of
+          // itself, which reads as the model having nothing to say rather than as a failure.
+          const body = await res.json().catch(() => ({}));
+          return { ok: false, doc: "", error: `the build engine refused (${res.status}) — ${body.error ?? "no reason given"}` };
+        }
+
+        // OpenAI-shaped SSE: accumulate `choices[].delta.content` and repaint as it arrives.
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let doc = "";
+
+        /**
+         * Repaint on a cadence, and APPEND — never re-set the whole string.
+         *
+         * Three costs hide in this one line, and each fix only removes one of them. Measured on
+         * the coding companion, which streams into the same kind of wrapping <pre>:
+         *
+         * 1. Painting per CHUNK read `scrollHeight` back after every delta — a forced
+         *    synchronous layout, about 1200 of them. Throttling to once a frame took a build
+         *    from 2762ms of main thread to 716ms.
+         * 2. What survived is that `textContent = doc` REPLACES the text node, so the engine
+         *    re-shapes all N characters from scratch on every repaint: O(n x repaints), and
+         *    invisible as a long task because it is not one long task but a thousand medium
+         *    ones landing on whatever you were typing.
+         * 3. And a frame is the wrong cadence anyway. A 14 KB document takes gpt-4.1 about half
+         *    a minute, so once a frame is ~1500 repaints to show ~500 bytes a second.
+         *
+         *     replace, 1500 repaints    772ms
+         *     append,  1500 repaints    250ms
+         *     append,   300 repaints     49ms   <- what this does
+         *
+         * The scroll is written, not read: assigning past the end clamps, so following the
+         * stream costs no `scrollHeight` measurement at all.
+         */
+        const PAINT_MS = 80;
+        let painted = 0;
+        let pending = 0;
+        let lastPaint = 0;
+        const flush = () => {
+          pending = 0;
+          lastPaint = performance.now();
+          if (doc.length > painted) {
+            sink.appendData(doc.slice(painted));
+            painted = doc.length;
+          }
+          $("code").scrollTop = 1e9;
+        };
+        const paint = () => {
+          if (pending) return;
+          // Scheduled on a timer for the cadence, then handed to rAF so the write still lands
+          // on a frame boundary rather than in the middle of one.
+          pending = setTimeout(() => requestAnimationFrame(flush), Math.max(0, PAINT_MS - (performance.now() - lastPaint)));
+        };
+
+        try {
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let nl;
+            while ((nl = buffer.indexOf("\n")) >= 0) {
+              const line = buffer.slice(0, nl).trim();
+              buffer = buffer.slice(nl + 1);
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === "[DONE]") continue;
+              try {
+                const piece = JSON.parse(data)?.choices?.[0]?.delta?.content;
+                if (!piece) continue;
+                doc += piece;
+                paint();
+              } catch {
+                // A frame split across chunks. The whole line re-arrives on the next read.
+              }
+            }
+          }
+        } catch (err) {
+          clearTimeout(pending); // nothing left to show; do not paint a stream that stopped
+          if (signal?.aborted) return { ok: false, doc: "", aborted: true, error: "superseded" };
+          return { ok: false, doc: "", error: `the build stream broke — ${err.message}` };
+        }
+        // The model is told not to fence its output; it sometimes does anyway, and a stray ```
+        // in front of the doctype is enough to put the frame in quirks mode.
+        clearTimeout(pending);
+        const clean = doc.replace(/^\s*```[a-z]*\n?/i, "").replace(/```\s*$/, "").trim();
+        // The tail is still unpainted whatever happened. Append it if the text is unchanged;
+        // pay for one full re-shape only when a fence actually had to come off.
+        if (clean === doc) sink.appendData(doc.slice(painted));
+        else $("code").textContent = clean;
+        return { ok: Boolean(clean), doc: clean, error: clean ? "" : "the build engine returned nothing" };
+      }
+
+      /** A build that produced no page has to say so somewhere the user is already looking. */
+      function showBuildError(message) {
+        $("empty").style.display = "none";
+        $("notes").textContent = message;
+        $("notes").classList.add("on");
+        setTab("code");
+        $("code").textContent = `No page was produced.\n\n${message}`;
+      }
+
+      /** A tick after the frame has loaded, whatever it was going to throw has been thrown. */
+      const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      let job = null; // { id, status, version, errors, signal, abort }
+      let nextJob = 1;
+
+      /**
+       * Write it, render it, and if it threw, hand the errors back and try once more.
+       *
+       * Once, not three times: a page that renders is already on screen and already useful, so
+       * a second repair round mostly spends money re-deciding a layout the user can see. That
+       * is the opposite trade from a program whose only output was its exit state.
+       *
+       * `live()` is checked after every await. A superseded job must stop touching the panel
+       * the instant it loses it — otherwise its version lands on top of the newer build, and
+       * the user watches the thing they asked for get overwritten by the thing they didn't.
+       */
+      async function runBuild(j, request) {
+        const live = () => job === j;
+        j.status = "writing";
+        hud();
+        const first = await writeDoc(request, "", j.signal);
+        if (first.aborted || !live()) return void ((j.status = "superseded"), hud());
+        if (!first.ok || !/<html|<!doctype|<body/i.test(first.doc)) {
+          j.status = "failed";
+          j.errors = first.error || "the build engine did not return a page";
+          showBuildError(j.errors); // check_app can poll for this; the panel should not stay blank
+          hud();
+          return;
+        }
+        j.version = addVersion(first.doc, request.slice(0, 80));
+        j.status = "rendering";
+        setTab("preview");
+        hud();
+        await settle(1400);
+        if (!live()) return void ((j.status = "superseded"), hud());
+
+        if (liveErrors.length) {
+          j.status = "repairing";
+          hud();
+          const broke = liveErrors.join("\n");
+          const fixed = await writeDoc("Fix the errors.", broke, j.signal);
+          if (fixed.aborted || !live()) return void ((j.status = "superseded"), hud());
+          if (fixed.ok && /<html|<!doctype|<body/i.test(fixed.doc)) {
+            j.version = addVersion(fixed.doc, `repair: ${request.slice(0, 60)}`);
+            setTab("preview");
+            await settle(1400);
+            if (!live()) return void ((j.status = "superseded"), hud());
+          }
+        }
+        // A page with a leftover console error is still a page. `done` means it is on screen;
+        // `errors` is worth mentioning, not a reason to call the build a failure.
+        j.status = "done";
+        j.errors = liveErrors.join("\n").slice(0, 400);
+        hud();
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         PUBLISHING
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      let pub = null; // { status: 'publishing' | 'live' | 'failed', url, error }
+
+      async function runPublish() {
+        pub = { status: "publishing", url: null, error: "" };
+        $("strip").className = "strip on";
+        $("strip").replaceChildren(document.createTextNode("Publishing…"));
+        $("publish").disabled = true;
+        try {
+          const res = await fetch("/api/publish", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            // The document, and the session id we were given. NOT a script name — the server
+            // owns that, and a page that could choose one could overwrite any Worker there.
+            body: JSON.stringify({ session_id: sessionId, html: currentHtml() }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(body.error ?? `publish failed (${res.status})`);
+          pub = { status: "live", url: body.url, error: "" };
+          const a = Object.assign(document.createElement("a"), {
+            href: body.url, textContent: body.url, target: "_blank", rel: "noopener noreferrer",
+          });
+          const copy = Object.assign(document.createElement("button"), { textContent: "Copy" });
+          copy.className = "ghost";
+          copy.onclick = () => navigator.clipboard?.writeText(body.url);
+          $("strip").replaceChildren(document.createTextNode("Live →"), a, copy);
+          tool(`published → ${body.url}`);
+        } catch (err) {
+          pub = { status: "failed", url: null, error: String(err?.message ?? err) };
+          const s = Object.assign(document.createElement("span"), { className: "err", textContent: pub.error });
+          $("strip").replaceChildren(s);
+          tool(`publish failed — ${pub.error}`);
+        } finally {
+          $("publish").disabled = !currentHtml() || !sessionId;
+        }
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE TOOLS
+
+         Descriptions are written FOR THE MODEL — they are the only thing that tells it when a
+         tool is the right move, so they say WHEN to call it, not just what it returns.
+
+         The deadline is 2.5 seconds. A build is tens of seconds and a publish is about ten, so
+         NEITHER can return its result: both hand back a receipt and keep their real promise on
+         the panel, and the outcome is learned the way the user learns it — by asking.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      const TOOLS = {
+        build_app: {
+          description:
+            "Start building or changing the web app from something the user has just asked for, passing their request in their own words. Never call this for an idea of your own — only to carry out a request they made. Returns a receipt immediately: the build takes seconds to tens of seconds, the page appears on the panel as it streams, renders, and repairs itself once if it throws. Use check_app to learn the outcome. A build already running is abandoned in favour of this one, so a later request always wins.",
+          parameters: {
+            type: "object",
+            properties: {
+              request: {
+                type: "string",
+                description:
+                  "What to build or change, in the user's words. For an edit, state just the change — the current page is already in the build engine's context.",
+              },
+            },
+            required: ["request"],
+            additionalProperties: false,
+          },
+          execute: ({ request }) => {
+            const text = String(request ?? "").trim();
+            if (!text) return { status: "empty", message: "say what to build" };
+            /**
+             * A running build is SUPERSEDED, not a reason to refuse.
+             *
+             * Returning {status:'busy'} is the right trade when every build is one the user
+             * asked for — two requests in twenty seconds, keep the first. It stops being the
+             * right trade the moment a build can be one THE MODEL started: an invented build takes
+             * tens of seconds, and the user's actual request, arriving inside that window,
+             * came back "busy" and never reached the build engine at all. It then says a
+             * build is running, which is true, about a page nobody asked for.
+             *
+             * The brief is what stops it inventing them. This is what stops an invented one
+             * from eating the real request if it happens anyway — and it is better behaviour
+             * regardless, because the last thing said is the thing that is wanted. Aborting
+             * the stream also stops the superseded build costing tokens it can no longer spend.
+             */
+            if (job && job.status !== "done" && job.status !== "failed") {
+              tool(`→ superseding job ${job.id} (${job.status})`);
+              job.abort();
+            }
+            const control = new AbortController();
+            const j = {
+              id: nextJob++, status: "writing", version: 0, errors: "",
+              signal: control.signal, abort: () => control.abort(),
+            };
+            job = j;
+            // Deliberately not awaited: the receipt goes back inside the deadline while the
+            // build keeps its real promise on the panel. The catch is load-bearing — a thrown
+            // fetch mid-stream would otherwise leave this job stuck at "writing", and the
+            // panel would never explain itself.
+            runBuild(j, text).catch((err) => {
+              j.status = "failed";
+              j.errors = String(err?.message ?? err);
+              hud();
+            });
+            tool(`→ job ${j.id} started`);
+            // A receipt, not a page. Saying "started" and not "done" is what keeps the model from
+            // announcing a result that is tens of seconds away.
+            return { job: j.id, status: "started" };
+          },
+        },
+
+        check_app: {
+          description:
+            "The state of the studio: how the current build is going, what the page reported when it ran, which versions exist, and which one is on screen. Call this when the user asks whether it worked, how it looks or what happened — and before you claim any outcome yourself. Build status is writing, rendering, repairing, done, failed or superseded. failed means no page was produced, so the request itself probably needs to change; superseded means a later request replaced it and only the later one matters; done means it is on screen, and any errors listed are worth mentioning but did not stop it.",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+          execute: () => {
+            const result = {
+              build: job
+                ? { job: job.id, status: job.status, version: job.version, errors: job.errors.slice(0, 300) }
+                : { status: "idle", message: "nothing built yet — call build_app first" },
+              versions: versions.length,
+              showing,
+            };
+            if (canPublish) result.publish = pub ? { status: pub.status, url: pub.url, error: pub.error.slice(0, 200) } : { status: "unpublished" };
+            tool(`→ ${result.build.status}, ${versions.length} version(s)`);
+            // The 8 KB wire cap is enforced on the ENCODED result and REFUSES, never truncates
+            // — and JSON escaping can sextuple a control character, which a page's error text
+            // is free to be full of. So cap what the encoder will see, not what the string
+            // length claims.
+            while (JSON.stringify(result).length > 7000 && result.build.errors) {
+              result.build.errors = result.build.errors.slice(0, Math.floor(result.build.errors.length / 2));
+            }
+            return result;
+          },
+        },
+
+        restore_version: {
+          description:
+            "Put an earlier version of the app back on screen. Call this when the user asks to undo, go back, or return to how it was. Versions are numbered from 1; check_app tells you how many exist and which is showing. The restored version becomes the one the next build edits from.",
+          parameters: {
+            type: "object",
+            properties: {
+              version: { type: "integer", description: "Which version to show, counting from 1." },
+            },
+            required: ["version"],
+            additionalProperties: false,
+          },
+          execute: ({ version }) => {
+            const n = Number(version);
+            if (!show(n)) {
+              tool(`→ no version ${version}`);
+              return { ok: false, versions: versions.length, message: `there is no version ${version}` };
+            }
+            tool(`→ restored v${n}`);
+            return { ok: true, showing: n, versions: versions.length };
+          },
+        },
+      };
+
+      /**
+       * Only offered when the server says it is configured.
+       *
+       * A tool that can be called and that always fails is worse than one that never existed:
+       * the model will try it, apologise, and try it again. So an unconfigured deployment ships
+       * neither the verb nor the line about it in the brief.
+       */
+      const PUBLISH_TOOL = {
+        publish_app: {
+          description:
+            "Put the current version of the app on a public URL anyone can open. Call this when the user asks to publish, deploy, ship, or share it. Returns a receipt immediately; it takes about ten seconds. check_app reports the publish status and the live URL when it is ready. Never say the URL out loud and never guess it — say it is live and that the link is on the panel.",
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+          execute: () => {
+            if (!currentHtml()) {
+              tool("→ nothing to publish");
+              return { status: "empty", message: "there is no app yet — build one first" };
+            }
+            if (pub?.status === "publishing") return { status: "publishing", message: "already publishing — check_app for progress" };
+            void runPublish();
+            tool("→ publishing…");
+            return { status: "started" };
+          },
+        },
+      };
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         THE CALL
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      let room = null;
+      let sessionId = null;
+      let canPublish = false;
+      let maxSeconds = 0;
+      let audio = null;
+      /** Typed turns echo back as transcriptions of ourselves. We logged them at the keystroke,
+       *  so the echo is skipped — otherwise every typed turn appears twice. */
+      const sentByUs = new Set();
+
+      // The slot is held from the moment the grant lands — BEFORE the room exists. A tab closed
+      // in that gap tells no one. `pagehide` + sendBeacon is the one goodbye that outlives a
+      // closing page; the server ends the call and the slot frees now instead of at the join
+      // timeout. Ending is idempotent, so firing after a normal hang-up is fine.
+      addEventListener("pagehide", () => {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+      });
+
+      /** Hang up for real: leave the room AND tell the server, which frees the slot now rather
+       *  than when the platform notices the participant has gone (measured at about eight
+       *  seconds). `sessionId` is deliberately KEPT — `/api/publish` looks the script name up by
+       *  it, and hanging up should not stop you shipping what is on the panel. */
+      function endCall() {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+        room?.disconnect();
+      }
+
+      /** One teardown for every way a call can end, so none of them leaves half the UI live. */
+      function endedUI(message) {
+        cap(message);
+        $("dot").className = "dot";
+        stopVideoWatch();
+        stopClock();
+        $("avatar").classList.remove("on");
+        audio?.detach(); // the audio elements go with the call
+        audio = null;
+        $("hang").disabled = $("say").disabled = $("send").disabled = true;
+        $("call").disabled = false;
+        // Publish stays available. Hanging up does not delete what you built, and the server's
+        // record of this session outlives the room — so shipping the thing you just made should
+        // not require starting another call to ask permission.
+        $("publish").disabled = !currentHtml();
+        room = null;
+        hud();
+      }
+
+      $("call").onclick = async () => {
+        $("call").disabled = true;
+        $("dot").className = "dot busy";
+        cap("starting…");
+
+        const res = await fetch("/api/call", { method: "POST" });
+        if (res.status === 429) {
+          const q = await res.json(); // the queue, not a failure
+          cap(`every seat is busy — you are ${q.position ?? "?"} in line, retrying…`);
+          setTimeout(() => {
+            $("call").disabled = false;
+            $("call").click();
+          }, q.retryAfterMs ?? 3000);
+          return;
+        }
+        if (!res.ok) {
+          cap(res.status === 402 ? "this key is out of credits." : `could not start (${res.status})`, true);
+          $("dot").className = "dot";
+          $("call").disabled = false;
+          return;
+        }
+
+        // The body IS the grant, relayed byte-for-byte. Read the wire keys directly.
+        const grant = await res.json();
+        sessionId = grant.session_id; // held from HERE — the pagehide beacon needs it now
+        let sawVideo = false;
+        room = new Room();
+
+        // BEFORE connect, and INTO the document. `track.attach()` hands back a detached element:
+        // left out of the DOM there is nothing to play and nothing to click when autoplay blocks
+        // it. Subscribing after connect also drops tracks that arrive during it — a race that
+        // only shows up on a fast connection, and shows up as a silent call rather than an error.
+        audio = attachRemoteAudio(room, {
+          container: $("audio"),
+          onPlaybackBlocked: (unblock) => {
+            // Called once at attach time too, before anything is blocked — so only the BLOCKED
+            // case says anything. Reporting the clear case here would overwrite "starting…"
+            // with "connected" while the connect is still in flight.
+            if (!unblock) return;
+            cap("click anywhere to let the sound play");
+            addEventListener("pointerdown", () => {
+              unblock();
+              cap("connected — say what you want to build");
+            }, { once: true });
+          },
+        });
+
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind !== Track.Kind.Video) return;
+          sawVideo = true;
+          track.attach($("avatar"));
+          $("avatar").classList.add("on");
+          // The dimensions are not there at attach time — the element has no frame yet. Both,
+          // because a track that is already flowing may never fire `loadedmetadata` again.
+          $("avatar").addEventListener("loadedmetadata", fit, { once: true });
+          fit();
+          watchVideo();
+        });
+
+        // A track can end without the call ending. Unhandled, the element keeps the dead stream
+        // and the column stays a black rectangle that still claims to be a face — indistinguishable
+        // from a picture that has simply gone dark. It is the CLEAN way to lose the picture, and
+        // the rarer one; the track going quiet while staying `live` fires nothing at all, which
+        // is what `watchVideo` is for.
+        room.on(RoomEvent.TrackUnsubscribed, (track) => {
+          if (track.kind !== Track.Kind.Video) return;
+          track.detach($("avatar")); // detach from OUR element; it stays in the document
+          $("avatar").classList.remove("on");
+          cap("the video track ended");
+          stopVideoWatch();
+        });
+
+        // A reconnect freezes the picture for as long as it takes. Unsaid, that is
+        // indistinguishable from the render having died — and the recovery is invisible too, so
+        // a page that says nothing here trains you to reload a call that was coming back.
+        room.on(RoomEvent.Reconnecting, () => {
+          $("dot").className = "dot busy";
+          cap("connection dropped — reconnecting…");
+        });
+        room.on(RoomEvent.Reconnected, () => {
+          $("dot").className = "dot live";
+          cap("reconnected — say what you want to build");
+        });
+
+        room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+          const mine = participant?.identity === room.localParticipant.identity;
+          for (const s of segments) {
+            if (!s.final) continue;
+            // A typed turn echoes back as a transcription of ourselves, already logged at the
+            // keystroke — `delete` is the membership test and the cleanup in one move.
+            if (mine && sentByUs.delete(s.text)) continue;
+            log(mine ? "you" : CHARACTER, s.text, mine ? "" : "agent");
+          }
+        });
+
+        room.on(RoomEvent.Disconnected, () => endedUI("call ended"));
+
+        await room.connect(grant.livekit_url, grant.participant_token);
+        // The GRANT's cap, not the one this server asked for. They are normally the same and
+        // the grant is the one that will actually be enforced — a platform free to clamp a
+        // request downward would otherwise leave the clock running after the media stopped,
+        // which is the exact confusion the clock exists to remove.
+        startClock(Number(grant.max_session_seconds) || maxSeconds);
+
+        // Registered BEFORE the microphone is asked for.
+        //
+        // `enableMicrophone` is a permission prompt, and a permission prompt is a human
+        // deciding — this page waits up to fifteen seconds for one. The character starts talking
+        // the moment they connect, so every second spent here is a second they can call a tool
+        // that is not armed yet, and the failure is silent on both sides: the model gets an error
+        // the user never hears, and the panel just stays empty while they talk.
+        //
+        // `attachAvatarTools` waits for the agent by itself, so this does not need timing:
+        // joining the room and ARMING the registration method are not the same instant, and
+        // registering in that gap fails with "method not supported at destination" — the SAME
+        // error a session without the `client_tools` grant produces. It retries because one
+        // attempt cannot tell those apart, and guessing wrong sends you to the wrong layer.
+        try {
+          const reg = await attachAvatarTools(room, canPublish ? { ...TOOLS, ...PUBLISH_TOOL } : TOOLS, {
+            timeoutMs: 15000,
+            onInvoke: (name, args) => tool(`${name}(${JSON.stringify(args ?? {})})`),
+          });
+          tool(`armed: ${reg.accepted.join(", ") || "(none)"}`);
+          // A rejected tool is silently uncallable, which reads exactly like it being ignored.
+          for (const r of reg.rejected) tool(`rejected: ${r.name} — ${r.reason}`);
+        } catch (err) {
+          tool(`not armed: ${err.message}`);
+          cap(`${CHARACTER}'s tools did not arm — the call works, but nothing can be built.`, true);
+        }
+
+        const mic = await enableMicrophone(room);
+        if (!mic.ok) cap(`connected, but the microphone did not start (${mic.reason}). ${mic.hint}`, true);
+        else cap("connected — say what you want to build");
+
+        $("dot").className = "dot live";
+        $("hang").disabled = $("say").disabled = $("send").disabled = false;
+        $("publish").disabled = !currentHtml();
+        $("say").focus();
+        hud();
+
+        // A call whose renderer never joined connects, talks, arms its tools, and publishes no
+        // video at all — measured repeatedly, on two different `ready`, video-sourced avatars,
+        // with audio and the tool plane both working. Nothing reports it, and the column looks
+        // exactly like a call that has not started yet, so the page has to notice the absence
+        // itself.
+        //
+        // It says WHO is in the room and what they published, because the two causes want
+        // different people: a room with no agent in it is capacity or dispatch, and an agent
+        // that joined and published only audio is the renderer. Guessing between those from a
+        // blank rectangle is how an afternoon goes.
+        setTimeout(() => {
+          if (!room || sawVideo) return;
+          const who = [...room.remoteParticipants.values()].map(
+            (p) => `${p.identity}[${[...p.trackPublications.values()].map((t) => t.kind).join("+") || "no tracks"}]`,
+          );
+          cap("connected and your mic is live, but the renderer never published video.", true);
+          tool(`no video within 12s — room holds: ${who.join(", ") || "nobody"}`);
+        }, 12000);
+      };
+
+      async function sendTyped() {
+        const text = $("say").value.trim();
+        if (!room || !text) return;
+        $("say").value = "";
+        log("you", text);
+        sentByUs.add(text);
+        // A plain turn, nothing more. Whether it is a build is THE MODEL's call — the page does not
+        // route on keywords, and never has.
+        await room.localParticipant.sendText(text, { topic: "lk.chat" });
+      }
+      $("send").onclick = () => void sendTyped();
+      $("say").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          void sendTyped();
+        }
+      });
+
+      $("hang").onclick = () => endCall();
+      $("publish").onclick = () => void runPublish();
+
+      /* ══════════════════════════════════════════════════════════════════════════════════
+         BOOT
+
+         What this deployment can do. A separate route because the mint response is the grant,
+         relayed byte-for-byte — a field of ours folded into it is the reshape the browser SDK
+         rejects outright.
+
+         It doubles as a version check. This page is served from disk on every request, so a
+         server left running from before an edit hands you a NEW page on OLD routes: builds then
+         fail on a field the old handler does not read, and the only symptom is a panel that
+         never fills. Cheaper to say so than to debug it twice.
+      ══════════════════════════════════════════════════════════════════════════════════ */
+      fit();
+      hud();
+      $("pane").classList.add("on");
+
+      fetch("/api/config")
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`config ${r.status}`))))
+        .then((cfg) => {
+          canPublish = Boolean(cfg.publish);
+          maxSeconds = Number(cfg.maxSeconds) || 0;
+          $("publish").hidden = !canPublish;
+        })
+        .catch(() => {
+          cap("this page is newer than the server serving it — restart the server before building.", true);
+          $("dot").className = "dot busy";
+        });
+
+      /**
+       * The whole build pipeline, without spending a call.
+       *
+       * Everything except the conversation is reachable from here, which makes "does a build
+       * look right in this layout" a question you do not have to pay to ask. From the console:
+       *
+       *   studio.build("a pomodoro timer")   the tool the model calls, called by hand
+       *   studio.check()                     what check_app would report
+       *   studio.restore(1)                  go back to v1
+       *   studio.versions()                  what exists, and how big it is
+       *   studio.load("<!doctype html>…")    a document straight onto the panel
+       *
+       * `load` is the one that costs nothing. Every other way to get a page onto the glass
+       * spends a completion, which makes "does this layout hold a real document" a question
+       * you have to pay to ask — and it is a question worth asking on every window size.
+       *
+       * `studio.publish()` needs a session id and will be refused without one — the server only
+       * writes to a Worker it named for a call it minted, which is the whole point of that route.
+       */
+      window.studio = {
+        build: (request) => TOOLS.build_app.execute({ request }),
+        check: () => TOOLS.check_app.execute({}),
+        restore: (n) => TOOLS.restore_version.execute({ version: n }),
+        publish: () => PUBLISH_TOOL.publish_app.execute({}),
+        load: (html, label = "loaded by hand") => addVersion(String(html), label),
+        versions: () => versions.map((v) => ({ n: v.n, label: v.label, bytes: v.html.length })),
+        show,
+      };
+    </script>
+  </body>
+</html>

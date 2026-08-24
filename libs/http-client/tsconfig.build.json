@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "declaration": true,
+    "rootDir": "src",
+    "paths": {
+      "realtime-avatar": [
+        "../client/src/index.ts"
+      ]
+    },
+    "baseUrl": "."
+  },
+  "include": [
+    "src"
+  ]
+}

@@ -1,0 +1,114 @@
+# Realtime Avatar SDK
+
+> Server-side SDK for Realtime Avatar: a live character your users can talk to over voice or
+> video, who listens while she speaks — so she can be interrupted mid-sentence.
+
+Install: `npm install realtime-avatar` (+ `-proxy` for framework adapters)
+Runtime: Node >= 20. Zero dependencies. Server-only (it holds the API key).
+
+## Start here
+- [AGENTS.md](./AGENTS.md): the contract for using this correctly — the whole surface, plus
+  the rules that are expensive to break. Read this before writing code.
+- [libs/http-client/src/types.ts](./libs/http-client/src/types.ts): every public shape, one file.
+- [README.md](./README.md): human-facing overview and the 30-second example.
+
+## Packages
+- libs/http-client (realtime-avatar): the server client, zero dependencies
+- libs/proxy (realtime-avatar-proxy): Next.js / Hono / Express adapters
+  that keep the API key on the server
+- libs/tools (realtime-avatar-tools): browser tool plane — she calls your
+  functions mid-conversation; a call has 2.5s to answer
+- libs/browser (realtime-avatar-browser): browser audio — enableMicrophone()
+  returns WHY the mic did not start (the macOS system denial is not the browser denial, and the
+  address bar cannot fix it), attachRemoteAudio() plays her and surfaces a blocked autoplay.
+  No React, no livekit-client dependency
+- libs/contracts (realtime-avatar-contracts): runtime schemas for the wire
+- libs/mcp (realtime-avatar-mcp): MCP server so an agent can read avatars,
+  balance and the per-session bill directly. Read-only unless REALTIME_AVATAR_ALLOW_WRITES=1.
+
+Every call is full duplex — she listens the whole time she speaks, so she can be cut off
+mid-sentence. `mode` only picks the renderer: mode:"avatar" (the default) publishes video,
+mode:"voice" is cheaper audio-only. There is no `duplex` option.
+
+## Example apps (standalone, each with its own README)
+Quickstarts — the smallest correct integration per stack:
+- [apps/quickstart/nextjs-app-router](./apps/quickstart/nextjs-app-router): route handler +
+  call button
+- [apps/quickstart/python-fastapi](./apps/quickstart/python-fastapi): the same split in Python,
+  plus session-history (transcript + tool calls) signature verification
+- [apps/quickstart/canvas-tools](./apps/quickstart/canvas-tools): the client tool plane —
+  `clientTools: true` server-side, `attachAvatarTools` in the page, four tools closing over a
+  live canvas, and the return-now pattern for a tool slower than the 2.5s deadline. Note
+  `parameters` is plain JSON Schema; an `inputSchema` registers and then shows the model no
+  arguments
+Demos — larger showcases:
+- [apps/demo/coding-companion](./apps/demo/coding-companion): the client tool plane —
+  `clientTools: true` server-side, `attachAvatarTools` in the page. She starts builds via a
+  tool, a cheaper model writes one standalone HTML page, and she publishes it to a Cloudflare
+  Worker — receipt + poll for both, because a build and a deploy each outlive the 2.5s tool
+  deadline. The preview is `sandbox="allow-scripts"` with no `allow-same-origin`
+- [apps/demo/pair-programmer](./apps/demo/pair-programmer): the same app in a different room —
+  identical brief, tools and build engine, composited the way `terminal-tutor` composites
+  (character full height in her own column, the app on glass in front of her). Kept as a PAIR
+  with `coding-companion` on purpose, so the only variable is the layout. It also uses
+  `realtime-avatar-browser` for the microphone and remote audio where the
+  companion inlines the same logic, which is the shortest side-by-side of what that package is
+  for. Its layout facts: a panel may overlap the character only into her mask fade, and the
+  vertical stack is measured by `fit()` rather than guessed in CSS — a dock that wraps at
+  400px wide put a button on top of the status line
+- [apps/demo/livestream](./apps/demo/livestream): comments, gifts and hearts all ride one
+  `lk.chat` topic — she performs to a crowd she cannot see
+- [apps/demo/live-shopping](./apps/demo/live-shopping): the same room with a cart in it, where
+  a sentence stops being a performance and becomes an offer. She is NOT ALLOWED TO KNOW THE
+  PRICE: the catalogue lives on the server, her brief and her tool descriptions carry no
+  figures, and each of five verbs returns the number she may then say. Every figure a tool
+  returns is written to a ledger with the deadline of the fact behind it — a flash price dies
+  with its server-stamped window, a stock count in 45s, a shipping time never — and her
+  captions are checked against it, because the failure is not a model inventing a price, it is
+  a model correctly quoting one that has since expired
+- [apps/demo/math-studio](./apps/demo/math-studio): the tool plane held at a fixed six verbs
+  however far the app grows. A tool per thing on screen dies on arithmetic — `MAX_TOOLS` is 32
+  and `instructions` caps at 4,000 chars — so the manipulatives register with a curriculum in
+  the page and what she is looking at reaches her through the tool RESULT, not the tool name
+- [apps/demo/terminal-tutor](./apps/demo/terminal-tutor): she draws on the screen — boxes,
+  circles and arrows over the line or key she is naming — while teaching vim and tmux from
+  behind translucent glass. She NEVER sends a coordinate: `highlight` takes a name
+  (`text:delay`, `line:14`, `pane:right`) and the page resolves it, because a model cannot see
+  the page it is pointing at and will aim confidently at nothing. A miss returns the list of
+  what is addressable, so the retry is a pick rather than a second guess
+- [apps/demo/dating-rehearsal](./apps/demo/dating-rehearsal): a first date you practice on, and
+  four tools that are all HIS call, not the page's. `rate_interest` drives a live meter,
+  `mark_moment` pins a green flag or an ick, `end_date` walks him out, `write_debrief` writes the
+  after-card — the same model being charming is the one deciding how it went, so nothing scores
+  the conversation but him. State rides the tool call, never a transcript a meter could misread
+- [apps/demo/persuasion](./apps/demo/persuasion): the win condition is the character's own
+  judgement. She holds one absurd position and concedes only by calling a `concede` tool when a
+  genuinely novel argument defeats her — there is no scorer and no keyword list, and the win never
+  rides a sentence speech recognition could re-spell. `clientTools: true` at the mint is the gate
+There is no archive folder: a superseded example is deleted, not parked, so everything under
+apps/ is current and safe to copy from.
+
+## The shape
+Your client asks your backend to start a call; your backend calls this SDK and relays the
+connection payload back; your client joins and renders her.
+
+## Non-obvious rules (each observed, not theorised)
+- The API key is server-only; the constructor throws in a browser runtime.
+- Relay `call.raw` byte-for-byte. Wrapping or adding a key makes the browser client reject it.
+- An avatar built from a still IMAGE renders a black video track while reporting `ready`.
+  Use `createAvatarFromVideo`.
+- `{ queued: true }` means all slots are busy. It is a queue, not an error.
+- Call `syncClips()` after ANY clip change, or a new clip silently does nothing.
+- Verify transcript webhooks over the RAW bytes; re-serializing breaks the signature.
+- Call policy (instructions, context, maxSeconds, video, voice) is decided by YOUR server.
+  Never populate it from a request body.
+- A slot is held from the grant, BEFORE the room exists. On `pagehide`, beacon a route that
+  calls `rta.endCall(sessionId)` — and only ever end ids your own server minted.
+
+## Not provided
+- Hosted tool execution — the platform never runs your tools. They run in YOUR page (the
+  client tool plane, `clientTools: true` + `attachAvatarTools`) against a 2.5s deadline.
+- A Python SDK — Python's half is plain HTTP; see the example.
+
+## More
+- Full documentation: https://realtimeavatar.ai/docs

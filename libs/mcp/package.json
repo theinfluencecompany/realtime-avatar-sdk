@@ -1,0 +1,61 @@
+{
+  "name": "realtime-avatar-mcp",
+  "version": "0.2.1",
+  "description": "MCP server for Realtime Avatar — let a coding agent read your avatars, balance and bill directly.",
+  "license": "MIT",
+  "author": "The Influence Company",
+  "homepage": "https://realtimeavatar.ai/docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theinfluencecompany/realtime-avatar-sdk.git",
+    "directory": "libs/mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/theinfluencecompany/realtime-avatar-sdk/issues"
+  },
+  "keywords": [
+    "ai",
+    "avatar",
+    "realtime",
+    "voice",
+    "video",
+    "agent",
+    "full-duplex",
+    "livekit",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "coding-agent"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "realtime-avatar-mcp": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "realtime-avatar": "0.2.1",
+    "zod": "^4.4.3"
+  }
+}

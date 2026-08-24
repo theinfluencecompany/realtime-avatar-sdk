@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>LIVE</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --tt-red: #fe2c55;      /* the Follow button, the gift button, the LIVE dot */
+        --tt-cyan: #25f4ee;
+        --shadow: 0 1px 3px #000000a6, 0 0 1px #00000073;  /* every glyph sits on moving video */
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent }
+      body { margin: 0; min-height: 100svh; background: #0b0b0d; color: #fff;
+        font: 15px/1.45 -apple-system, "SF Pro Text", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 14px; padding: 18px 12px 26px }
+      .pagehint { color: #6f6f78; font-size: 11.5px; text-align: center; max-width: 430px; line-height: 1.55 }
+      .pagehint code { color: #9a9aa6; font-size: 11px }
+      button { font: inherit; color: inherit; border: none; background: none; padding: 0; cursor: pointer }
+
+      /* ── The phone. TikTok Live is edge-to-edge video with every control floating on top of it,
+            so the stage is the video and there is no chrome to lay anything out against. ── */
+      .phone { position: relative; width: min(400px, 94vw); height: min(866px, 88svh);
+        aspect-ratio: 9/16; background: #000; border-radius: 34px; overflow: hidden;
+        box-shadow: 0 30px 80px #000c, 0 0 0 1px #ffffff14 }
+      video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+        opacity: 0; transition: opacity .5s }
+      video.on { opacity: 1 }
+      /* Top scrim carries the host row, bottom scrim carries chat + dock. The middle stays clean
+         so the character is never sitting behind a grey wash. */
+      .scrim { position: absolute; inset: 0; pointer-events: none; z-index: 1;
+        background: linear-gradient(180deg, #000000a1 0, #00000038 11%, transparent 22% 52%, #0000005c 78%, #000000ab 100%) }
+      .idle { position: absolute; inset: 0; display: grid; place-items: center; z-index: 1;
+        color: #55555f; font-size: 13px; text-align: center; padding: 0 40px; line-height: 1.6 }
+
+      /* ── iOS status bar. Small thing, but the screenshots all have one and without it the page
+            reads as a web app in a rounded box rather than a phone. ── */
+      .statusbar { position: absolute; inset: 0 0 auto 0; height: 46px; z-index: 6;
+        display: flex; align-items: center; justify-content: space-between; padding: 12px 26px 0;
+        font-size: 14.5px; font-weight: 700; letter-spacing: .2px; text-shadow: var(--shadow);
+        pointer-events: none }
+      .statusbar .right { display: flex; align-items: center; gap: 5px }
+      .bars { display: flex; align-items: flex-end; gap: 1.5px; height: 11px }
+      .bars i { width: 3px; background: #fff; border-radius: 1px; display: block }
+      .bars i:nth-child(1) { height: 4px } .bars i:nth-child(2) { height: 6px }
+      .bars i:nth-child(3) { height: 8.5px } .bars i:nth-child(4) { height: 11px }
+      .batt { width: 25px; height: 13px; border-radius: 4px; border: 1.5px solid #ffffffa6;
+        position: relative; display: grid; place-items: center; font-size: 9px; font-weight: 800 }
+      .batt::after { content: ""; position: absolute; right: -4px; width: 2px; height: 5px;
+        background: #ffffffa6; border-radius: 0 1px 1px 0 }
+
+      /* ── Host row: avatar + name + like count, the red Follow pill, then viewers / collapse / close.
+            The Follow pill overlaps the host card exactly the way TikTok's does. ── */
+      .topbar { position: absolute; inset: 52px 12px auto 12px; z-index: 6;
+        display: flex; align-items: center; gap: 8px }
+      .host { display: flex; align-items: center; gap: 8px; background: #00000052; border-radius: 999px;
+        padding: 3px 3px 3px 3px; backdrop-filter: blur(12px); min-width: 0; max-width: 62% }
+      .host .pfp { width: 34px; height: 34px; border-radius: 999px; flex: none; display: grid;
+        place-items: center; font-size: 14px; font-weight: 800; color: #fff;
+        background: linear-gradient(140deg, #fe2c55, #7b2ff7); box-shadow: 0 0 0 1.5px #ffffff4d }
+      .host .meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; padding-right: 2px }
+      .host .name { font-size: 14px; font-weight: 700; text-shadow: var(--shadow);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 108px }
+      .host .likes { font-size: 11.5px; font-weight: 600; color: #ffffffdb; display: flex;
+        align-items: center; gap: 3px; text-shadow: var(--shadow); font-variant-numeric: tabular-nums }
+      .follow { background: var(--tt-red); color: #fff; font-size: 14px; font-weight: 700;
+        border-radius: 999px; padding: 7px 13px; flex: none; white-space: nowrap;
+        transition: transform .15s, background .2s }
+      .follow:active { transform: scale(.94) }
+      .follow.done { background: #ffffff2e; color: #ffffffc4; font-weight: 600 }
+
+      .topright { margin-left: auto; display: flex; align-items: center; gap: 9px; flex: none }
+      .viewers { display: flex; align-items: center; gap: 4px; background: #00000052; border-radius: 999px;
+        padding: 6px 11px; font-size: 13px; font-weight: 600; backdrop-filter: blur(12px);
+        font-variant-numeric: tabular-nums; text-shadow: var(--shadow) }
+      .iconbtn { width: 28px; height: 28px; display: grid; place-items: center; opacity: .95 }
+      .iconbtn svg { filter: drop-shadow(0 1px 2px #000a) }
+
+      /* ── Everything that stacks over the video shares ONE bottom-anchored column: gift cards on
+            top, then chat, then her caption. Anchoring them separately makes each one's height a
+            guess about the others, and they overlap the moment a combo card appears. ── */
+      .overlay { position: absolute; left: 12px; right: 12px; bottom: 66px; z-index: 4;
+        display: flex; flex-direction: column; justify-content: flex-end; gap: 10px;
+        max-height: 64%; pointer-events: none }
+
+      /* ── Gift cards. A combo is ONE card whose multiplier counts up, not N cards — which is also
+            exactly how it is sent to her (see the coalescer in the script). ── */
+      .gifts { flex: none; display: flex; flex-direction: column; gap: 8px; align-items: flex-start }
+      .giftcard { display: flex; align-items: center; gap: 8px; position: relative;
+        animation: giftIn .45s cubic-bezier(.2, 1.3, .4, 1) }
+      .giftcard .pill { display: flex; align-items: center; gap: 8px; background: #00000059;
+        border-radius: 999px; padding: 5px 14px 5px 5px; backdrop-filter: blur(10px); min-width: 0;
+        max-width: 232px; border: 1.5px solid transparent }
+      .giftcard.lead .pill { border-color: #b06cff8c;
+        background: linear-gradient(100deg, #7b2ff755, #00000059 60%) }
+      .giftcard .pfp { width: 38px; height: 38px; border-radius: 999px; flex: none; display: grid;
+        place-items: center; font-size: 15px; font-weight: 800; color: #fff }
+      .giftcard .who { min-width: 0; display: flex; flex-direction: column; gap: 1px }
+      .giftcard .n { font-size: 14px; font-weight: 700; text-shadow: var(--shadow); white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis; max-width: 130px }
+      .giftcard .s { font-size: 12px; color: #ffffffc2; text-shadow: var(--shadow) }
+      .giftcard .icon { font-size: 26px; flex: none; filter: drop-shadow(0 2px 6px #000a);
+        animation: giftBob 1.1s ease-in-out infinite }
+      /* The multiplier: heavy italic, sitting outside the pill, re-popping on every increment. */
+      .giftcard .mult { font-size: 34px; font-weight: 900; font-style: italic; letter-spacing: -.5px;
+        flex: none; color: #fff; text-shadow: 0 2px 10px #000, 0 0 22px #ffd76e73 }
+      .giftcard .mult.bump { animation: multPop .32s cubic-bezier(.2, 1.6, .4, 1) }
+      .giftcard .title { white-space: nowrap; flex: none;
+        font-size: 15px; font-weight: 800; font-style: italic; text-shadow: 0 2px 8px #000 }
+      .giftcard.out { animation: giftOut .35s ease-in forwards }
+      @keyframes giftIn { from { opacity: 0; transform: translateX(-70px) } to { opacity: 1; transform: none } }
+      @keyframes giftOut { to { opacity: 0; transform: translateX(-40px) } }
+      @keyframes giftBob { 50% { transform: translateY(-3px) rotate(-6deg) } }
+      @keyframes multPop { 0% { transform: scale(1) } 45% { transform: scale(1.45) } 100% { transform: scale(1) } }
+
+      /* ── Chat. No bubbles: TikTok renders comments straight onto the video with a shadow, two
+            lines each — badges + handle, then the message. ── */
+      .chat { flex: 0 1 auto; min-height: 0; max-width: 76%; overflow: hidden;
+        display: flex; flex-direction: column; justify-content: flex-end; gap: 10px;
+        mask-image: linear-gradient(transparent 0, #000 26%); -webkit-mask-image: linear-gradient(transparent 0, #000 26%) }
+      .row { display: flex; gap: 8px; align-items: flex-start; animation: rowIn .32s ease-out }
+      .row .pfp { width: 30px; height: 30px; border-radius: 999px; flex: none; display: grid;
+        place-items: center; font-size: 12px; font-weight: 800; color: #fff; margin-top: 1px }
+      .row .body { min-width: 0; padding-top: 1px }
+      .row .line1 { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 1px }
+      .row .handle { font-size: 13.5px; font-weight: 600; color: #ffffffc9; text-shadow: var(--shadow) }
+      .row .text { font-size: 15px; font-weight: 700; line-height: 1.25; text-shadow: var(--shadow);
+        overflow-wrap: anywhere }
+      .row.join .pfp { background: #ffffff2b; font-size: 14px }
+      .row.join .text { font-size: 14px; font-weight: 600; color: #ffffffdb }
+      .row.join .text b { font-weight: 800; color: #fff }
+      .row.mine .handle { color: #ffe08a }
+      .row.giftline .text { color: #ffd76e }
+      @keyframes rowIn { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+
+      /* Viewer badges — level, moderator, gifter rank. Deterministic per handle, so a regular in
+         chat keeps the same badges all stream instead of flickering. */
+      .badge { font-size: 10.5px; font-weight: 800; border-radius: 4px; padding: 1.5px 4px;
+        display: inline-flex; align-items: center; gap: 2px; flex: none; line-height: 1.35 }
+      .badge.lvl { background: linear-gradient(100deg, #3b6cff, #7b2ff7); color: #fff }
+      .badge.rank { background: linear-gradient(100deg, #ff5a3c, #fe2c55); color: #fff }
+      .badge.mod { background: linear-gradient(100deg, #ffa23c, #ff6a3c); color: #fff }
+      .badge.team { background: #ffffff33; color: #fff }
+
+      /* ── Her speech, as live captions. Deliberately NOT in the chat column: chat is the audience,
+            and mixing the performer into it is the one thing no live app does. ── */
+      .caption { flex: none; align-self: flex-start; max-width: 84%;
+        font-size: 13px; font-weight: 600; line-height: 1.35; color: #fff; text-shadow: var(--shadow);
+        background: #0000004d; backdrop-filter: blur(8px); border-radius: 9px; padding: 5px 9px;
+        display: none; animation: rowIn .3s ease-out }
+      .caption.on { display: block }
+      .caption::before { content: "LIVE CAPTION"; display: block; font-size: 8.5px; font-weight: 800;
+        letter-spacing: .1em; color: #ffffff7a; margin-bottom: 1px }
+
+      /* ── Bottom dock: Type… pill, then emoji / co-host / gift / share, like the screenshots. ── */
+      .dock { position: absolute; inset: auto 10px 14px 10px; z-index: 6;
+        display: flex; align-items: center; gap: 9px }
+      .dock .say { flex: 1; min-width: 0; height: 42px; border-radius: 999px; background: #00000052;
+        backdrop-filter: blur(12px); color: #fff; padding: 0 16px; font: inherit; font-size: 14.5px;
+        border: none; outline: none }
+      .dock .say::placeholder { color: #ffffff9e }
+      .dock .say:disabled { opacity: .55 }
+      .act { width: 40px; height: 40px; border-radius: 999px; display: grid; place-items: center;
+        flex: none; position: relative; transition: transform .14s }
+      .act:active { transform: scale(.88) }
+      .act:disabled { opacity: .45 }
+      .act.round { background: #ffffff2b; backdrop-filter: blur(10px) }
+      .act .count { position: absolute; right: -2px; bottom: -3px; font-size: 10.5px; font-weight: 800;
+        text-shadow: var(--shadow); font-variant-numeric: tabular-nums }
+      .act svg { filter: drop-shadow(0 1px 3px #0009) }
+
+      /* ── Hearts. They spawn at the gift button and drift up-right with a wobble. ── */
+      .hearts { position: absolute; right: 8px; bottom: 60px; width: 120px; height: 58%;
+        z-index: 5; pointer-events: none; overflow: hidden }
+      .heart { position: absolute; bottom: 0; right: 40px; font-size: 26px;
+        filter: drop-shadow(0 2px 6px #0007); animation: rise 2.6s ease-out forwards }
+      @keyframes rise {
+        0%   { opacity: 0; transform: translate(0, 0) scale(.4) rotate(0deg) }
+        12%  { opacity: 1; transform: translate(0, -30px) scale(1.1) rotate(-8deg) }
+        45%  { transform: translate(var(--x1), -180px) scale(1) rotate(10deg) }
+        100% { opacity: 0; transform: translate(var(--x2), -400px) scale(.85) rotate(-6deg) }
+      }
+
+      /* ── Big-gift takeover. Above 500 coins TikTok plays a full-screen animation; anything
+            cheaper only ever gets the card. ── */
+      .fx { position: absolute; inset: 0; z-index: 8; display: none; place-items: center;
+        pointer-events: none; overflow: hidden }
+      .fx.on { display: grid }
+      .fx .glow { position: absolute; inset: 0;
+        background: radial-gradient(circle at 50% 55%, #b06cffb0, #fe2c5559 32%, transparent 68%);
+        animation: fxGlow 2.6s ease-out forwards }
+      .fx .big { font-size: 120px; filter: drop-shadow(0 0 44px #ffd76ecc); animation: fxBig 2.6s ease-out forwards }
+      .fx .who { position: absolute; bottom: 30%; font-size: 17px; font-weight: 800;
+        text-shadow: 0 2px 12px #000; animation: fxWho 2.6s ease-out forwards }
+      .fx .spark { position: absolute; width: 6px; height: 6px; border-radius: 999px; background: #fff;
+        box-shadow: 0 0 12px 3px #ffd76e; animation: sparkOut 1.5s ease-out forwards }
+      @keyframes fxGlow { 0% { opacity: 0 } 18% { opacity: 1 } 100% { opacity: 0 } }
+      @keyframes fxBig { 0% { opacity: 0; transform: scale(.2) rotate(-25deg) }
+        22% { opacity: 1; transform: scale(1.25) rotate(6deg) }
+        38% { transform: scale(1) rotate(0) } 78% { opacity: 1; transform: scale(1.05) }
+        100% { opacity: 0; transform: scale(1.5) } }
+      @keyframes fxWho { 0%, 12% { opacity: 0; transform: translateY(14px) }
+        30%, 76% { opacity: 1; transform: none } 100% { opacity: 0 } }
+      @keyframes sparkOut { 0% { opacity: 1; transform: translate(0, 0) scale(1) }
+        100% { opacity: 0; transform: translate(var(--sx), var(--sy)) scale(0) } }
+
+      /* ── Gift sheet. Grid of gifts with coin prices, a balance row, and a Send button that turns
+            into the combo tapper once a gift is picked. ── */
+      .sheet { position: absolute; inset: auto 0 0 0; z-index: 9; background: #1c1c22f2;
+        backdrop-filter: blur(22px); border-radius: 16px 16px 34px 34px; padding: 12px 14px 18px;
+        transform: translateY(102%); transition: transform .32s cubic-bezier(.3, 1, .4, 1) }
+      .sheet.on { transform: none }
+      .sheet .tabs { display: flex; gap: 18px; padding: 2px 2px 12px; font-size: 14px; font-weight: 600;
+        color: #ffffff85; border-bottom: 1px solid #ffffff14 }
+      .sheet .tabs .on { color: #fff; font-weight: 700; position: relative }
+      .sheet .tabs .on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -12px;
+        height: 2px; background: #fff; border-radius: 2px }
+      .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 12px 0 }
+      .gcell { border-radius: 10px; padding: 10px 4px 8px; display: grid; gap: 3px; justify-items: center;
+        transition: background .18s }
+      .gcell.sel { background: #ffffff1a; box-shadow: inset 0 0 0 1px #ffffff2e }
+      .gcell .e { font-size: 30px; line-height: 1 }
+      .gcell .gn { font-size: 11px; color: #ffffffd4; white-space: nowrap; overflow: hidden;
+        text-overflow: ellipsis; max-width: 100% }
+      .gcell .gc { font-size: 11px; font-weight: 700; color: #ffd76e; display: flex; align-items: center; gap: 2px }
+      /* A drawn coin, not 🪙 — that emoji renders as a grey disc on macOS and reads as "disabled". */
+      .coin { width: 11px; height: 11px; border-radius: 999px; flex: none; display: inline-block;
+        background: radial-gradient(circle at 34% 30%, #ffe9a8, #f5b423 58%, #c8860c);
+        box-shadow: inset 0 0 0 .5px #7a4f04a6 }
+      .sheetfoot { display: flex; align-items: center; gap: 10px; padding-top: 10px;
+        border-top: 1px solid #ffffff14 }
+      .coins { font-size: 13px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 5px;
+        font-variant-numeric: tabular-nums }
+      .coins .lbl { color: #ffffff8c; font-weight: 500 }
+      .send { margin-left: auto; background: var(--tt-red); border-radius: 8px; padding: 9px 26px;
+        font-size: 14px; font-weight: 700; transition: transform .12s }
+      .send:active { transform: scale(.95) }
+      .send:disabled { background: #ffffff1f; color: #ffffff70 }
+      .send.combo { background: linear-gradient(100deg, #ff9a3c, #fe2c55); padding: 9px 20px }
+
+      /* ── Go-live gate and the status line. ── */
+      .gate { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center;
+        background: #000000d6; backdrop-filter: blur(4px); gap: 0 }
+      .gate.hide { display: none }
+      .gate .inner { display: grid; justify-items: center; gap: 14px; padding: 0 30px; text-align: center }
+      .gate .dot { width: 9px; height: 9px; border-radius: 999px; background: var(--tt-red);
+        box-shadow: 0 0 0 0 #fe2c55; animation: pulse 1.8s infinite }
+      @keyframes pulse { 70% { box-shadow: 0 0 0 12px #fe2c5500 } 100% { box-shadow: 0 0 0 0 #fe2c5500 } }
+      .gate h2 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -.3px }
+      .gate p { margin: 0; font-size: 12.5px; color: #8d8d99; line-height: 1.6; max-width: 260px }
+      .gate .cta { background: var(--tt-red); border-radius: 999px; padding: 13px 34px;
+        font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 8px;
+        transition: transform .14s }
+      .gate .cta:active { transform: scale(.95) }
+      .gate .cta:disabled { opacity: .55 }
+      .status { position: absolute; inset: auto 14px 68px 14px; z-index: 7; text-align: center;
+        font-size: 12px; font-weight: 600; color: #fff; text-shadow: var(--shadow); pointer-events: none;
+        line-height: 1.5 }
+    </style>
+  </head>
+  <body>
+    <div class="phone">
+      <video id="her" autoplay playsinline></video>
+      <div class="scrim"></div>
+      <div class="idle" id="idle">the stream is offline</div>
+
+      <div class="statusbar">
+        <span id="clock">14:39</span>
+        <span class="right">
+          <span class="bars"><i></i><i></i><i></i><i></i></span>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="#fff"><path d="M8 10.5 6 8.3a3 3 0 0 1 4 0zM3.6 6a6.6 6.6 0 0 1 8.8 0l-1.3 1.4a4.7 4.7 0 0 0-6.2 0zM1 3.3a10.4 10.4 0 0 1 14 0l-1.3 1.4a8.5 8.5 0 0 0-11.4 0z"/></svg>
+          <span class="batt">46</span>
+        </span>
+      </div>
+
+      <div class="topbar">
+        <div class="host">
+          <span class="pfp" id="pfp">L</span>
+          <span class="meta">
+            <span class="name" id="handle">Live</span>
+            <span class="likes"><svg width="11" height="10" viewBox="0 0 12 11" fill="#fff"><path d="M6 10.6 1.1 5.9A3.1 3.1 0 0 1 6 2.1a3.1 3.1 0 0 1 4.9 3.8z"/></svg><span id="likes">0</span></span>
+          </span>
+          <button class="follow" id="follow">+ Follow</button>
+        </div>
+        <div class="topright">
+          <span class="viewers"><svg width="12" height="12" viewBox="0 0 12 12" fill="#fff"><circle cx="6" cy="3.4" r="2.4"/><path d="M1.5 11a4.5 4.5 0 0 1 9 0z"/></svg><span id="viewers">1</span></span>
+          <button class="iconbtn" id="collapse" title="Minimise">
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="10" fill="#00000052"/><path d="m7 9.5 4 4 4-4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="iconbtn" id="close" title="End the stream">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 4l12 12M16 4L4 16" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="overlay">
+        <div class="gifts" id="gifts"></div>
+        <div class="chat" id="chat"></div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div class="hearts" id="hearts"></div>
+      <div class="status" id="status"></div>
+
+      <div class="dock">
+        <input class="say" id="say" placeholder="Type..." disabled />
+        <button class="act round" id="emoji" disabled title="Emoji">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8.4" stroke="#fff" stroke-width="1.7"/><circle cx="8.2" cy="9.2" r="1.2" fill="#fff"/><circle cx="13.8" cy="9.2" r="1.2" fill="#fff"/><path d="M7.6 13.4a4.2 4.2 0 0 0 6.8 0" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg>
+        </button>
+        <button class="act" id="cohost" disabled title="Co-host">
+          <svg width="30" height="26" viewBox="0 0 30 26" fill="none"><circle cx="10" cy="7.5" r="4.4" fill="#fe2c55"/><path d="M2.4 23a7.6 7.6 0 0 1 15.2 0z" fill="#fe2c55"/><circle cx="21" cy="9.5" r="3.8" fill="#25f4ee"/><path d="M14.4 23a6.6 6.6 0 0 1 13.2 0z" fill="#25f4ee"/></svg>
+        </button>
+        <button class="act" id="giftbtn" disabled title="Send a gift">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="3.5" y="10" width="21" height="14.5" rx="2.4" fill="#fe2c55"/><rect x="2" y="6.5" width="24" height="5" rx="1.8" fill="#ff5c7c"/><rect x="12.2" y="6.5" width="3.6" height="18" fill="#ffd0da"/><path d="M14 6.5c-1.6-3.4-6.6-3.6-6 0zM14 6.5c1.6-3.4 6.6-3.6 6 0z" fill="#ff8fa5"/></svg>
+        </button>
+        <button class="act" id="share" disabled title="Share">
+          <svg width="26" height="24" viewBox="0 0 26 24" fill="#fff"><path d="M24.6 10.8 3.4 1.2c-1-.5-2 .5-1.6 1.5l3 7.4c.1.4.5.6.9.6h8.5a1.3 1.3 0 0 1 0 2.6H5.7c-.4 0-.8.2-.9.6l-3 7.4c-.4 1 .6 2 1.6 1.5l21.2-9.6c.9-.4.9-1.6 0-2z"/></svg>
+          <span class="count" id="shares">0</span>
+        </button>
+      </div>
+
+      <div class="fx" id="fx"><span class="glow"></span><span class="big" id="fxBig">🌌</span><span class="who" id="fxWho"></span></div>
+
+      <div class="sheet" id="sheet">
+        <div class="tabs"><span class="on">Popular</span><span>Lite</span><span>Exclusive</span><span>Events</span></div>
+        <div class="grid" id="grid"></div>
+        <div class="sheetfoot">
+          <span class="coins"><span class="coin"></span><span id="balance">1,240</span></span>
+          <button class="send" id="sendGift" disabled>Send</button>
+        </div>
+      </div>
+
+      <div class="gate" id="gate">
+        <div class="inner">
+          <span class="dot"></span>
+          <h2>Go live</h2>
+          <p>She performs to a room she cannot see. Comments, gifts and follows all ride one chat topic.</p>
+          <button class="cta" id="start">Go live</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="pagehint">
+      Comments, gifts and follows all ride the same <code>lk.chat</code> topic a one-to-one call uses — there is no
+      broadcast API and no viewer role. This is a real call and spends credits; your mic is live, so talk out loud too.
+    </p>
+
+    <script type="module">
+      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+
+      const $ = (id) => document.getElementById(id);
+      const say = (t) => ($("status").textContent = t);
+      const rand = (a) => a[Math.floor(Math.random() * a.length)];
+      const esc = (s) => String(s).replace(/[<&]/g, (c) => (c === "<" ? "&lt;" : "&amp;"));
+      /** 5900 → "5.9K". Every count in a live room is written this way. */
+      const short = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M"
+        : n >= 1e4 ? (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K"
+        : n >= 1e3 ? n.toLocaleString() : String(n));
+
+      // ── Why the microphone did not start. Published as realtime-avatar-browser;
+      // inlined so this example stays standalone. It returns a reason instead of throwing because
+      // "the mic won't start" is one sentence covering six causes with six different fixes — and one
+      // of them is not in the browser at all. Left unguarded, the rejection is an unhandled promise
+      // nobody watches and the page simply stops mid-connect.
+      async function startMic(room) {
+        if (!navigator.mediaDevices) return { ok: false, why: "This page is not a secure context. Use https, or http://localhost — a LAN address will not do." };
+        try {
+          // Per spec getUserMedia may neither resolve nor reject if the prompt is ignored.
+          const noAnswer = new Promise((r) => setTimeout(() => r("no-answer"), 15000));
+          const started = room.localParticipant.setMicrophoneEnabled(true).then(() => "ok");
+          if (await Promise.race([started, noAnswer]) === "no-answer") return { ok: false, why: "The microphone prompt was not answered — look for it in the address bar." };
+          return { ok: true };
+        } catch (err) {
+          const message = err?.message ?? String(err);
+          if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+            // Chromium reports a macOS system denial as NotAllowedError too, and THAT one the
+            // address bar cannot fix — so the two must never share a message.
+            return /by system|system permission/i.test(message)
+              ? { ok: false, why: "macOS is blocking the browser itself: System Settings > Privacy & Security > Microphone, then RESTART the browser." }
+              : { ok: false, why: "This site is blocked from the microphone — allow it from the address-bar icon and reload." };
+          }
+          if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") return { ok: false, why: "No microphone is available." };
+          if (err?.name === "NotReadableError" || err?.name === "TrackStartError") return { ok: false, why: "Another app or tab is holding the microphone." };
+          return { ok: false, why: message };
+        }
+      }
+
+      // ── The crowd. Handles, chatter and the gift catalogue, all local: a demo that fetched viewer
+      // avatars would couple itself to somebody's asset host for no teaching value.
+      const YOU = "you";
+      const LURKERS = ["neon_kat", "pixelwolf", "mira_88", "toastradamus", "lil_comet", "yuki.exe",
+        "gg_no_re", "starlvr", "moon_wav", "bytebard", "kimchi_kat", "vaporwave_vince", "Chloe",
+        "Kobe", "'Berta", "naki taki", "mustef33", "shahez.hafid", "rayaan", "Aidan Cyr", "Cal Mestas"];
+      const CHATTER = ["hi from tokyo!!", "your voice omg", "first!!", "the lighting is unreal",
+        "say my name 🥺", "how are you rendering this live", "no wayyy", "sending this to the gc",
+        "queen behavior", "do a spin!", "chat is moving so fast", "been here since the start",
+        "she really answered me 😭", "what's the song", "hi from brazil 🇧🇷", "lwk called it",
+        "love the fit", "can you say hi to my sister", "this is actually insane", "😂😂😂"];
+      const JOINERS = ["Yang Jin", "Sam", "ada aja", "Rhon Serrano", "mikey.b", "lu_na", "Deniz"];
+      /** Coins are TikTok's real ladder — a Rose is 1, a Universe is five figures. Anything from
+       *  BIG_GIFT up earns the full-screen takeover; below it, only the card. */
+      const GIFTS = [
+        { n: "Rose", e: "🌹", c: 1 }, { n: "Ice Cream", e: "🍦", c: 1 }, { n: "TikTok", e: "🎵", c: 1 },
+        { n: "Finger Heart", e: "🫰", c: 5 }, { n: "Doughnut", e: "🍩", c: 30 }, { n: "Perfume", e: "🧴", c: 20 },
+        { n: "Hand Hearts", e: "🤲", c: 100 }, { n: "Sunglasses", e: "🕶️", c: 199 },
+        { n: "Whale", e: "🐋", c: 500 }, { n: "Galaxy", e: "🌌", c: 1000 }, { n: "Fireworks", e: "🎆", c: 1088 },
+        { n: "Lion", e: "🦁", c: 29999 },
+      ];
+      const BIG_GIFT = 500;
+      const PALETTE = ["#fe2c55", "#25f4ee", "#7b2ff7", "#ff9a3c", "#2fbf71", "#3b6cff", "#ff5c9a", "#f2c14e"];
+      /** Same handle → same colour and same badges, every time. A viewer whose identity reshuffles
+       *  on each line reads as noise rather than as a regular in the room. */
+      const hash = (s) => { let h = 0; for (const ch of s) h = (h * 31 + ch.codePointAt(0)) >>> 0; return h; };
+      const colorOf = (who) => PALETTE[hash(who) % PALETTE.length];
+      function badgesFor(who) {
+        const h = hash(who);
+        const out = [`<span class="badge lvl">💎 ${(h % 48) + 3}</span>`];
+        if (h % 7 === 0) out.push(`<span class="badge mod">Mod</span>`);
+        if (h % 11 === 0) out.push(`<span class="badge rank">No. ${(h % 3) + 1}</span>`);
+        if (h % 5 === 0) out.push(`<span class="badge team">👥</span>`);
+        return out.join("");
+      }
+      const pfp = (who, cls = "pfp") =>
+        `<span class="${cls}" style="background:${colorOf(who)}">${esc(who.trim()[0] ?? "?").toUpperCase()}</span>`;
+
+      let room = null;
+      let sessionId = null;
+      let live = false;
+      let viewers = 1, likes = 0, shares = 0, balance = 1240;
+      let following = false;
+      /** Typed comments echo back as transcriptions of ourselves; skip that echo so a comment isn't
+       *  shown twice. */
+      const sentByUs = new Set();
+
+      // The slot is held from the moment the grant lands — BEFORE the room exists. `pagehide` +
+      // sendBeacon is the one goodbye that outlives a closing page; the server ends the call and the
+      // slot frees now instead of at the join timeout. Ending is idempotent.
+      addEventListener("pagehide", () => {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+      });
+
+      // ══════════════════════════════════════════════════════════════════════════════════════════
+      //  The room runs on TWO clocks, and keeping them apart is the whole trick of this demo.
+      //
+      //  The UI clock is the live one: every comment, join, heart and gift paints the instant it
+      //  happens, because that churn IS what a live room looks like.
+      //
+      //  HER clock is much slower. She answers one turn at a time, and a turn costs seconds. Fire
+      //  every chat line at her and she does not "keep up" — she builds a backlog and narrates it,
+      //  answering a comment from forty seconds ago while the room has moved on twice. So the page
+      //  forwards a SAMPLE, floored to one line every FORWARD_FLOOR_MS, and drops the rest on the
+      //  floor. Anything the viewer does themselves skips the sampler: your own comment is never
+      //  the one thrown away.
+      // ══════════════════════════════════════════════════════════════════════════════════════════
+      const FORWARD_FLOOR_MS = 3600;
+      let lastForwardAt = 0;
+
+      /** Comments, gifts and follows are the SAME channel — all of them go onto `lk.chat` as text.
+       *  She reads a plain line as a comment and a "[GIFT]"/"[FOLLOW]" line per her instructions. */
+      async function toChat(text, { force = false } = {}) {
+        if (!room) return false;
+        const now = Date.now();
+        if (!force && now - lastForwardAt < FORWARD_FLOOR_MS) return false; // sampled out — by design
+        lastForwardAt = now;
+        sentByUs.add(text); // before the send, so the echo can't beat us to the set
+        try { await room.localParticipant.sendText(text, { topic: "lk.chat" }); return true; }
+        catch { sentByUs.delete(text); return false; }
+      }
+
+      // ── Chat feed ────────────────────────────────────────────────────────────────────────────
+      function pushRow(html, cls = "") {
+        const d = document.createElement("div");
+        d.className = `row ${cls}`;
+        d.innerHTML = html;
+        $("chat").append(d);
+        // firstElementChild, not firstChild: the guard counts `children` (elements only), so
+        // removing a text node would decrement nothing and spin this loop forever.
+        while ($("chat").children.length > 28) $("chat").firstElementChild.remove();
+      }
+      function comment(who, text, cls = "") {
+        pushRow(`${pfp(who)}<span class="body"><span class="line1">${badgesFor(who)}<span class="handle">${esc(who)}</span></span><span class="text">${esc(text)}</span></span>`, cls);
+      }
+      function joined(who) {
+        pushRow(`<span class="pfp">👋</span><span class="body"><span class="text">${esc(who)} <b>joined</b></span></span>`, "join");
+      }
+      function giftLine(who, gift, count) {
+        pushRow(`${pfp(who)}<span class="body"><span class="line1">${badgesFor(who)}<span class="handle">${esc(who)}</span></span><span class="text">sent ${esc(gift.n)} ${gift.e} × ${count}</span></span>`, "giftline");
+      }
+
+      // ── Gift cards + combos ──────────────────────────────────────────────────────────────────
+      //  A combo is ONE gift event, not N. Thirty-three roses sent as thirty-three chat lines would
+      //  spend her entire turn budget on the same rose — so the card counts up locally and the line
+      //  is sent once the combo settles, with the multiplier folded into it.
+      const COMBO_SETTLE_MS = 1400;
+      const combos = new Map(); // `${who}|${gift}` → { el, multEl, count, timer, gift, who }
+      let topGifter = { who: null, coins: 0 };
+      const spent = new Map();
+
+      function sendGift(who, gift, { mine = false } = {}) {
+        const key = `${who}|${gift.n}`;
+        let combo = combos.get(key);
+        // A combo whose card the two-card cap already retired must start a fresh one. Reusing it
+        // increments a multiplier on a detached node: the gift is counted, sent and billed to the
+        // running total, and nothing appears on screen. Its settle timer is deliberately LEFT
+        // running — it still owes her the line for the gifts already counted on that card.
+        if (combo && !combo.el.isConnected) { combos.delete(key); combo = undefined; }
+
+        if (!combo) {
+          const el = document.createElement("div");
+          el.className = "giftcard";
+          el.innerHTML = `<span class="pill">${pfp(who, "pfp")}<span class="who"><span class="n">${esc(who)}</span><span class="s">sent ${esc(gift.n)}</span></span><span class="icon">${gift.e}</span></span><span class="mult">x1</span>`;
+          $("gifts").append(el);
+          // Retire everything but the newest two LIVE cards. This must not be a
+          // `while (children.length > 2)` loop: retireCard() removes on a 360ms delay so the card
+          // can animate out, so the child is still in the DOM on the next iteration and the second
+          // call early-returns on its own `.out` marker — the condition never goes false and the
+          // main thread wedges the first time a third gift lands. Count the survivors up front.
+          const alive = [...$("gifts").children].filter((c) => !c.classList.contains("out"));
+          for (const old of alive.slice(0, Math.max(0, alive.length - 2))) retireCard(old);
+          combo = { el, multEl: el.querySelector(".mult"), count: 0, gift, who, timer: null };
+          combos.set(key, combo);
+        }
+
+        combo.count += 1;
+        combo.multEl.textContent = `x${combo.count}`;
+        combo.multEl.classList.remove("bump");
+        void combo.multEl.offsetWidth; // restart the pop on every increment
+        combo.multEl.classList.add("bump");
+
+        // Running tally decides who wears "Title gifter" — the label TikTok puts on the top card.
+        const total = (spent.get(who) ?? 0) + gift.c;
+        spent.set(who, total);
+        if (total > topGifter.coins) topGifter = { who, coins: total };
+        paintTopGifter();
+
+        if (gift.c >= BIG_GIFT) takeover(who, gift);
+        else for (let i = 0; i < 5; i++) setTimeout(floatHeart, i * 70);
+
+        // Settle the combo, then tell her once.
+        clearTimeout(combo.timer);
+        combo.timer = setTimeout(() => {
+          const n = combo.count;
+          // Only clear the slot if it is still THIS combo. A replacement card can already own the
+          // key (see the detached-card path above), and deleting that one would strand its card.
+          if (combos.get(key) === combo) combos.delete(key);
+          giftLine(who, gift, n);
+          const line = n > 1 ? `[GIFT] ${who} sent a ${gift.n} x${n}` : `[GIFT] ${who} sent a ${gift.n}`;
+          // A gift is the loudest thing a viewer can do — never sampled away, and a big one from
+          // the crowd is worth a turn even if it lands inside the floor.
+          void toChat(line, { force: mine || gift.c >= BIG_GIFT });
+          setTimeout(() => retireCard(combo.el), 2600);
+        }, COMBO_SETTLE_MS);
+      }
+      function retireCard(el) {
+        if (!el || el.classList.contains("out")) return;
+        el.classList.add("out");
+        setTimeout(() => el.remove(), 360);
+      }
+      function paintTopGifter() {
+        for (const card of $("gifts").children) {
+          card.classList.remove("lead");
+          card.querySelector(".title")?.remove();
+        }
+        const last = $("gifts").lastElementChild;
+        if (!last || !topGifter.who) return;
+        if (last.querySelector(".n")?.textContent === topGifter.who) {
+          last.classList.add("lead");
+          const t = document.createElement("span");
+          t.className = "title";
+          t.textContent = "Title gifter";
+          last.append(t);
+        }
+      }
+
+      // ── Full-screen takeover for the expensive ones ───────────────────────────────────────────
+      let fxTimer = null;
+      function takeover(who, gift) {
+        $("fxBig").textContent = gift.e;
+        $("fxWho").textContent = `${who} sent ${gift.n}`;
+        for (const s of $("fx").querySelectorAll(".spark")) s.remove();
+        for (let i = 0; i < 22; i++) {
+          const s = document.createElement("span");
+          s.className = "spark";
+          const a = (Math.PI * 2 * i) / 22, d = 90 + Math.random() * 130;
+          s.style.setProperty("--sx", `${Math.cos(a) * d}px`);
+          s.style.setProperty("--sy", `${Math.sin(a) * d}px`);
+          s.style.animationDelay = `${Math.random() * 0.5}s`;
+          $("fx").append(s);
+        }
+        $("fx").classList.add("on");
+        clearTimeout(fxTimer);
+        fxTimer = setTimeout(() => $("fx").classList.remove("on"), 2700);
+      }
+
+      function floatHeart() {
+        const h = document.createElement("div");
+        h.className = "heart";
+        h.textContent = rand(["❤️", "💖", "💗", "💓", "🩷", "✨"]);
+        h.style.setProperty("--x1", `${Math.round((Math.random() - 0.5) * 70)}px`);
+        h.style.setProperty("--x2", `${Math.round((Math.random() - 0.5) * 110)}px`);
+        h.style.right = `${20 + Math.random() * 40}px`;
+        h.style.fontSize = `${20 + Math.random() * 12}px`;
+        $("hearts").append(h);
+        likes += 1; $("likes").textContent = short(likes);
+        setTimeout(() => h.remove(), 2600);
+      }
+      function bumpViewers(d) { viewers = Math.max(1, viewers + d); $("viewers").textContent = short(viewers); }
+
+      // ── Going live ───────────────────────────────────────────────────────────────────────────
+      $("start").onclick = async () => {
+        $("start").disabled = true;
+        say("going live…");
+        const res = await fetch("/api/golive", { method: "POST" });
+        if (res.status === 429) {
+          // Capacity, not a rate limit: `isQueued` on the server turned this into a position.
+          const q = await res.json();
+          say(`all slots busy — position ${q.position ?? "?"}, retrying…`);
+          setTimeout(() => { $("start").disabled = false; $("start").click(); }, q.retryAfterMs ?? 3000);
+          return;
+        }
+        if (res.status === 402) { say("out of credits — top up to go live"); $("start").disabled = false; return; }
+        if (!res.ok) { say(`could not go live (${res.status})`); $("start").disabled = false; return; }
+        const { grant } = await res.json();
+        await join(grant);
+      };
+
+      async function join(grant) {
+        sessionId = grant.session_id; // held from HERE — the pagehide beacon needs it now
+        room = new Room();
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === Track.Kind.Video) {
+            track.attach($("her"));
+            $("her").classList.add("on");
+            $("idle").style.display = "none";
+          }
+          if (track.kind === Track.Kind.Audio) document.body.append(track.attach());
+        });
+
+        room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+          const mine = participant?.identity === room.localParticipant.identity;
+          for (const s of segments) {
+            if (!s.final) continue;
+            if (mine && sentByUs.delete(s.text)) continue; // the echo of a typed comment
+            // Chat is the audience; the performer is a caption. Mixing her into the comment column
+            // is the one thing no live app does.
+            if (mine) comment(YOU, s.text, "mine");
+            else showCaption(s.text);
+          }
+        });
+
+        room.on(RoomEvent.Disconnected, () => endUi("stream ended"));
+
+        await room.connect(grant.livekit_url, grant.participant_token);
+        const mic = await startMic(room);
+        if (!mic.ok) say(`live, but the microphone did not start. ${mic.why}`);
+        else setTimeout(() => say(""), 1200);
+
+        live = true;
+        $("gate").classList.add("hide");
+        for (const el of document.querySelectorAll(".dock .say, .dock .act")) el.disabled = false;
+        viewers = 1 + Math.floor(Math.random() * 40); bumpViewers(0);
+        likes = 400 + Math.floor(Math.random() * 900); $("likes").textContent = short(likes);
+        startAudience();
+      }
+
+      let captionTimer = null;
+      function showCaption(text) {
+        $("caption").textContent = text;
+        $("caption").classList.add("on");
+        clearTimeout(captionTimer);
+        captionTimer = setTimeout(() => $("caption").classList.remove("on"), 6000);
+      }
+
+      function endUi(msg) {
+        live = false;
+        stopAudience();
+        say(msg);
+        for (const el of document.querySelectorAll(".dock .say, .dock .act")) el.disabled = true;
+        $("sheet").classList.remove("on");
+        $("gate").classList.remove("hide");
+        $("start").disabled = false;
+      }
+
+      // ── The audience. Chatter, joins, hearts and small gifts, all simulated in the page so the
+      // room is never silent between the viewer's own messages. Swap this for a websocket fan-in
+      // from real viewers and NOTHING on the avatar side changes — which is the point.
+      const timers = [];
+      function startAudience() {
+        stopAudience();
+        // Fast lane: what the room looks like. Most of these never reach her, and that is correct.
+        timers.push(setInterval(() => {
+          if (!live) return;
+          const roll = Math.random();
+          if (roll < 0.14) { joined(rand(JOINERS)); bumpViewers(1); return; }
+          if (roll < 0.24) { floatHeart(); return; }
+          if (roll < 0.32) { sendGift(rand(LURKERS), rand(GIFTS.filter((g) => g.c <= 30))); return; }
+          const who = rand(LURKERS), text = rand(CHATTER);
+          comment(who, text);
+          void toChat(`${who}: ${text}`); // sampled — the floor decides whether she hears it
+          if (Math.random() < 0.4) bumpViewers(Math.random() < 0.75 ? 1 : -1);
+        }, 1250));
+        // Slow lane: the occasional big spender, worth a turn on its own.
+        timers.push(setInterval(() => {
+          if (!live || Math.random() > 0.45) return;
+          sendGift(rand(LURKERS), rand(GIFTS.filter((g) => g.c >= 100 && g.c < BIG_GIFT)));
+        }, 14000));
+      }
+      function stopAudience() { for (const t of timers.splice(0)) clearInterval(t); }
+
+      // ── The viewer's own actions ─────────────────────────────────────────────────────────────
+      $("say").addEventListener("keydown", async (e) => {
+        if (e.key !== "Enter" || !room || !$("say").value.trim()) return;
+        const text = $("say").value.trim();
+        $("say").value = "";
+        comment(YOU, text, "mine");
+        await toChat(text, { force: true }); // never sampled away: this one is the actual user
+      });
+
+      $("emoji").onclick = () => { $("say").value += rand(["😂", "🔥", "🥺", "💖", "😭", "👀", "✨"]); $("say").focus(); };
+      $("share").onclick = () => { shares += 1; $("shares").textContent = short(shares); for (let i = 0; i < 3; i++) setTimeout(floatHeart, i * 90); };
+      $("cohost").onclick = () => { joined(`${YOU} requested to co-host`); say("co-host requests are UI-only in this demo"); setTimeout(() => say(""), 2600); };
+      $("close").onclick = () => { if (live) { room?.disconnect(); endUi("you left the stream"); } };
+      $("collapse").onclick = () => $("sheet").classList.remove("on");
+
+      // Follow is a real event a streamer reacts to, so it goes to her — forced past the sampler,
+      // because a shout-out that arrives ten comments late is worse than none.
+      $("follow").onclick = async () => {
+        if (following) return;
+        following = true;
+        $("follow").textContent = "Following";
+        $("follow").classList.add("done");
+        for (let i = 0; i < 6; i++) setTimeout(floatHeart, i * 60);
+        if (live) await toChat(`[FOLLOW] ${YOU} just followed you`, { force: true });
+      };
+
+      // Tapping the video sends hearts, exactly like the real thing. Not forwarded: a heart is
+      // ambient, and narrating every one would eat the stream.
+      $("her").parentElement.addEventListener("pointerdown", (e) => {
+        if (!live || e.target.closest(".dock, .topbar, .sheet, .gate, .statusbar")) return;
+        for (let i = 0; i < 3; i++) setTimeout(floatHeart, i * 80);
+      });
+
+      // ── Gift sheet ───────────────────────────────────────────────────────────────────────────
+      let picked = null;
+      $("grid").innerHTML = GIFTS.map((g, i) =>
+        `<button class="gcell" data-i="${i}"><span class="e">${g.e}</span><span class="gn">${esc(g.n)}</span><span class="gc"><span class="coin"></span>${g.c.toLocaleString()}</span></button>`).join("");
+      $("grid").onclick = (e) => {
+        const cell = e.target.closest(".gcell");
+        if (!cell) return;
+        for (const c of $("grid").children) c.classList.toggle("sel", c === cell);
+        picked = GIFTS[Number(cell.dataset.i)];
+        $("sendGift").disabled = false;
+        $("sendGift").innerHTML = `Send · <span class="coin"></span> ${picked.c.toLocaleString()}`;
+        $("sendGift").classList.remove("combo");
+      };
+      $("giftbtn").onclick = () => $("sheet").classList.toggle("on");
+      $("sendGift").onclick = () => {
+        if (!picked || !live) return;
+        if (balance < picked.c) { say("not enough coins — this is a demo wallet"); setTimeout(() => say(""), 2400); return; }
+        balance -= picked.c;
+        $("balance").textContent = balance.toLocaleString();
+        sendGift(YOU, picked, { mine: true });
+        // Tap again inside the settle window and it stacks on the same card, TikTok-style.
+        $("sendGift").classList.add("combo");
+        $("sendGift").textContent = `Send again`;
+      };
+      // Tapping outside the sheet closes it.
+      $("her").parentElement.addEventListener("pointerdown", (e) => {
+        if (!$("sheet").classList.contains("on")) return;
+        if (!e.target.closest(".sheet, #giftbtn")) $("sheet").classList.remove("on");
+      });
+
+      // ── Chrome ───────────────────────────────────────────────────────────────────────────────
+      // The streamer chip is name + initial only: her actual face fills the whole stage, so the
+      // chip needs no image, and building one from a URL would couple this demo to a host's asset
+      // scheme. A host launching the app can pass `?name=`; standalone it reads "Live".
+      const streamer = (new URLSearchParams(location.search).get("name") || "Live").trim() || "Live";
+      $("handle").textContent = streamer;
+      $("pfp").textContent = streamer.slice(0, 1).toUpperCase();
+      $("likes").textContent = short(likes);
+      const tick = () => ($("clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }));
+      tick(); setInterval(tick, 20000);
+    </script>
+  </body>
+</html>

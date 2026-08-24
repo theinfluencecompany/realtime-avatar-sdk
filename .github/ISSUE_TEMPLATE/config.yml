@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 Documentation
+    url: https://realtimeavatar.ai/docs
+    about: API reference, guides and pricing.
+  - name: 🤖 Integrating with a coding agent
+    url: https://github.com/theinfluencecompany/realtime-avatar-sdk/blob/main/AGENTS.md
+    about: The whole surface in one file, written to be read by Claude Code, Codex, Cursor or Copilot.
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/theinfluencecompany/realtime-avatar-sdk/security/advisories/new
+    about: Please report privately, not as a public issue.

@@ -1,0 +1,68 @@
+{
+  "name": "realtime-avatar-proxy",
+  "version": "0.2.1",
+  "description": "Framework adapters that keep your Realtime Avatar API key on the server.",
+  "license": "MIT",
+  "author": "The Influence Company",
+  "homepage": "https://realtimeavatar.ai/docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theinfluencecompany/realtime-avatar-sdk.git",
+    "directory": "libs/proxy"
+  },
+  "bugs": {
+    "url": "https://github.com/theinfluencecompany/realtime-avatar-sdk/issues"
+  },
+  "keywords": [
+    "ai",
+    "avatar",
+    "realtime",
+    "voice",
+    "video",
+    "agent",
+    "full-duplex",
+    "livekit",
+    "nextjs",
+    "hono",
+    "express",
+    "proxy"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./nextjs": {
+      "types": "./dist/nextjs.d.ts",
+      "default": "./dist/nextjs.js"
+    },
+    "./hono": {
+      "types": "./dist/hono.d.ts",
+      "default": "./dist/hono.js"
+    },
+    "./express": {
+      "types": "./dist/express.d.ts",
+      "default": "./dist/express.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "realtime-avatar": "0.2.1"
+  }
+}

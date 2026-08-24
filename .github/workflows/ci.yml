@@ -1,0 +1,51 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor the packages declare in `engines`, and current LTS.
+        node: ["20", "22"]
+    steps:
+      # fetch-depth: 0 — the commit-message scan needs the range vs main.
+      # At the default depth 1 it resolves to nothing and passes vacuously.
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ matrix.node }}" }
+      - run: npm install
+      - run: npm run typecheck
+      # Build BEFORE test: libs/proxy resolves the client through node_modules, so its
+      # tests need the built dist. This ordering caught a real failure on first CI run.
+      - run: npm run build
+      # Tests are TypeScript run through --experimental-transform-types, which does not exist
+      # before Node 22.6 — on 20 the flag is a hard `bad option` exit, not a skip. Node 20
+      # is in this matrix to prove the SHIPPED artifact honours the `engines` floor, and
+      # typecheck + build + boundary above are what actually prove that: `dist` is plain
+      # JS, so a consumer on 20 never runs this suite.
+      - run: npm test
+        if: matrix.node != '20'
+      # Scans shipped JS, .d.ts AND sourcemaps. A sourcemap's sourcesContent embeds the
+      # original source, so a clean source tree can still publish a leaky artifact.
+      - run: npm run boundary
+      # The half the file scan cannot reach. A commit message ships nothing, so it has
+      # always passed here — and GitHub pins the branch head at refs/pull/<n>/head before
+      # any check runs, keeps it through force-pushes, and refuses to let a push delete it.
+      # Pre-merge is the only moment this is fixable.
+      - run: npm run messages
+      # The other half of the boundary, and the half that scales. `boundary` asks whether
+      # anything shipped mentions a term we listed; this asks whether every name we export
+      # is one we meant to export. A new internal export fails by default.
+      - run: npm run surface
+      # Cheap, catches the obvious: no credential should ever reach a commit here.
+      - name: Scan for leaked credentials
+        run: |
+          if grep -rInE '(tic_(live|test)_[A-Za-z0-9]{8,}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,})' \
+             --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist .; then
+            echo "::error::possible credential committed"; exit 1
+          fi
+          echo "no credential patterns found"
