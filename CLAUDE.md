@@ -417,7 +417,6 @@ libs/http-client  realtime-avatar            the server client, zero deps
 libs/proxy        realtime-avatar-proxy      Next.js / Hono / Express adapters
 libs/tools        realtime-avatar-tools      browser tool plane
 libs/browser      realtime-avatar-browser    browser audio: mic + playback
-libs/contracts    realtime-avatar-contracts  runtime schemas for the wire
 libs/mcp          realtime-avatar-mcp        MCP server (not published)
 libs/client       realtime-avatar-react      React facade (published)
 apps/quickstart/* the smallest correct integration per stack
@@ -437,7 +436,7 @@ apps/demo/*       showcases — larger, read these second
   run. `apps/README.md` says which tier a new one belongs in. There is no archive: a
   superseded example is deleted rather than parked, so everything under `apps/` is current.
 - **Adding a schema field is a product decision, not a sync task.** The surface here is
-  deliberately narrower than what the API can express — if a field is not in `libs/contracts`,
+  deliberately narrower than what the API can express — if a field is not in `libs/client/src/wire.ts`,
   a caller has no reason to set it. `npm run boundary` fails the build if an internal
   identifier reaches shipped output, sourcemaps included.
 

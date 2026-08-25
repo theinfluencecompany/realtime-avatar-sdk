@@ -8,4 +8,4 @@ export {
   llmProviderSchema,
   llmSelectionSchema,
   renderBackendSchema,
-} from "realtime-avatar-contracts";
+} from "./wire";

@@ -219,7 +219,7 @@ Every turn: call the tool first, then speak. Everything you write is spoken alou
  *
  *   1. a provider the wire refuses      → 422 at the mint. Loud and cheap. The union is
  *                                         cartesia | breezeblue | fish, and `qwen` 422s even
- *                                         though libs/contracts still lists it.
+ *                                         though the wire schemas still list it.
  *   2. a provider the key cannot reach  → the render worker never joins and the call dies at
  *                                         the join timeout, twenty seconds after a 200.
  *   3. a real-shaped id the engine

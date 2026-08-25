@@ -29,7 +29,6 @@
     "libs/http-client/test",
     "libs/proxy/src",
     "libs/proxy/test",
-    "libs/contracts/src",
     "libs/tools/src",
     "libs/tools/test",
     "libs/browser/src",

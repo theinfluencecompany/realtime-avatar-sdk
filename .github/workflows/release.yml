@@ -1,7 +1,8 @@
 name: Release all packages
 
-# Publishes every public lib at the version committed in its package.json (six of the
-# seven workspaces; libs/contracts is private and bundled into libs/client).
+# Publishes every lib at the version committed in its package.json. All six workspaces
+# are published; there is no private one to skip since the wire schemas moved inside
+# libs/client.
 #
 # release-react.yml is the CONTINUOUS lane: it ships libs/client as an unversioned
 # prerelease on every main push, so consumers can track main. This file is the RELEASE
@@ -59,8 +60,7 @@ jobs:
 
       # The list below is written out rather than globbed, so it has to be kept in step by
       # hand — and the failure is silent in both directions: a new lib never ships, or one
-      # meant to stay internal does. libs/contracts is exactly that case (marked private,
-      # bundled into libs/client), so this asserts the list IS the set of publishable
+      # meant to stay internal does. This asserts the list IS the set of publishable
       # workspaces before a tag can act on it.
       - name: Verify the publish list matches the non-private workspaces
         run: |
@@ -99,12 +99,6 @@ jobs:
       # Dependency order, not alphabetical: proxy and mcp declare a real `realtime-avatar`
       # dependency, so publishing a dependent before its dependency leaves a window where
       # `npm i` on it resolves nothing.
-      #
-      # libs/contracts is absent on purpose. It is bundled into libs/client (tsup
-      # noExternal, dts.resolve) and imported by nothing else, so nothing outside this
-      # monorepo can need it — while publishing it would commit us to its whole export list
-      # as a supported public API. It is marked private, and the step above fails if that
-      # ever stops being true; scripts/check-public-surface.mjs bounds what it may export.
       #
       # Each package is skipped if that exact version is already on the registry, so a
       # re-run after a partial failure completes the set instead of aborting on the first

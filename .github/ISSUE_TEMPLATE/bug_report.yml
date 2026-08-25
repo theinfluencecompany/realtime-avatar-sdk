@@ -21,7 +21,6 @@ body:
         - "realtime-avatar-proxy"
         - "realtime-avatar-browser"
         - "realtime-avatar-tools"
-        - "realtime-avatar-contracts"
         - "realtime-avatar-mcp"
         - "An example app under apps/"
         - "Not sure"

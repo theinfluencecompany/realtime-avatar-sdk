@@ -8,7 +8,7 @@ import {
   RTA_TURN_INSTRUCTIONS_ATTR,
   type LLMProvider,
   type SessionEndReasonLabel,
-} from "realtime-avatar-contracts";
+} from "../wire";
 import {
   useSessionLifecycle,
   DEFAULT_TURN_TIMEOUT_SECONDS,

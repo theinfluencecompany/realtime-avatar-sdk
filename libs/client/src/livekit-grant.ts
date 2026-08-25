@@ -8,8 +8,8 @@ import type {
   LiveKitSttMode,
   LLMProvider,
   LLMSelectionForProvider,
-} from "realtime-avatar-contracts";
-import { toLiveKitSessionWireRequest as toContractLiveKitSessionWireRequest } from "realtime-avatar-contracts";
+} from "./wire";
+import { toLiveKitSessionWireRequest as toContractLiveKitSessionWireRequest } from "./wire";
 import type { VoiceSpecInput } from "./types";
 
 export type {
@@ -21,7 +21,7 @@ export type {
   LiveKitSttMode,
   RenderBackend,
   TranscriptWebhook,
-} from "realtime-avatar-contracts";
+} from "./wire";
 
 export type LiveKitSessionRequest<
   TLlmProvider extends LLMProvider = LLMProvider,

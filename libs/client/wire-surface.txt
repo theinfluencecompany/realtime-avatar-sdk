@@ -1,4 +1,4 @@
-# The complete list of names libs/contracts may export.
+# The complete list of names the wire module (libs/client/src/wire.ts) may export.
 #
 # An ALLOWLIST, not a denylist. A denylist has to name what it excludes, which makes the
 # file an inventory of the private estate — the mistake that let 36 orchestration and

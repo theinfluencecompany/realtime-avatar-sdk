@@ -29,7 +29,7 @@ why. Nothing was rejected.
 
 ## The public surface is deliberately narrow
 
-`libs/contracts` carries the request and response shapes a customer sends and reads — and
+`libs/client/src/wire.ts` carries the request and response shapes a customer sends and reads — and
 only those. It's smaller than what the API can technically express, on purpose: if a field
 isn't there, a caller has no reason to set it.
 

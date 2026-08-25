@@ -26,7 +26,7 @@ import {
   lifecycleServerFrameSchema,
   type CapacityBusyResponse,
   type LLMProvider,
-} from "realtime-avatar-contracts";
+} from "../wire";
 import { nextBehaviorSnapshot, type BehaviorSnapshot } from "./behavior-snapshot";
 
 // ---------------------------------------------------------------------------
