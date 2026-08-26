@@ -1,15 +1,14 @@
 {
-  "name": "@realtime-avatar/internal-proxy",
-  "private": true,
+  "name": "realtime-avatar",
   "version": "0.2.1",
-  "description": "Framework adapters that keep your Realtime Avatar API key on the server.",
+  "description": "Server-side client for Realtime Avatar, with Next.js / Hono / Express / TanStack Start route adapters. Holds your API key; never import it from a browser file.",
   "license": "MIT",
   "author": "The Influence Company",
   "homepage": "https://realtimeavatar.ai/docs",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/theinfluencecompany/realtime-avatar-sdk.git",
-    "directory": "libs/proxy"
+    "directory": "libs/sdk-server"
   },
   "bugs": {
     "url": "https://github.com/theinfluencecompany/realtime-avatar-sdk/issues"
@@ -23,10 +22,9 @@
     "agent",
     "full-duplex",
     "livekit",
-    "nextjs",
-    "hono",
-    "express",
-    "proxy"
+    "sdk",
+    "api-client",
+    "zero-dependency"
   ],
   "type": "module",
   "main": "./dist/index.js",
@@ -35,6 +33,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
     },
     "./nextjs": {
       "types": "./dist/nextjs.d.ts",
@@ -47,6 +49,10 @@
     "./express": {
       "types": "./dist/express.d.ts",
       "default": "./dist/express.js"
+    },
+    "./tanstack-start": {
+      "types": "./dist/tanstack-start.d.ts",
+      "default": "./dist/tanstack-start.js"
     }
   },
   "files": [
@@ -57,10 +63,14 @@
     "node": ">=20"
   },
   "sideEffects": false,
-  "scripts": {
-    "build": "tsc -p tsconfig.build.json"
+  "publishConfig": {
+    "access": "public"
   },
-  "dependencies": {
-    "realtime-avatar": "0.2.1"
+  "scripts": {
+    "build": "tsup"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
   }
 }

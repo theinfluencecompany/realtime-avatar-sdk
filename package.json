@@ -10,9 +10,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc -p libs/client/tsconfig.json --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p libs/client/tsconfig.json --noEmit && tsc -p libs/sdk-server/tsconfig.json --noEmit && tsc -p libs/sdk-react/tsconfig.json --noEmit",
     "test": "node --test --experimental-transform-types libs/*/test/*.test.ts",
-    "build": "npm run build -w libs/http-client && npm run build -w libs/tools && npm run build -w libs/browser && npm run build -w libs/proxy && npm run build -w libs/mcp && npm run build -w libs/client",
+    "build": "npm run build -w libs/http-client && npm run build -w libs/tools && npm run build -w libs/browser && npm run build -w libs/proxy && npm run build -w libs/client && npm run build -w libs/sdk-server && npm run build -w libs/sdk-react && npm run build -w libs/mcp",
     "check": "npm run typecheck && npm run build && npm test && npm run boundary && npm run messages && npm run surface",
     "set-version": "node scripts/set-version.mjs",
     "boundary": "node scripts/check-boundary.mjs",
@@ -20,7 +20,7 @@
     "messages": "node scripts/check-commit-messages.mjs"
   },
   "devDependencies": {
-    "typescript": "^5.7.2",
+    "typescript": "^5.9.2",
     "@types/node": "^22.10.0"
   }
 }

@@ -131,7 +131,7 @@ mid-`await`, and the rejection becomes an unhandled promise nobody is watching. 
 reported back is one sentence, "the mic won't start", covering causes with different fixes.
 
 ```ts
-import { enableMicrophone, attachRemoteAudio } from "realtime-avatar-browser";
+import { enableMicrophone, attachRemoteAudio } from "realtime-avatar/browser";
 
 const audio = attachRemoteAudio(room, {                 // BEFORE connect — see below
   onPlaybackBlocked: (unblock) => { btn.hidden = unblock === null; btn.onclick = () => unblock?.(); },
@@ -484,15 +484,41 @@ npm run check          # typecheck + tests + build, all of it
 Layout follows the fal-js convention — libraries in `libs/`, runnable demos in `apps/`:
 
 ```
-libs/http-client  realtime-avatar            the server client, zero deps
-libs/proxy        realtime-avatar-proxy      Next.js / Hono / Express adapters
-libs/tools        realtime-avatar-tools      browser tool plane
-libs/browser      realtime-avatar-browser    browser audio: mic + playback
-libs/mcp          realtime-avatar-mcp        MCP server
-libs/client       realtime-avatar-react      React facade
+libs/sdk-server   realtime-avatar          ← the SERVER half. Holds your API key.
+                    .  ./server              the client that talks to the platform
+                    ./nextjs ./hono ./express ./tanstack-start   route adapters
+libs/sdk-react    realtime-avatar-react    ← the BROWSER half. Never holds a key.
+                    .                        React bindings
+                    ./react-native ./browser ./tools
+libs/mcp          realtime-avatar-mcp      ← a CLI whose consumer is a coding agent
+
+libs/http-client  private   the core libs/sdk-server bundles
+libs/client       private   the carried upstream SDK; source of the React bindings
+libs/proxy        private   source of the route-adapter entries
+libs/tools        private   source of ./tools
+libs/browser      private   source of ./browser
+
 apps/quickstart/* the smallest correct integration per stack
 apps/demo/*       showcases — larger, read these second
 ```
+
+**Three published packages, and a full-stack app installs two.** There were six until 2026-08.
+The split between server and browser is the ONE boundary worth an npm name, and it is worth it
+for a reason that was measured rather than assumed: webpack 5 with `target: "web"` compiled a
+literal secret key into a 966 KB browser bundle at **exit 0, with no error and no warning**.
+An `exports` condition cannot prevent that — conditions choose WHICH file is bundled, never
+WHETHER the package is. A different name is what makes `import ... from "realtime-avatar"`
+inside a client component look wrong.
+
+Everything else is a subpath, because tsup treeshakes per entry: `realtime-avatar/server` is
+18.8 KB with no React and no LiveKit in it. Paying for what you do not import is the cost
+separate packages exist to avoid, and it does not happen here.
+
+**Known gap, and it needs an upstream fix.** `realtime-avatar-react`'s React entries still
+bundle `RealtimeAvatarClient`, which carries an `apiKey` field and a `Bearer` header path —
+`libs/client/src/react/provider.ts:3` imports the class as a VALUE while every other React
+file imports it as a `type`. `./browser` and `./tools` are clean (no `apiKey`, no `Bearer`).
+Splitting that class into a browser client and a server client upstream is what closes it.
 
 > **Source of truth:** every `libs/` package is a scrubbed carry from an upstream source, not
 > hand-authored here. An edit to `libs/*/src` will not survive the next sync — take the change
@@ -523,12 +549,12 @@ above if it has a trap in it. A rule that is only in someone's head is not a rul
 Every release is **manual**. Nothing publishes on a merge — cutting a version is a decision,
 and a trigger you cannot decline is not one.
 
-The six libs ship in lockstep at one version, and `libs/proxy` and `libs/mcp` pin
-`realtime-avatar` at an **exact** version. So bump with the script rather than by hand; it is
-the two pinned deps, not the six `version` fields, that get missed:
+Three packages ship in lockstep at one version, and `libs/mcp` pins `realtime-avatar` at an
+**exact** version. Bump with the script rather than by hand; it is the pinned dep, not the
+`version` fields, that gets missed:
 
 ```bash
-npm run set-version 0.3.0        # all 6 + the pinned internal deps
+npm run set-version 0.3.0        # the published packages + the pinned internal dep
 npm install --package-lock-only
 npm run check
 git commit -am "release: 0.3.0"
@@ -546,16 +572,25 @@ gets its first version out.
 destination — no stored credential, nothing to leak or rotate. But OIDC **cannot publish a
 package's first version**: the trusted publisher lives in package settings on npmjs.com that do
 not exist until the name does. So each name is bootstrapped once with `NPM_TOKEN`, then
-configured on npmjs.com, and the secret is deleted once all six are done. `release.yml` picks
+configured on npmjs.com, and the secret is deleted once every name is done. `release.yml` picks
 the mode by whether the secret is present, so that last step is a deletion, not an edit.
-
-| Package | Published | Trusted publisher |
-| --- | --- | --- |
-| `realtime-avatar` | ✅ 0.2.1 | pending |
-| the other five | not yet | pending |
 
 npm now refuses a publish unless the account has 2FA **or** the token is a granular token with
 "bypass 2FA" checked — and a bypass-2FA token is in turn refused for org and account changes
-(that restriction landed 2026-08). With 2FA off, no single token does both jobs. Turning 2FA on
-collapses that split, and it is also what `Require two-factor authentication and disallow
-bypass 2fa tokens` on each package wants.
+(that restriction landed 2026-08). With 2FA off, no single token does both jobs.
+
+**Deprecated names.** `realtime-avatar-proxy`, `realtime-avatar-browser` and
+`realtime-avatar-tools` were published on 2026-08-26 and superseded the same day; their code is
+now subpaths. Deprecate rather than unpublish, pointing at the subpath that replaced each.
+
+### TypeScript 7 is worth 3x on typecheck, and is blocked on tsup
+
+Measured on this repo: the root project typechecks in **2.42s on 5.9.3 and 0.77s on 7.0.2**,
+and all four projects finish in 1.52s on 7 — less than one project takes on 5. The only source
+change needed is dropping `baseUrl`, which 7 removed (`paths` then resolve relative to the
+tsconfig, which is what these configs want anyway).
+
+What blocks it is the declaration build: `tsup` 8.5.1 — the latest — crashes generating `.d.ts`
+under 7 with `Cannot read properties of undefined (reading 'useCaseSensitiveFileNames')`.
+Pinning 5 inside the tsup workspaces does not help, because tsup itself hoists to the root and
+resolves TypeScript from there. Revisit when tsup supports 7.

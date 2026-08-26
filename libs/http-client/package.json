@@ -1,7 +1,8 @@
 {
-  "name": "realtime-avatar",
+  "name": "@realtime-avatar/internal-http-client",
+  "private": true,
   "version": "0.2.1",
-  "description": "Server-side client for Realtime Avatar — live voice and video characters you can interrupt.",
+  "description": "Server-side client for Realtime Avatar \u2014 live voice and video characters you can interrupt.",
   "license": "MIT",
   "author": "The Influence Company",
   "homepage": "https://realtimeavatar.ai/docs",
@@ -43,9 +44,6 @@
     "node": ">=20"
   },
   "sideEffects": false,
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json"
   }

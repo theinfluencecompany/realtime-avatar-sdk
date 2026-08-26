@@ -5,8 +5,7 @@
     "outDir": "dist",
     "declaration": true,
     "rootDir": "src",
-    "paths": {},
-    "baseUrl": "."
+    "paths": {}
   },
   "include": [
     "src"

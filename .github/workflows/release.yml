@@ -1,16 +1,14 @@
 name: Release all packages
 
-# Publishes every lib at the version committed in its package.json. All six workspaces
-# are published; there is no private one to skip since the wire schemas moved inside
-# libs/client.
+# Publishes the TWO public packages at the version committed in their package.json:
+# `realtime-avatar` (libs/sdk — everything an app imports, behind subpaths) and
+# `realtime-avatar-mcp` (libs/mcp — a CLI whose consumer is a coding agent, not an app).
+# The other five workspaces are `private`; their code ships bundled inside libs/sdk.
 #
-# release-react.yml is the CONTINUOUS lane: it ships libs/client as an unversioned
-# prerelease on every main push, so consumers can track main. This file is the RELEASE
-# lane: it runs off an annotated `v*` tag and publishes the whole set at their real
-# semver, on the `latest` dist-tag. Splitting them is deliberate — a prerelease train and
-# a release are different decisions and should not share a trigger.
+# Runs off an annotated `v*` tag, on the `latest` dist-tag. There is no continuous lane:
+# a release is a decision, and a trigger you cannot decline is not one.
 #
-#   git tag -a v0.2.1 -m "0.2.1" && git push origin v0.2.1   -> publish all 6 at 0.2.1
+#   git tag -a v0.3.0 -m "0.3.0" && git push origin v0.3.0   -> publish both at 0.3.0
 #   workflow_dispatch (dry_run defaults true)                -> build + pack, publish nothing
 #
 # AUTH, and why there are two modes. Trusted publishing is the destination: npm is
@@ -41,8 +39,6 @@ on:
         default: all
 
 # A tag push and a manual run must never interleave two publishes of the same version.
-# release-react.yml shares this group: it publishes libs/client too, so a prerelease run
-# racing a release run would double-publish that one package.
 concurrency:
   group: release-all
   cancel-in-progress: false
@@ -124,7 +120,7 @@ jobs:
             });
             console.log(dirs.sort().join(" "));
           ')
-          actual=$(printf "%s\n" http-client browser tools proxy mcp client | sort | tr "\n" " " | sed "s/ $//")
+          actual=$(printf "%s\n" sdk-server sdk-react mcp | sort | tr "\n" " " | sed "s/ $//")
           if [ "$expected" != "$actual" ]; then
             echo "::error::publish list is [$actual] but the non-private workspaces are [$expected]"
             exit 1
@@ -139,7 +135,7 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
           fail=0
-          for dir in http-client browser tools proxy mcp client; do
+          for dir in sdk-server sdk-react mcp; do
             version=$(node -p "require('./libs/$dir/package.json').version")
             if [ "$version" != "$tag" ]; then
               echo "::error::libs/$dir is $version but the tag says $tag"
@@ -148,9 +144,9 @@ jobs:
           done
           exit $fail
 
-      # Dependency order, not alphabetical: proxy and mcp declare a real `realtime-avatar`
-      # dependency, so publishing a dependent before its dependency leaves a window where
-      # `npm i` on it resolves nothing.
+      # Dependency order, not alphabetical: mcp declares a real `realtime-avatar` dependency,
+      # so publishing it before libs/sdk leaves a window where `npm i` on it resolves nothing.
+      # The other five workspaces are `private` now — their code ships inside libs/sdk.
       #
       # Each package is skipped if that exact version is already on the registry, so a
       # re-run after a partial failure completes the set instead of aborting on the first
@@ -165,7 +161,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          ALL="http-client browser tools proxy mcp client"
+          ALL="sdk-server sdk-react mcp"
 
           if [ -n "$NODE_AUTH_TOKEN" ]; then
             # Token auth: provenance is opt-in, so ask for it. On an OIDC publish npm emits
