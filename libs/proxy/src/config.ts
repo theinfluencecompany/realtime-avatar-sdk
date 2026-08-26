@@ -55,9 +55,16 @@ export function createProxyHandler(config: ProxyConfig): (request: Request) => P
       if (operation === "credits") return json(await rta.creditBalance());
 
       if (operation === "end") {
-        const ended = (await request.json().catch(() => ({}))) as { session_id?: string; reason?: string };
-        const sessionId = ended.session_id;
-        if (!sessionId) return json({ error: "session_id is required" }, 422);
+        const ended = (await request.json().catch(() => ({}))) as {
+          session_id?: string;
+          queue_ticket_id?: string;
+          reason?: string;
+        };
+        // A call that is still QUEUED has no session id — the ticket is the only handle on it,
+        // and a user who closes the tab while waiting holds their place until it times out
+        // otherwise. Both ids go through the same ownership check for the same reason.
+        const sessionId = ended.session_id ?? ended.queue_ticket_id;
+        if (!sessionId) return json({ error: "session_id or queue_ticket_id is required" }, 422);
 
         const owns = config.ownsSession
           ? await config.ownsSession({ request, sessionId })
@@ -83,6 +90,9 @@ export function createProxyHandler(config: ProxyConfig): (request: Request) => P
 
       // A busy pool is a queue. Passing 429 through lets the client show a position.
       if (isQueued(call)) {
+        // Remember the TICKET the same way a session id is remembered, or the ownership check
+        // below declines every queue release and the place in line is held until it times out.
+        if (call.queueTicketId) minted.set(call.queueTicketId, Date.now());
         // queueTicketId travels too: it is the only handle that can release a place in LINE,
         // and dropping it meant a user who closed the tab while waiting held their slot until
         // it timed out.

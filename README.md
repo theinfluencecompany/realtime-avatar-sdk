@@ -45,13 +45,12 @@ return call.raw;            // relay to the browser, byte-for-byte
 Join it from your **client**.
 
 ```tsx
-import { AvatarCall } from "realtime-avatar/react";
+import { AvatarCall, createProxyClient } from "realtime-avatar/react";
 
-<AvatarCall
-  client={client}                       // anything with the five AvatarSessionClient methods
-  avatarId="ava_…"
-  onEnded={({ reason }) => router.push("/")}
-/>;
+// Holds a URL, not a credential. Your route holds the key.
+const client = createProxyClient({ proxyUrl: "/api/realtime-avatar" });
+
+<AvatarCall client={client} avatarId="ava_…" onEnded={({ reason }) => router.push("/")} />;
 ```
 
 That's the whole integration. Two halves, one payload between them.

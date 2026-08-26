@@ -137,3 +137,6 @@ export type {
 // value a consumer could receive, could not name, and could not `instanceof`. One or the other
 // had to go; the mapper is the useful half for building a queue UI, so the class comes with it.
 export { RealtimeAvatarCapacityError } from "../errors";
+
+// The client AvatarCall asks for, pointed at your proxy route. Keyless by construction.
+export { createProxyClient, type ProxyClientOptions } from "../proxy-client";

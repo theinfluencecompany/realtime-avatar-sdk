@@ -36,6 +36,30 @@ test("its client prop is satisfiable without the API-key-bearing class", () => {
   assert.equal(client.releaseLiveKitSessionBeacon("s_1"), true);
 });
 
+test("the package ships something that can actually produce that client", () => {
+  // The interface being satisfiable was only half the fix. Until this export existed a consumer
+  // had to hand-write a fetch wrapper against their own proxy routes before AvatarCall would
+  // render at all — the component was exported, typechecked, and unusable.
+  const factory = (pkg as Record<string, unknown>).createProxyClient;
+  assert.equal(typeof factory, "function", "createProxyClient is not exported");
+
+  const client = (factory as (o: { proxyUrl: string }) => AvatarSessionClient)({
+    proxyUrl: "/api/realtime-avatar",
+  });
+  for (const method of [
+    "createLiveKitSessionOrBusy",
+    "releaseLiveKitSession",
+    "releaseLiveKitSessionBeacon",
+    "releaseLiveKitQueueTicket",
+    "releaseLiveKitQueueTicketBeacon",
+  ]) {
+    assert.equal(typeof (client as unknown as Record<string, unknown>)[method], "function", `missing ${method}`);
+  }
+  // No beacon in this runtime: it must answer false rather than throw, so the caller falls
+  // back to the awaited release instead of losing the slot.
+  assert.equal(client.releaseLiveKitSessionBeacon("sess_1"), false);
+});
+
 test("no API-key path reaches the browser half", () => {
   // The reason the class is withheld in the first place. If a future edit re-imports it as a
   // VALUE — which is how the deleted provider dragged it in — this catches it.

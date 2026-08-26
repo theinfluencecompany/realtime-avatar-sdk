@@ -171,3 +171,6 @@ export type {
   LiveKitSessionStartResult,
   RealtimeAvatarRequestOptions,
 } from "../session-client";
+
+// The client AvatarCall asks for, pointed at your proxy route. Keyless by construction.
+export { createProxyClient, type ProxyClientOptions } from "../proxy-client";
