@@ -137,6 +137,7 @@ export class RealtimeAvatar {
         position: typeof busy.queue_position === "number" ? busy.queue_position : null,
         size: typeof busy.queue_size === "number" ? busy.queue_size : 0,
         retryAfterMs: typeof busy.recommended_retry_ms === "number" ? busy.recommended_retry_ms : 3000,
+        queueTicketId: typeof busy.queue_ticket_id === "string" ? busy.queue_ticket_id : null,
       };
     }
 

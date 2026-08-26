@@ -1,7 +1,7 @@
 import type { CallPolicy, CallMode } from "realtime-avatar";
 
 /** The three things a caller can ask the proxy to do. Gate on these, not on URLs. */
-export type ProxyOperation = "connect" | "avatars" | "credits";
+export type ProxyOperation = "connect" | "end" | "avatars" | "credits";
 
 export interface AuthorizeContext {
   request: Request;
@@ -27,6 +27,17 @@ export interface ProxyConfig {
    * check belongs. Leaving the reads ungated keeps them cheap.
    */
   authorize?: (context: AuthorizeContext) => Promise<Response | void> | Response | void;
+
+  /**
+   * Does this request own that session? Answer for `POST …/end`.
+   *
+   * Without it the handler remembers what it minted IN PROCESS, which is correct for one
+   * server and wrong for serverless, where the next request lands somewhere else and every
+   * release is silently declined. Back this with whatever already knows which user started
+   * which call, and return false for anything else — rule 12 exists because a route that
+   * ends an arbitrary id lets any visitor hang up any call on your account.
+   */
+  ownsSession?: (context: { request: Request; sessionId: string }) => Promise<boolean> | boolean;
 
   /**
    * What the character knows for THIS call. Return a policy, or a `Response` to refuse.

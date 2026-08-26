@@ -12,7 +12,7 @@
   "scripts": {
     "boundary": "node scripts/check-boundary.mjs",
     "build": "npm run build -w libs/sdk-server && npm run build -w libs/mcp",
-    "check": "npm run typecheck && npm run build && npm test && npm run boundary && npm run messages && npm run surface && npm run reachable",
+    "check": "npm run typecheck && npm run build && npm test && npm run boundary && npm run messages && npm run surface && npm run reachable && npm run spec:verify && npm run externals",
     "messages": "node scripts/check-commit-messages.mjs",
     "set-version": "node scripts/set-version.mjs",
     "spec": "npm run spec:pull && npm run spec:types",
@@ -22,7 +22,9 @@
     "surface": "node scripts/check-public-surface.mjs",
     "test": "node --test --experimental-transform-types libs/*/test/*.test.ts",
     "typecheck": "tsc --noEmit && tsc -p libs/client/tsconfig.json --noEmit && tsc -p libs/sdk-server/tsconfig.json --noEmit",
-    "reachable": "node scripts/check-reachable.mjs"
+    "reachable": "node scripts/check-reachable.mjs",
+    "spec:verify": "openapi-typescript spec/realtime-avatar.openapi.json -o /tmp/rta-generated-check.ts && diff -q /tmp/rta-generated-check.ts libs/http-client/src/generated/openapi.ts || (echo '\\n\u2717 generated/openapi.ts does not match the vendored spec \u2014 run `npm run spec` and commit' && exit 1)",
+    "externals": "node scripts/check-externals.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

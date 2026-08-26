@@ -45,9 +45,12 @@ return call.raw;            // relay to the browser, byte-for-byte
 Join it from your **client**.
 
 ```tsx
-import { AvatarCall } from "realtime-avatar/react";
+import { AvatarCall, createProxyClient } from "realtime-avatar/react";
 
-<AvatarCall grant={grant} onEnd={() => router.push("/")} />;
+// Holds a URL, not a credential. Your route holds the key.
+const client = createProxyClient({ proxyUrl: "/api/realtime-avatar" });
+
+<AvatarCall client={client} avatarId="ava_…" onEnded={({ reason }) => router.push("/")} />;
 ```
 
 That's the whole integration. Two halves, one payload between them.
@@ -118,6 +121,18 @@ server-only app still ships 18.8 KB with no React and no LiveKit in it.
 The credential boundary is enforced by the build, not by the package name: importing a
 key-holding entry into a browser bundle **throws at bundle time**. `realtime-avatar-mcp` is a
 separate name only because it is a CLI you run with `npx` and never install.
+
+**A server-only app pays for nothing it does not import.** `.`, `/server`, the route adapters,
+`/browser` and `/tools` have **zero** external imports — `npm run externals` prints that per entry
+and fails the build if it stops being true.
+
+One runtime dependency comes along: `zod` (4.3 MB), which `/react` and `/react-native` need for
+runtime validation. It is deliberately **not** bundled — inlining it costs every React app **+64 KB
+gzipped** in shipped bytes (15 KB → 79 KB gzip, measured), and shipped bytes are what your users
+feel, while `node_modules` is what a developer feels once. `livekit-client` (11.7 MB) is **not**
+declared here at all: `@livekit/components-react` and `@livekit/react-native` both peer-depend on
+it, so the consumers who need it get it and nobody else does. React and the `@livekit/*` packages
+are optional peers — install the one for your platform.
 
 | Package | Import | What it does |
 | --- | --- | --- |

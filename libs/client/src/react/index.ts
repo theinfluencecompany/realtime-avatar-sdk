@@ -132,3 +132,37 @@ export type {
   LiveKitSessionStartResult,
   RealtimeAvatarRequestOptions,
 } from "../session-client";
+
+// `capacityErrorFromBusy` is exported below and RETURNS this, so withholding the class left a
+// value a consumer could receive, could not name, and could not `instanceof`. One or the other
+// had to go; the mapper is the useful half for building a queue UI, so the class comes with it.
+export { RealtimeAvatarCapacityError } from "../errors";
+
+// The client AvatarCall asks for, pointed at your proxy route. Keyless by construction.
+export { createProxyClient, type ProxyClientOptions } from "../proxy-client";
+
+/**
+ * The types a consumer needs to NAME in order to build the argument these hooks take.
+ *
+ * `AvatarSessionClient.createLiveKitSessionOrBusy` accepts a `LiveKitSessionRequest`, and until
+ * now that type was reachable only as `Parameters<...>[0]` — the same shape of gap as the
+ * capacity error above: a type in a public signature that no consumer could write down. The
+ * criterion for what belongs here is exactly that, and nothing wider: if you must name it to
+ * construct a public argument, it is exported; if it is machinery, it is not.
+ *
+ * So `toLiveKitSessionWireRequest` and `normalizeRealtimeAvatarError` stay unexported. They are
+ * how the request becomes bytes and how an error is shaped, which is the SDK's job, not yours.
+ */
+// LiveKitSessionRequest comes from livekit-grant, NOT wire — wire.ts declares a type of the
+// SAME NAME that is the zod OUTPUT (defaults applied, `model` required). The one the client
+// actually accepts is the ergonomic generic here. Exporting the wrong one produced a type that
+// imported fine and could not be constructed, which is a worse failure than not exporting it.
+export type { LiveKitSessionRequest } from "../livekit-grant";
+export type {
+  LLMProvider,
+  LLMSelection,
+  VoiceSpec,
+  VoiceSpecInput,
+  CartesiaTtsModel,
+  FishTtsModel,
+} from "../wire";
