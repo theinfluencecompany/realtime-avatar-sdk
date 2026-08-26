@@ -89,6 +89,48 @@ test("every wire key present on both sides carries the same value", async () => 
   }
 });
 
+/**
+ * The test above compares the INTERSECTION, and that is a hole: it cannot see a key one side
+ * sends and the other omits. Measured 2026-08-26 — for the same minimal call, `realtime-avatar`
+ * sends 3 keys and the React translator sends 7.
+ *
+ * Presence asymmetry is the same class of bug as the `stt_mode` value divergence, one step
+ * removed. These four are sent by the React side carrying the CONTRACT'S OWN DEFAULT, so today
+ * both requests behave identically. The risk is what happens when the platform changes one of
+ * those defaults: the side that spells the value out keeps the OLD behaviour forever while the
+ * side that omits it picks up the new one, and nothing errors — which is exactly how a call
+ * ended up not listening.
+ *
+ * So the asymmetry is allowed but ENUMERATED. A new one fails here and has to be argued for.
+ */
+const KNOWN_ONLY_ON_THE_REACT_SIDE = new Set([
+  "background_id",    // contract default "plain_white"
+  "create_room",      // contract default true
+  "dispatch_agent",   // contract default true
+  "initial_context",  // contract default []
+]);
+
+test("neither side sends a key the other does not, beyond the four known defaults", async () => {
+  const core = await coreWire({ avatarId: "ava_parity" });
+  const react = toLiveKitSessionWireRequest({ avatarId: "ava_parity" }) as Record<string, unknown>;
+
+  const coreOnly = Object.keys(core).filter((k) => !(k in react));
+  assert.deepEqual(coreOnly, [], `realtime-avatar sends keys the React translator does not: ${coreOnly.join(", ")}`);
+
+  const reactOnly = Object.keys(react).filter((k) => !(k in core));
+  const unexpected = reactOnly.filter((k) => !KNOWN_ONLY_ON_THE_REACT_SIDE.has(k));
+  assert.deepEqual(
+    unexpected,
+    [],
+    `the React translator sends ${unexpected.join(", ")}, which realtime-avatar omits. Either send ` +
+      `it from both, omit it from both, or add it to KNOWN_ONLY_ON_THE_REACT_SIDE with the reason.`,
+  );
+
+  // And the allowlist must not rot: a name that stops diverging has to come out of it.
+  const stale = [...KNOWN_ONLY_ON_THE_REACT_SIDE].filter((k) => !reactOnly.includes(k));
+  assert.deepEqual(stale, [], `these no longer diverge — drop them from the allowlist: ${stale.join(", ")}`);
+});
+
 test("a grant with fields missing reports them as unknown, not as invented numbers", () => {
   // The schema used to fill absent timing fields with plausible-looking constants, so a page
   // counted down from a limit the server never set. `realtime-avatar` reads them as

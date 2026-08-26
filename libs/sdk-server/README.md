@@ -60,9 +60,12 @@ Two facts follow from that picture and drive everything else:
 ## API
 
 Everything is on one class. The full types are in
-[`libs/http-client/src/types.ts`](../http-client/src/types.ts) — one file, no import chasing,
-and every shape in it is derived from the published OpenAPI contract rather than declared
-beside it.
+[`libs/http-client/src/types.ts`](../http-client/src/types.ts) — one file, no import chasing.
+Almost every shape in it is **derived** from the published OpenAPI contract rather than declared
+beside it, so a field that changes upstream fails the typecheck here. The exceptions are named at
+the top of that file with the reason for each: two are gaps in the contract itself (it declares no
+query parameters for `GET /v1/usage/sessions`, and the transcript webhook body is not in it at
+all), and the `video` policy types are deliberately not one-to-one with the wire.
 
 ```ts
 // calls
