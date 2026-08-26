@@ -1,3 +1,9 @@
+// The transport is NOT re-exported. `livekit-client` and `@livekit/components-react` are peer
+// dependencies, so a consumer who needs `Room`, `RoomEvent` or `useRoomContext` imports them from
+// LiveKit directly and gets the version they installed. Re-exporting them put LiveKit's types in
+// this package's public surface, which meant a LiveKit major could break ours without a line of
+// our code changing. 24 names came out on 2026-08-26.
+
 export {
   AvatarCall,
   useAvatarCall,
@@ -7,34 +13,14 @@ export {
   type AvatarCallStatus,
 } from "./avatar-call";
 export {
-  AudioTrack,
-  ConnectionState,
-  ConnectionStateToast,
   DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS,
-  DisconnectReason,
-  LiveKitRoom,
   RealtimeAvatarLiveKitRoom,
-  Room,
-  RoomAudioRenderer,
-  RoomEvent,
-  StartAudio,
-  Track,
-  TrackToggle,
-  VideoTrack,
   capacityErrorFromBusy,
   capacityStateFromGrant,
   useAvatarPlayoutDelay,
-  useChat,
-  useConnectionState,
   useLiveKitAvatarGrant,
   useCallTranscript,
   useReleaseMicLeaseOnTrackEnded,
-  useLocalParticipant,
-  useRoomContext,
-  useStartAudio,
-  useTrackToggle,
-  useTranscriptions,
-  useVoiceAssistant,
   splitCallTranscript,
   type CallTranscript,
   type CallTranscriptSegment,
@@ -43,17 +29,10 @@ export {
   type LiveKitCapacityState,
   type LiveKitConnectionStatus,
   type RealtimeAvatarLiveKitRoomProps,
-  type RemoteAudioTrack,
-  type RemoteTrack,
-  type RemoteVideoTrack,
-  type SendTextOptions,
   type UseLiveKitAvatarGrantInput,
 } from "./livekit";
 export {
   AvatarVideoSurface,
-  createLivePlaybackKeeper,
-  isLiveTrackProducing,
-  resolveSurfaceLayers,
   type AvatarVideoFit,
   type AvatarVideoSurfaceProps,
   type LivePlaybackKeeper,
@@ -67,18 +46,6 @@ export {
   MAX_RECONNECT_ATTEMPTS,
   RECONNECT_BACKOFF_MS,
   SessionLifecycleRoomBridge,
-  disconnectAction,
-  idleExpired,
-  idlePhaseFor,
-  isRecoverableConnectionError,
-  lifecyclePhaseFrom,
-  needsFreshGrant,
-  phaseForReason,
-  resolveIdleTimeoutMs,
-  resolveReconnectPolicy,
-  resolveWarnBeforeMs,
-  retryStep,
-  shouldReplayPendingTurn,
   useSessionLifecycle,
   type ReconnectPolicy,
   type RecoveryState,
@@ -121,25 +88,12 @@ export {
 // releases on the mic track's real `ended` event.
 export {
   MIC_LEASE_ENDED_TIMEOUT_MS,
-  acquireMicLease,
-  confirmMicTrackEnded,
-  currentMicLeaseHolder,
-  pendingMicLeaseRelease,
-  releaseMicLease,
-  releaseMicLeaseWhenEnded,
   useMicLease,
   type MicLease,
 } from "./mic-single-flight";
 // Re-export the director ack frame type so consumers can type their onAck handler without
 // reaching into the contracts package (the hook's onAck signature uses it).
 export {
-  approachingEndFrom,
-  creditsLowFrom,
-  endsAtFrom,
-  mapTurnState,
-  nextGraceWindow,
-  resolveEndReason,
-  sessionRemainingMsFrom,
   type ApproachingEndReason,
   type EndReason,
   type GraceWindowState,
@@ -150,9 +104,6 @@ export {
 // QUALITY.md). The app never touches this directly; it uses the hook that wraps it.
 export {
   DEFAULT_GOVERNOR_CONFIG,
-  capToVideoQuality,
-  initGovernor,
-  step as stepQualityGovernor,
   type Governor,
   type GovernorAction,
   type GovernorConfig,

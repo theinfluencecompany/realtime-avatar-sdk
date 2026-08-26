@@ -40,11 +40,6 @@ export {
 // The shared pure/reactive pieces the surface is built on, for apps composing
 // their own surface UI on native.
 export {
-  isLiveTrackProducing,
-  isNativeLiveTrackSubscribed,
-  resolveSurfaceLayers,
-  useDebouncedHide,
-  useLiveTrackProducing,
   type AvatarVideoFit,
   type SurfaceLayers,
 } from "../react/avatar-video-surface";
@@ -61,7 +56,6 @@ export {
   Room,
   RoomEvent,
   Track,
-  applyAvatarPlayoutDelay,
   capacityErrorFromBusy,
   capacityStateFromGrant,
   splitCallTranscript,
@@ -101,18 +95,6 @@ export {
   MAX_RECONNECT_ATTEMPTS,
   RECONNECT_BACKOFF_MS,
   SessionLifecycleRoomBridge,
-  disconnectAction,
-  idleExpired,
-  idlePhaseFor,
-  isRecoverableConnectionError,
-  lifecyclePhaseFrom,
-  needsFreshGrant,
-  phaseForReason,
-  resolveIdleTimeoutMs,
-  resolveReconnectPolicy,
-  resolveWarnBeforeMs,
-  retryStep,
-  shouldReplayPendingTurn,
   useSessionLifecycle,
   type ReconnectPolicy,
   type RecoveryState,
@@ -148,13 +130,6 @@ export {
   type UseRealtimeSessionInput,
 } from "../react/use-realtime-session";
 export {
-  approachingEndFrom,
-  creditsLowFrom,
-  endsAtFrom,
-  mapTurnState,
-  nextGraceWindow,
-  resolveEndReason,
-  sessionRemainingMsFrom,
   type ApproachingEndReason,
   type EndReason,
   type GraceWindowState,
@@ -163,9 +138,6 @@ export {
 } from "../react/grace-window";
 export {
   DEFAULT_GOVERNOR_CONFIG,
-  capToVideoQuality,
-  initGovernor,
-  step as stepQualityGovernor,
   type Governor,
   type GovernorAction,
   type GovernorConfig,

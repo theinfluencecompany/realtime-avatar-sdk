@@ -143,12 +143,23 @@ arriving mid-connect from being lost on a fast connection.
 `attachAvatarTools` runs your functions in the page. Nothing is executed on the platform, and
 a tool has **2.5 seconds** to answer before the call gives up on it and tells her it failed.
 
-## Known rough edge
+## What `/react` exports, and what it deliberately does not
 
-The default entry re-exports a great deal more than the facade needs — LiveKit symbols
-(`Room`, `RoomEvent`, `Track`, `useRoomContext`) and internal machinery (`acquireMicLease`,
-`stepQualityGovernor`, `retryStep`, `resolveWarnBeforeMs`). That is not a surface to depend
-on and it will narrow. Prefer `AvatarCall` / `useAvatarCall` and the hooks named above.
+31 names, down from 82 on 2026-08-26. Two groups came out and are not coming back:
+
+**LiveKit symbols.** `Room`, `RoomEvent`, `Track`, `useRoomContext` and 20 others were
+re-exported from here. `livekit-client` and `@livekit/components-react` are peer dependencies, so
+import them from LiveKit directly and you get the version you installed — re-exporting put their
+types in this package's public surface, which meant a LiveKit major could break ours without a
+line of our code changing.
+
+**State-machine internals.** `acquireMicLease`, `stepQualityGovernor`, `retryStep`,
+`resolveWarnBeforeMs` and 27 more were the individual steps the hooks drive. None was callable in
+a useful order from outside, and every one was a name we would have had to keep working forever.
+
+What stayed: the components and hooks, the `DEFAULT_*` constants (so you can read the timings
+rather than guess them), the two capacity mappers `capacityErrorFromBusy` / `capacityStateFromGrant`
+for building your own queue UI, and the zod schemas `sessionBehaviorSchema` / `sessionClipSchema`.
 
 
 ---
