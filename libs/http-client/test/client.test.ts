@@ -54,6 +54,97 @@ test("startCall preserves the grant verbatim for relay", async () => {
   assert.equal(call.livekitUrl, "wss://x");
 });
 
+test("external speech maps the authoritative append and cancel wire", async () => {
+  const attempts: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const fetchImpl = (async (url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    attempts.push({ url: String(url), body });
+    return Response.json({
+      accepted: true,
+      speech_id: body.speech_id,
+      ...(typeof body.sequence === "number" ? { sequence: body.sequence } : {}),
+    });
+  }) as unknown as typeof fetch;
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+
+  const appended = await rta.appendExternalSpeech("session-1", {
+    speechId: "answer-1", sequence: 0, text: "Exact words.", final: true,
+  });
+  const cancelled = await rta.cancelExternalSpeech("session-1", "answer-1");
+
+  assert.match(attempts[0]?.url ?? "", /\/realtime\/livekit\/session\/speech$/);
+  assert.deepEqual(attempts[0]?.body, {
+    action: "append", session_id: "session-1", speech_id: "answer-1",
+    sequence: 0, text: "Exact words.", final: true,
+  });
+  assert.deepEqual(attempts[1]?.body, {
+    action: "cancel", session_id: "session-1", speech_id: "answer-1",
+  });
+  assert.deepEqual(appended, { accepted: true, speechId: "answer-1", sequence: 0 });
+  assert.deepEqual(cancelled, { accepted: true, speechId: "answer-1" });
+});
+
+test("external speech writer preserves invocation order without caller awaits", async () => {
+  const frames: Array<Record<string, unknown>> = [];
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    // Make the first response slower. Serialization must still keep request order stable.
+    if (body.sequence === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+    frames.push(body);
+    return Response.json({ accepted: true, speech_id: body.speech_id, sequence: body.sequence });
+  }) as unknown as typeof fetch;
+  const stream = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl })
+    .createExternalSpeechStream("session-1", { speechId: "answer-1" });
+
+  const first = stream.write("Hello");
+  const second = stream.write(" world");
+  const last = stream.end();
+  await Promise.all([last, second, first]);
+
+  assert.deepEqual(frames.map((frame) => [frame.sequence, frame.text, frame.final]), [
+    [0, "Hello", false],
+    [1, " world", false],
+    [2, "", true],
+  ]);
+  assert.equal(stream.nextSequence, 3);
+  await assert.rejects(() => stream.write("too late"), /already closed/);
+});
+
+test("external speech cancel overtakes queued writes", async () => {
+  const frames: Array<Record<string, unknown>> = [];
+  let releaseFirst!: () => void;
+  const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  let markFirstStarted!: () => void;
+  const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    frames.push(body);
+    if (body.action === "append" && body.sequence === 0) {
+      markFirstStarted();
+      await firstPending;
+    }
+    return Response.json({
+      accepted: true,
+      speech_id: body.speech_id,
+      ...(body.action === "append" ? { sequence: body.sequence } : {}),
+    });
+  }) as unknown as typeof fetch;
+  const stream = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl })
+    .createExternalSpeechStream("session-1", { speechId: "answer-1" });
+  const first = stream.write("in flight");
+  const queued = stream.write("must never send");
+  const queuedOutcome = queued.then(() => null, (error: unknown) => error);
+  await firstStarted;
+
+  await stream.cancel();
+  releaseFirst();
+  await first;
+  const queuedError = await queuedOutcome;
+  assert.ok(queuedError instanceof Error);
+  assert.match(queuedError.message, /cancelled/);
+  assert.deepEqual(frames.map((frame) => frame.action), ["append", "cancel"]);
+});
+
 test("a busy pool is a queue, not a throw", async () => {
   const { fetchImpl } = stub({
     status: 429,

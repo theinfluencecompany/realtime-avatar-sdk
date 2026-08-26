@@ -42,6 +42,24 @@ const liveKitSttModeSchema = z.enum(["server", "off"]);
 export const renderBackendSchema = z.string();
 export type RenderBackend = z.infer<typeof renderBackendSchema>;
 
+/** LiveKit topic used by the worker to report external-speech playback state. */
+export const RTA_EXTERNAL_SPEECH_STATE_TOPIC = "rta.external_speech.state";
+
+const externalSpeechIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9._:-]{1,64}$/, "invalid external speech id");
+
+export const externalSpeechStateFrameSchema = z
+  .object({
+    kind: z.literal("external_speech_state"),
+    speech_id: externalSpeechIdSchema,
+    state: z.enum(["queued", "playing", "finished", "cancelled", "failed"]),
+    reason: z.enum(["completed", "cancelled", "superseded", "session_ended", "error"]).optional(),
+  })
+  .strict();
+
+export type ExternalSpeechStateFrame = z.infer<typeof externalSpeechStateFrameSchema>;
+
 const sessionLiveEditSchema = z
   .object({
     rules: z.string().min(1).max(2_000),

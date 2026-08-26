@@ -295,6 +295,32 @@ else, never a throw. A beacon and a disconnect handler may both fire for the sam
 without error, and a release that is lost is a slower release — the join timeout is the
 backstop. Every app in `apps/demo/` carries the full pattern end to end.
 
+### 13. External speech is server-owned and replaces the hosted loop
+
+If your app owns STT, context, tools, persistence and model generation, mint with
+`listen: false`. Leaving hosted listening on creates two competing owners of the next
+assistant turn.
+
+Stream the model's exact output from the server holding the API key:
+
+```ts
+const speech = rta.createExternalSpeechStream(call.sessionId);
+for await (const delta of model.textStream) await speech.write(delta);
+await speech.end();
+
+// Barge-in or a superseded model request:
+await speech.cancel();
+```
+
+This path does not prompt or rewrite through the platform model. Each stream has a speech id;
+sequence starts at zero, retries are idempotent, and a new stream supersedes the current one.
+Do not proxy arbitrary session ids from a browser — only stream into sessions your backend
+minted for that user.
+
+For playback UI, use `observeExternalSpeech(room, onState)` from
+`realtime-avatar-react/browser`. HTTP acknowledgement means the reliable LiveKit packet was
+accepted, not that audio finished; the room states are the playback truth.
+
 ---
 
 ## Deciding how she looks

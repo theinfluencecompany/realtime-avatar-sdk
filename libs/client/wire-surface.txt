@@ -17,6 +17,7 @@ CartesiaVoiceSpec
 ClientMetadata
 FishTtsModel
 FishVoiceSpec
+ExternalSpeechStateFrame
 KnownBehaviorState
 LLMConfig
 LLMProvider
@@ -32,6 +33,7 @@ LiveKitSessionRequestInput
 LiveKitSessionWireRequestInput
 LiveKitSttMode
 RTA_CLOSING_TURN_ATTR
+RTA_EXTERNAL_SPEECH_STATE_TOPIC
 RTA_LIFECYCLE_TOPIC
 RTA_TURN_ID_ATTR
 RTA_TURN_INSTRUCTIONS_ATTR
@@ -43,6 +45,7 @@ TranscriptWebhook
 VoiceSpec
 VoiceSpecInput
 capacityBusyResponseSchema
+externalSpeechStateFrameSchema
 knownBehaviorStates
 lifecycleServerFrameSchema
 liveKitCapacitySnapshotSchema
