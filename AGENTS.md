@@ -514,11 +514,13 @@ Everything else is a subpath, because tsup treeshakes per entry: `realtime-avata
 18.8 KB with no React and no LiveKit in it. Paying for what you do not import is the cost
 separate packages exist to avoid, and it does not happen here.
 
-**Known gap, and it needs an upstream fix.** `realtime-avatar-react`'s React entries still
-bundle `RealtimeAvatarClient`, which carries an `apiKey` field and a `Bearer` header path —
-`libs/client/src/react/provider.ts:3` imports the class as a VALUE while every other React
-file imports it as a `type`. `./browser` and `./tools` are clean (no `apiKey`, no `Bearer`).
-Splitting that class into a browser client and a server client upstream is what closes it.
+**That gap is closed.** The React entries used to bundle `RealtimeAvatarClient` — an `apiKey`
+field and a `Bearer` header path, in the browser half — because `react/provider.ts` imported
+the class as a VALUE to build a fallback. The provider itself turned out to be dead: every
+hook takes `client` as a required prop, and nothing ever read its context. Deleting it took
+the value import with it. Measured on the built entries: `apiKey`/`Bearer` 17 occurrences → 0,
+the wire translator 6 → 0, and the bundles 124.4 KB → 94.3 KB (react) and 110.1 KB → 82.6 KB
+(react-native).
 
 > **Source of truth — and it is only ONE package.** `libs/client` is a scrubbed carry of the
 > upstream `@theinfluencecompany/realtime-avatar`; an edit to `libs/client/src` will not
