@@ -335,8 +335,6 @@ export const step = (
 
 /** Map the governor cap to the LiveKit VideoQuality enum value the hook passes to
  *  setVideoQuality. Kept here so the core owns the LOW/HIGH↔cap contract. */
-export const capToVideoQuality = (cap: QualityCap): "low" | "high" => cap;
-
 /**
  * Resolve the VideoQuality value the "low" cap should pin, from the publisher's
  * DECLARED layer qualities (trackInfo.layers[].quality — LiveKit protocol enum,

@@ -120,6 +120,12 @@ export function isRecoverableConnectionError(error: unknown): boolean {
 }
 
 /**
+ * NOT WIRED UP. Nothing calls this and no test covers it — checked 2026-08-26 by searching the
+ * whole carry for `pendingTurn` and `replay`, which appear nowhere else. So a turn the user sends
+ * while the session is reconnecting is NOT replayed today; this function is a specification of
+ * behaviour that was never connected, kept because deleting it would delete the only record that
+ * it was intended. Wire it or drop it deliberately — do not let it sit here unread.
+ *
  * Whether a re-queued turn should replay onto a freshly-(re)connected room. Pure
  * so the "replay exactly once, keyed on the NEW session_id" guard is testable.
  *
