@@ -1,14 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { defineConfig } from "tsup";
-
-const USE_CLIENT = '"use client";';
-
-async function prependUseClient(file: string) {
-  const source = await readFile(file, "utf8");
-  if (source.startsWith(USE_CLIENT)) return;
-  await writeFile(file, `${USE_CLIENT}\n${source}`);
-}
+import { prependUseClient } from "../tsup-use-client.ts";
 
 export default defineConfig({
   entry: {

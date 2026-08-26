@@ -1,20 +1,12 @@
-import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { defineConfig } from "tsup";
-
-const USE_CLIENT = '"use client";';
+import { prependUseClient } from "../tsup-use-client.ts";
 
 // Re-assert the React Server Components client boundary on the react entry.
 // esbuild strips the inner module's "use client" directive during bundling, and
 // tsup's `banner` applies to every chunk (it would wrongly mark the server-safe
 // entries as client). So we prepend the directive to the react entry chunk only,
 // post-build, for both the .js and its .d.ts (Next.js reads it off the .js).
-async function prependUseClient(file: string) {
-  const source = await readFile(file, "utf8");
-  if (source.startsWith(USE_CLIENT)) return;
-  await writeFile(file, `${USE_CLIENT}\n${source}`);
-}
-
 // Self-contained publish build.
 //
 // The wire schemas used to live in a sibling workspace package that was bundled in here
