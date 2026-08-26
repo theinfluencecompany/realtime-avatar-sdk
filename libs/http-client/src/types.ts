@@ -205,6 +205,32 @@ export interface EndCallOptions {
   capacityPool?: string;
 }
 
+/** Immediate acknowledgement that an external-speech frame reached the live room. */
+export interface ExternalSpeechAck {
+  accepted: true;
+  speechId: string;
+  sequence?: number;
+}
+
+/** One already-generated assistant-text frame sent straight to TTS and rendering. */
+export interface ExternalSpeechAppend {
+  speechId: string;
+  sequence: number;
+  text: string;
+  /** Ends this speech after `text`; an empty final frame is a normal end marker. */
+  final?: boolean;
+}
+
+/** Ordered writer for an LLM text stream. Calls are serialized in invocation order. */
+export interface ExternalSpeechStream {
+  readonly sessionId: string;
+  readonly speechId: string;
+  readonly nextSequence: number;
+  write(text: string): Promise<ExternalSpeechAck>;
+  end(text?: string): Promise<ExternalSpeechAck>;
+  cancel(): Promise<ExternalSpeechAck>;
+}
+
 export type AssetKind = "image" | "video" | "audio";
 
 export interface Asset {

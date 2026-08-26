@@ -19,6 +19,9 @@ import type {
   ClipSyncResult,
   CreditBalance,
   EndCallOptions,
+  ExternalSpeechAck,
+  ExternalSpeechAppend,
+  ExternalSpeechStream,
   StartCallResult,
 } from "./types.ts";
 
@@ -190,6 +193,90 @@ export class RealtimeAvatar {
     } catch {
       return false; // a dropped connection here means the timeout ends it — later, not never
     }
+  }
+
+  /**
+   * Append already-generated assistant text to an active call.
+   *
+   * This is authoritative: it goes straight to TTS/rendering and is never rewritten by
+   * the hosted model. Sequence numbers are per speech id, begin at zero, and make retries
+   * idempotent. Sequence zero for a new speech id supersedes current external speech.
+   */
+  async appendExternalSpeech(
+    sessionId: string,
+    input: ExternalSpeechAppend,
+  ): Promise<ExternalSpeechAck> {
+    const data = await this.#json(await this.#request("POST", "/realtime/livekit/session/speech", {
+      json: {
+        action: "append",
+        session_id: sessionId,
+        speech_id: input.speechId,
+        sequence: input.sequence,
+        text: input.text,
+        final: input.final ?? false,
+      },
+    }));
+    return toExternalSpeechAck(data);
+  }
+
+  /** Stop one external speech stream. Repeating a cancel is safe. */
+  async cancelExternalSpeech(sessionId: string, speechId: string): Promise<ExternalSpeechAck> {
+    const data = await this.#json(await this.#request("POST", "/realtime/livekit/session/speech", {
+      json: { action: "cancel", session_id: sessionId, speech_id: speechId },
+    }));
+    return toExternalSpeechAck(data);
+  }
+
+  /**
+   * Create an ordered writer for your model's async text stream.
+   *
+   * ```ts
+   * const speech = rta.createExternalSpeechStream(call.sessionId);
+   * for await (const delta of result.textStream) await speech.write(delta);
+   * await speech.end();
+   * // On interruption: await speech.cancel()
+   * ```
+   */
+  createExternalSpeechStream(
+    sessionId: string,
+    options: { speechId?: string } = {},
+  ): ExternalSpeechStream {
+    const speechId = options.speechId ?? newExternalSpeechId();
+    let sequence = 0;
+    let closed = false;
+    let cancelled = false;
+    let failure: unknown;
+    let tail: Promise<void> = Promise.resolve();
+
+    const enqueue = (text: string, final: boolean): Promise<ExternalSpeechAck> => {
+      if (closed) return Promise.reject(new RealtimeAvatarError("External speech stream is already closed"));
+      if (failure !== undefined) return Promise.reject(failure);
+      if (final) closed = true;
+      const current = sequence++;
+      const result = tail.then(() => {
+        if (cancelled) throw new RealtimeAvatarError("External speech stream was cancelled");
+        if (failure !== undefined) throw failure;
+        return this.appendExternalSpeech(sessionId, { speechId, sequence: current, text, final });
+      });
+      tail = result.then(
+        () => undefined,
+        (error) => { failure = error; },
+      );
+      return result;
+    };
+
+    return {
+      sessionId,
+      speechId,
+      get nextSequence() { return sequence; },
+      write: (text) => enqueue(text, false),
+      end: (text = "") => enqueue(text, true),
+      cancel: async () => {
+        cancelled = true;
+        closed = true;
+        return this.cancelExternalSpeech(sessionId, speechId);
+      },
+    };
   }
 
   // ── avatars ──────────────────────────────────────────────────────────────
@@ -484,6 +571,23 @@ function toAsset(raw: unknown): Asset {
     contentType: typeof a.contentType === "string" ? a.contentType : null,
     sizeBytes: typeof a.sizeBytes === "number" ? a.sizeBytes : null,
   };
+}
+
+function toExternalSpeechAck(raw: unknown): ExternalSpeechAck {
+  const ack = isRecord(raw) ? raw : {};
+  if (ack.accepted !== true || typeof ack.speech_id !== "string") {
+    throw new RealtimeAvatarError("external speech acknowledgement was malformed");
+  }
+  return {
+    accepted: true,
+    speechId: ack.speech_id,
+    ...(typeof ack.sequence === "number" ? { sequence: ack.sequence } : {}),
+  };
+}
+
+function newExternalSpeechId(): string {
+  const random = globalThis.crypto?.randomUUID?.();
+  return random ? `speech-${random}` : `speech-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 

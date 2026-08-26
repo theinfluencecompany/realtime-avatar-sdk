@@ -95,7 +95,7 @@ Two rules fall out of that picture, and they drive everything else:
 
 Most people integrating this in 2026 aren't typing it by hand. So the reference is written
 for the reader that shows up: **[`AGENTS.md`](./AGENTS.md)** is the entire surface in one
-file, plus the twelve rules that are expensive to learn the hard way.
+file, plus the thirteen rules that are expensive to learn the hard way.
 
 ```
 "Add a voice call to my Next.js app using the Realtime Avatar SDK.
@@ -152,6 +152,33 @@ it belongs in.
 
 ---
 
+## Bring your own agent loop
+
+Mint with listening off when your app owns STT, context, tools and model generation. Then
+stream the exact assistant text from your server; it bypasses the hosted model and goes
+straight to speech and avatar rendering:
+
+```ts
+const call = await rta.startCall({ avatarId, listen: false });
+if (isQueued(call)) return call;
+
+const speech = rta.createExternalSpeechStream(call.sessionId);
+for await (const delta of model.textStream) await speech.write(delta);
+await speech.end();
+
+// User barge-in or model cancellation:
+await speech.cancel();
+```
+
+Calls to `write` are serialized in invocation order. The protocol carries a speech id and
+sequence number, so request retries are idempotent; a new speech supersedes the old one.
+Observe `queued`, `playing`, `finished`, `cancelled` and `failed` in the client with
+`observeExternalSpeech(room, onState)` from `realtime-avatar-react/browser`.
+
+Keep these calls on your backend: they use the same API key as `startCall`.
+
+---
+
 ## API
 
 One class, one types file. The full surface is
@@ -161,6 +188,9 @@ One class, one types file. The full surface is
 // calls
 rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, transcript?, metadata? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
+rta.appendExternalSpeech(sessionId, { speechId, sequence, text, final? })
+rta.cancelExternalSpeech(sessionId, speechId)
+rta.createExternalSpeechStream(sessionId, { speechId? })
 
 // avatars
 rta.createAvatarFromVideo({ displayName, videoUrl, voice? })
