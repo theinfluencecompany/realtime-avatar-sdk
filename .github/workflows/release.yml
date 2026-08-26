@@ -169,14 +169,19 @@ jobs:
             fi
             name=$(node -p "require('./libs/$dir/package.json').name")
             version=$(node -p "require('./libs/$dir/package.json').version")
+            # BEFORE the dry-run branch, not after. `--dry-run` still contacts the registry
+            # and still fails with "cannot publish over the previously published versions",
+            # so a dry run of an already-released version reports failure for the one case
+            # the real run handles fine. A dry run has to model what the real run does, and
+            # what it does here is skip.
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "· $name@$version already published — skipping"
+              continue
+            fi
             if [ "$DRY" = "true" ]; then
               echo "::group::dry-run $name@$version"
               ( cd "libs/$dir" && npm publish --dry-run --access public $extra )
               echo "::endgroup::"
-              continue
-            fi
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "· $name@$version already published — skipping"
               continue
             fi
             echo "::group::publish $name@$version"
