@@ -1,8 +1,8 @@
 {
   "name": "@realtime-avatar/internal-browser",
   "private": true,
-  "version": "0.2.1",
-  "description": "Browser audio for Realtime Avatar \u2014 start the microphone, play the character, and say what went wrong. No React, no livekit-client dependency.",
+  "version": "0.3.0",
+  "description": "Browser audio for Realtime Avatar — start the microphone, play the character, and say what went wrong. No React, no livekit-client dependency.",
   "license": "MIT",
   "author": "The Influence Company",
   "homepage": "https://realtimeavatar.ai/docs",
