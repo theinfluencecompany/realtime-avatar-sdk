@@ -14,6 +14,7 @@
     "test": "node --test --experimental-transform-types libs/*/test/*.test.ts",
     "build": "npm run build -w libs/http-client && npm run build -w libs/tools && npm run build -w libs/browser && npm run build -w libs/proxy && npm run build -w libs/mcp && npm run build -w libs/client",
     "check": "npm run typecheck && npm run build && npm test && npm run boundary && npm run messages && npm run surface",
+    "set-version": "node scripts/set-version.mjs",
     "boundary": "node scripts/check-boundary.mjs",
     "surface": "node scripts/check-public-surface.mjs",
     "messages": "node scripts/check-commit-messages.mjs"

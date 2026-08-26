@@ -5,17 +5,17 @@ name: Release realtime-avatar-react
 # The wire schemas live inside this package (src/wire.ts), so the published tarball carries
 # no workspace:* dep and installs standalone — no monorepo needed at the consumer end.
 #
-#   - push to main touching libs/client -> real publish
 #   - workflow_dispatch (dry_run defaults true) -> build + `npm publish --dry-run`
+#   - workflow_dispatch (dry_run false)         -> publish one prerelease on `next`
+#
+# This lane is MANUAL. It used to fire on every push to main touching libs/client, which
+# made "merge a PR" and "publish to npm" the same action — a release is a decision, and a
+# trigger that cannot be declined is not one. Cutting a prerelease is now an explicit run.
 #
 # Versions are unique, NON-committed prereleases (0.0.0-main.<UTC-timestamp>.<sha>);
 # the counter is a UTC timestamp, not github.run_number (which resets per repo and
 # would regress in semver across any future publisher move). Nothing is git-bumped.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "libs/client/**"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -23,9 +23,10 @@ on:
         type: boolean
         default: true
 
-# Never let two main pushes race a double-publish.
+# Shared with release.yml, deliberately. Both files publish libs/client, so separate groups
+# would let a prerelease and a real release double-publish that package concurrently.
 concurrency:
-  group: release-react
+  group: release-all
   cancel-in-progress: false
 
 jobs:
@@ -56,27 +57,41 @@ jobs:
           # `@scope:registry=` line into .npmrc, which would bind a scope nothing uses.
       # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10.
       - run: npm install -g npm@latest
-      - run: npm install
+      # `ci`, not `install` — the prerelease must be built from the committed lockfile.
+      - run: npm ci
       # The wire schemas are src/wire.ts inside libs/client now, so there is no sibling
       # package to build first.
       - run: npm run build -w libs/client
       # Re-scan the built artifact before it leaves the runner. Sourcemaps embed original
       # source via sourcesContent, so a clean source tree can still ship a leaky tarball.
       - run: npm run boundary
-      # Authenticates via OIDC — there is no NPM_TOKEN here, and there should not be. The
-      # trust relationship is configured on npmjs.com against this repo and this filename,
-      # so credentials are short-lived, scoped to this workflow, and cannot be exfiltrated.
-      # Provenance is emitted automatically on an OIDC publish; --provenance is not needed.
+      # Prefers OIDC, which is what this should be steady-state: the trust relationship is
+      # configured on npmjs.com against this repo and this filename, so credentials are
+      # short-lived, scoped to this workflow, and cannot be exfiltrated. NPM_TOKEN is the
+      # bootstrap fallback only — OIDC cannot publish a package's FIRST version, because the
+      # trusted publisher is configured in package settings that do not exist until the name
+      # does. Delete the secret once realtime-avatar-react is configured; see release.yml.
       - name: Publish (or dry-run)
         working-directory: libs/client
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
-            npm publish --dry-run --access public
+          set -euo pipefail
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            # Provenance is opt-in under token auth; OIDC emits it automatically.
+            extra="--provenance"
+            echo "auth: NPM_TOKEN — bootstrap mode"
+          else
+            extra=""
+            echo "auth: OIDC trusted publishing"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm publish --dry-run --access public $extra
           else
             npm pkg set version="0.0.0-main.$(date -u +%Y%m%d%H%M%S).$(git rev-parse --short HEAD)"
             # --tag is REQUIRED: npm refuses to publish a prerelease without an explicit
             # dist-tag, and this version is always a prerelease. Without it the publish
             # fails at argument validation, before it ever authenticates.
             # `next` also keeps these off `latest`, so `npm i` never resolves to a main build.
-            npm publish --access public --tag next
+            npm publish --access public --tag next $extra
           fi
