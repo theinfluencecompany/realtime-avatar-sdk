@@ -21,7 +21,8 @@
       "realtime-avatar": [
         "./libs/http-client/src/index.ts"
       ]
-    }
+    },
+    "baseUrl": "."
   },
   "include": [
     "libs/http-client/src",

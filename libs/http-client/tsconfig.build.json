@@ -9,7 +9,8 @@
       "realtime-avatar": [
         "../client/src/index.ts"
       ]
-    }
+    },
+    "baseUrl": "."
   },
   "include": [
     "src"
