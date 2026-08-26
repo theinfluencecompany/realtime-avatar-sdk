@@ -488,8 +488,8 @@ libs/http-client  realtime-avatar            the server client, zero deps
 libs/proxy        realtime-avatar-proxy      Next.js / Hono / Express adapters
 libs/tools        realtime-avatar-tools      browser tool plane
 libs/browser      realtime-avatar-browser    browser audio: mic + playback
-libs/mcp          realtime-avatar-mcp        MCP server (not published)
-libs/client       realtime-avatar-react      React facade (published)
+libs/mcp          realtime-avatar-mcp        MCP server
+libs/client       realtime-avatar-react      React facade
 apps/quickstart/* the smallest correct integration per stack
 apps/demo/*       showcases — larger, read these second
 ```
@@ -499,8 +499,12 @@ apps/demo/*       showcases — larger, read these second
 > upstream, or it lands twice and diverges.
 
 - `libs/http-client/src/types.ts` is the whole public surface. Read it first.
-- `libs/http-client/src/client.ts` owns the only camelCase → snake_case translation. Never add a
-  second one — that is how a wire drifts.
+- `libs/http-client/src/client.ts` owns the camelCase → snake_case translation. Never add a
+  second one — that is how a wire drifts, and it already has: `libs/client/src/wire.ts` carries a
+  second translator, and the two disagree. Same minimal `startCall({ avatarId })`, opposite bytes:
+  `realtime-avatar` sends `stt_mode: "server"` (client.ts:116), `realtime-avatar-react` sends
+  `stt_mode: "off"` (wire.ts:297,382,412) — so which package an app installs decides whether she
+  hears the user, against rule 4 above. Do not add a third; collapsing these two to one is open work.
 - `libs/proxy` is the shortest correct way to mount a route: `authorize` gates, `session`
   decides. Prefer it over hand-rolling; the hand-rolled version is where policy leaks in.
 - Example apps are standalone — no shared local imports, so one can be copied out and still

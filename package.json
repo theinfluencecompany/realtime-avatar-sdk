@@ -10,7 +10,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p libs/client/tsconfig.json --noEmit",
     "test": "node --test --experimental-transform-types libs/*/test/*.test.ts",
     "build": "npm run build -w libs/http-client && npm run build -w libs/tools && npm run build -w libs/browser && npm run build -w libs/proxy && npm run build -w libs/mcp && npm run build -w libs/client",
     "check": "npm run typecheck && npm run build && npm test && npm run boundary && npm run messages && npm run surface",

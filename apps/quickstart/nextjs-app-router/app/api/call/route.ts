@@ -13,7 +13,9 @@ export async function POST(request: Request): Promise<Response> {
       mode: "voice",
       instructions: "You are Rin. Short, warm, specific sentences. Never mention being an AI.",
       maxSeconds: 120,                     // a forgotten tab cannot run up a bill
-      metadata: { userId: user.id },
+      // `user_id` is the key listSessions({ endUserId }) filters on. `userId` is accepted
+      // by the wire and then matches nothing, so attribution fails silently.
+      metadata: { user_id: user.id },
     });
 
     // Every slot busy. Not an error — the caller shows a position and retries.
