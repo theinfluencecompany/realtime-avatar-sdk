@@ -69,6 +69,121 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/avatars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAvatars"];
+        put?: never;
+        post: operations["createAvatar"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/avatars/{avatarId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAvatar"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteAvatar"];
+        options?: never;
+        head?: never;
+        patch: operations["updateAvatar"];
+        trace?: never;
+    };
+    "/v1/avatars/{avatarId}/clips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAvatarClips"];
+        put?: never;
+        /** @description Prepares and caches clips by URL hash. Idempotent — the serve path only LOADS that cache, so a clip that was never synced silently does nothing on the first call after it is added. */
+        post: operations["syncAvatarClips"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["uploadAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/assets/remote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createRemoteAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/credits/balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description A BALANCE, not a bill. Per-session detail for reconciliation is /v1/usage/sessions. */
+        get: operations["getCreditBalance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/usage/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Per-second billable detail. The window defaults to the trailing 30 days and is CLAMPED to 90 — a wider range is served narrowed, not refused, so read back the returned from/to. */
+        get: operations["listUsageSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -240,7 +355,6 @@ export interface components {
                     renderer?: "editor" | "generative";
                 };
             };
-            capabilities?: ("emotion_director" | "client_tools" | "video_edit_control")[];
             transcript_webhook?: {
                 /** Format: uri */
                 url: string;
@@ -326,6 +440,176 @@ export interface components {
             /** @enum {string} */
             reason?: "page_hide" | "disconnected" | "superseded" | "unmount" | "manual" | "idle_timeout";
             capacity_pool?: string;
+        };
+        Avatar: {
+            id: string;
+            tenantId: string;
+            displayName: string;
+            /** @enum {string} */
+            sourceKind: "image" | "video";
+            /** @enum {string} */
+            modelId: "realtime-avatar-live-v1" | "realtime-avatar-video-v1";
+            sourceAssetId: string | null;
+            /** @enum {string} */
+            status: "draft" | "preprocessing" | "ready" | "failed" | "disabled" | "deleted";
+            error: string | null;
+            /** @enum {string} */
+            idleVideoStatus: "none" | "queued" | "generating" | "ready" | "failed";
+            defaultVoiceId: string | null;
+            llm: {
+                /** @enum {string} */
+                provider: "local" | "gemini" | "openai";
+                model?: string | null;
+            } | null;
+            createdAt: string;
+            updatedAt: string;
+        };
+        CreateAvatarRequest: {
+            displayName: string;
+            /**
+             * @default image
+             * @enum {string}
+             */
+            sourceKind: "image" | "video";
+            /** @enum {string} */
+            modelId?: "realtime-avatar-live-v1" | "realtime-avatar-video-v1";
+            sourceAssetId?: string;
+            motionPrompt?: string;
+            defaultVoiceId?: string;
+            voice?: {
+                auto_description?: string;
+                voice?: {
+                    /** @enum {string} */
+                    provider: "cartesia" | "fish";
+                    voice_id: string;
+                    model?: string;
+                    speed?: number | null;
+                    emotion?: string | null;
+                    language?: string | null;
+                };
+            };
+            llm?: {
+                /** @enum {string} */
+                provider: "local" | "gemini" | "openai";
+                model?: string | null;
+            };
+            /** @default {} */
+            settings: {
+                [key: string]: unknown;
+            };
+            /** @default {} */
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        UpdateAvatarRequest: {
+            displayName?: string;
+            defaultVoiceId?: string | null;
+            llm?: {
+                /** @enum {string} */
+                provider: "local" | "gemini" | "openai";
+                model?: string | null;
+            } | null;
+            /** @enum {string} */
+            llmProvider?: "local" | "gemini" | "openai";
+            llmModel?: string | null;
+            settings?: {
+                [key: string]: unknown;
+            };
+            metadata?: {
+                [key: string]: unknown;
+            };
+            persona?: {
+                name?: string;
+                /** @default  */
+                personality: string;
+                /** @default  */
+                background: string;
+                /** @default short, warm, specific, and spoken */
+                replyStyle: string;
+            };
+            artDirection?: string;
+            /** @enum {string} */
+            stylePreset?: "cinematic-founder" | "editorial-companion" | "warm-anime" | "luxury-realism" | "soft-3d" | "noir-avatar";
+            /** Format: uri */
+            portraitUrl?: string;
+        };
+        Asset: {
+            id: string;
+            tenantId: string;
+            /** @enum {string} */
+            kind: "image" | "video" | "audio";
+            /** @enum {string} */
+            status: "pending_upload" | "uploaded" | "processing" | "ready" | "failed" | "deleted";
+            contentType: string;
+            sizeBytes: number;
+            sha256: string | null;
+            publicUrl: string | null;
+            createdAt: string;
+            updatedAt: string;
+        };
+        CreateRemoteAssetRequest: {
+            /** @enum {string} */
+            kind: "image" | "video" | "audio";
+            /** Format: uri */
+            remoteUrl: string;
+            originalFilename?: string;
+            /** @default {} */
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        CreditBalance: {
+            tenantId: string;
+            balanceCreditMicros: number;
+            reservedCreditMicros: number;
+            availableCreditMicros: number;
+            lifetimeGrantedCreditMicros: number;
+            lifetimeUsedCreditMicros: number;
+            updatedAt: string;
+        };
+        ListUsageSessionsResponse: {
+            data: {
+                sessionId: string;
+                avatarId: string | null;
+                /** @enum {string} */
+                status: "reserved" | "started" | "released" | "failed";
+                startedAt: string | null;
+                endedAt: string | null;
+                activeSeconds: number | null;
+                billedCreditMicros: number | null;
+                /** @default {} */
+                metadata: {
+                    [key: string]: unknown;
+                };
+                createdAt: string;
+            }[];
+            nextCursor: string | null;
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+        };
+        ListAvatarClipsResponse: {
+            data: {
+                clipId: string;
+                /** @enum {string} */
+                role: "idle" | "listen" | "gesture";
+                /** @enum {string} */
+                status: "queued" | "generating" | "ready" | "failed";
+                url: string | null;
+                whenHint: string | null;
+                createdAt: string;
+                updatedAt: string;
+            }[];
+        };
+        SyncAvatarClipsRequest: {
+            clipUrls: string[];
+        };
+        SyncAvatarClipsResponse: {
+            queued: string[];
+            ready: string[];
+            retired: string[];
         };
         OkResponse: {
             ok: boolean;
@@ -436,6 +720,256 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    listAvatars: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Avatars */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Avatar"];
+                };
+            };
+        };
+    };
+    createAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAvatarRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Avatar"];
+                };
+            };
+        };
+    };
+    getAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                avatarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Avatar */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Avatar"];
+                };
+            };
+        };
+    };
+    deleteAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                avatarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+        };
+    };
+    updateAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                avatarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAvatarRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Avatar"];
+                };
+            };
+        };
+    };
+    listAvatarClips: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                avatarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Clips */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListAvatarClipsResponse"];
+                };
+            };
+        };
+    };
+    syncAvatarClips: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                avatarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncAvatarClipsRequest"];
+            };
+        };
+        responses: {
+            /** @description Synced */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncAvatarClipsResponse"];
+                };
+            };
+        };
+    };
+    uploadAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Uploaded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Asset"];
+                };
+            };
+        };
+    };
+    createRemoteAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRemoteAssetRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Asset"];
+                };
+            };
+        };
+    };
+    getCreditBalance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Balance */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditBalance"];
+                };
+            };
+        };
+    };
+    listUsageSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sessions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListUsageSessionsResponse"];
                 };
             };
         };

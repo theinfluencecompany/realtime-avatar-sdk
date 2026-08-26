@@ -19,6 +19,23 @@
  * full duplex cost you the video track. Both modes are full duplex now, so that trade-off
  * is gone. Interruption is not a mode you select — it is how calls work.
  */
+import type { components } from "./generated/openapi.ts";
+
+/**
+ * The wire shapes, from the published contract at https://realtimeavatar.ai/openapi.json.
+ *
+ * The public types below are DERIVED from these rather than declared beside them, so a field
+ * whose type changes upstream changes here too, and a field that disappears fails to compile
+ * instead of going quietly `undefined` at runtime.
+ *
+ * What stays hand-written is the CURATION — which fields surface and what they are called.
+ * That is a product decision the spec cannot make: the platform's `Avatar` carries a tenant
+ * id, a model id and an idle-video status that an integrator has no use for, and `publicUrl`
+ * reads better as `url` at the call site. `Pick` keeps that choice explicit and makes it fail
+ * loudly if the field it names ever goes away.
+ */
+type Wire = components["schemas"];
+
 export type CallMode = "avatar" | "voice";
 
 /** A prior message replayed as memory when the call opens. */
@@ -207,41 +224,38 @@ export interface EndCallOptions {
 
 export type AssetKind = "image" | "video" | "audio";
 
-export interface Asset {
-  id: string;
-  kind: AssetKind;
+export type Asset = Pick<Wire["Asset"], "id" | "kind"> & {
+  /**
+   * The contract declares these REQUIRED and non-nullable. This half of the SDK does no
+   * runtime validation, and client.ts coerces a missing or wrong-typed value to `null` rather
+   * than handing back `undefined` — so the type says `| null` deliberately, widening what the
+   * contract promises rather than deriving it unchanged. A proxy that drops a field, or a
+   * server a version behind, is the case that coercion exists for.
+   */
+  contentType: Wire["Asset"]["contentType"] | null;
+  sizeBytes: Wire["Asset"]["sizeBytes"] | null;
   /**
    * Public, unguessable, range-capable. Feed straight into a state url.
    *
-   * The API calls this field `publicUrl`; it is surfaced as `url` here because that is what
-   * it is used for. Black-box testing caught the mapper reading the wrong name and handing
-   * back `undefined` — hence the regression test.
+   * The contract calls this `publicUrl`; it is surfaced as `url` because that is what it is
+   * used for. Black-box testing caught the mapper reading the wrong name and handing back
+   * `undefined` — hence the regression test. The RENAME is the ergonomics; the type comes
+   * from the contract, so the two cannot drift apart.
    */
-  url: string;
+  url: Wire["Asset"]["publicUrl"];
   /**
    * Open on purpose: this is a response field, and a reader that treats a status it has
    * never heard of as an error breaks the next time one is added. `(string & {})` rather
-   * than a bare `string`, which would absorb the literals and lose the autocomplete.
+   * than a bare `string`, which would absorb the literals and lose the autocomplete — so
+   * this widens what the contract declares rather than deriving it unchanged.
    */
-  status:
-    | "pending_upload"
-    | "uploaded"
-    | "processing"
-    | "ready"
-    | "failed"
-    | "deleted"
-    | (string & {});
-  contentType: string | null;
-  sizeBytes: number | null;
-}
+  status: Wire["Asset"]["status"] | (string & {});
+};
 
-export interface Avatar {
-  id: string;
-  displayName: string;
-  sourceKind: "image" | "video";
-  status: "draft" | "preprocessing" | "ready" | "failed" | "disabled" | "deleted";
-  defaultVoiceId: string | null;
-}
+export type Avatar = Pick<
+  Wire["Avatar"],
+  "id" | "displayName" | "sourceKind" | "status" | "defaultVoiceId"
+>;
 
 /** One billable session — when it ran, how long it was billable for, what it cost. */
 export interface UsageSession {
