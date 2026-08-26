@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { RealtimeAvatar } from "../../http-client/src/index.ts";
-import { toLiveKitSessionWireRequest } from "../src/wire.ts";
+import { liveKitSessionGrantSchema, toLiveKitSessionWireRequest } from "../src/wire.ts";
 // The client comes from dist, not src: src/ uses extensionless imports (Bundler resolution,
 // because tsup builds this package) which node:test cannot resolve. dist is also what a
 // consumer actually gets, and `npm run check` builds before it tests.
@@ -104,4 +104,25 @@ test("browser() threads timeoutMs through — it lists its fields by hand", () =
 
   assert.equal(read(RealtimeAvatarClient.browser({ timeoutMs: 1234 })), 1234, "browser() dropped timeoutMs");
   assert.equal(read(RealtimeAvatarClient.browser()), 60_000, "the default deadline is missing");
+});
+
+test("a grant with fields missing reports them as unknown, not as invented numbers", () => {
+  // The schema used to fill absent timing fields with plausible-looking constants, so a page
+  // counted down from a limit the server never set. `realtime-avatar` reads them as
+  // `Number(grant.x ?? 0)`, and grace-window.ts already branches on `!maxSessionSeconds` —
+  // the fabrication was defeating a guard the consumer already had.
+  const grant = liveKitSessionGrantSchema.parse({
+    session_id: "sess_1",
+    room_name: "room_1",
+    livekit_url: "wss://example.invalid",
+    participant_token: "tok",
+    participant_identity: "user_1",
+    reservation_expires_at: new Date(0).toISOString(),
+  });
+
+  assert.equal(grant.max_session_seconds, 0, "an absent session cap must not be invented");
+  assert.equal(grant.idle_timeout_seconds, 0);
+  assert.equal(grant.join_timeout_seconds, 0);
+  // Rule 4: full duplex is not a setting, so an absent mode must not silence the microphone.
+  assert.equal(grant.stt_mode, "server");
 });

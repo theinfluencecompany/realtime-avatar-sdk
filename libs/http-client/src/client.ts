@@ -1,3 +1,11 @@
+import {
+  MUTATING,
+  RETRYABLE_STATUS,
+  backoffMs,
+  isTransient,
+  newIdempotencyKey,
+  sleep,
+} from "./retry.ts";
 import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
 import type {
   Asset,
@@ -19,17 +27,7 @@ const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
 export const SDK_VERSION = "0.3.0";
 
-/**
- * Transient upstream failures. **429 is deliberately absent.**
- *
- * On the call endpoint a 429 is not a rate limit, it is the QUEUE — `startCall` turns it into
- * `{ queued: true, position }`. Retrying it here would burn the whole backoff budget and then
- * hand back the same queued answer, having destroyed `isQueued()` for the caller.
- */
-const RETRYABLE_STATUS = new Set([408, 500, 502, 503, 504]);
 
-/** Methods that change something, and so carry an idempotency key. */
-const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export interface RealtimeAvatarOptions {
   /** `tic_live_…` or `tic_test_…`. Server-side only — never ship this to a browser. */
@@ -500,33 +498,9 @@ function runtimeTag(): string {
   return "unknown";
 }
 
-function newIdempotencyKey(): string {
-  const c = globalThis.crypto;
-  if (c?.randomUUID) return c.randomUUID();
-  // Older runtimes: uniqueness is all this needs, not unpredictability.
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-}
 
-/**
- * Exponential backoff with FULL jitter — `random(0, 2^n * base)`, not `2^n * base`.
- *
- * Without jitter every client that failed on the same upstream blip retries in the same
- * millisecond and knocks it over again, which is how a brief outage becomes a long one.
- */
-function backoffMs(attempt: number, retryAfter: string | null): number {
-  const server = retryAfter ? Number(retryAfter) * 1000 : NaN;
-  // Honour Retry-After when the server sends one; it knows more than we do.
-  if (Number.isFinite(server) && server >= 0) return Math.min(server, 20_000);
-  return Math.random() * Math.min(500 * 2 ** attempt, 8_000);
-}
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** A dropped connection or a timed-out attempt. A caller's own abort is NOT transient. */
-function isTransient(cause: unknown): boolean {
-  const name = (cause as { name?: string })?.name;
-  return name === "TimeoutError" || name === "TypeError" || name === "FetchError";
-}
 
 /** A stream can only be sent once, so a request carrying one must not be replayed. */
 function isStream(body: BodyInit | undefined): boolean {
