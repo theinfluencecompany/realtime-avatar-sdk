@@ -83,6 +83,15 @@ jobs:
       # The vendored spec must still equal what the platform serves. Non-blocking when the
       # network is unreachable — a fork or an in-flight deploy must not redden someone's PR.
       - run: npm run spec:check
+
+      # Both of these are in `npm run check` too. CI lists steps individually so a failure names
+      # itself in the UI — the cost is that a new gate has to be added in both places, and these
+      # two were added to `check` and missed here.
+      - name: No source file is reachable from nothing
+        run: npm run reachable
+
+      - name: The generated types still match the vendored spec
+        run: npm run spec:verify
       # Cheap, catches the obvious: no credential should ever reach a commit here.
       - name: Scan for leaked credentials
         run: |
