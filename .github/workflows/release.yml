@@ -64,9 +64,13 @@ jobs:
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
+          cache: npm
           # No `scope:` — every package here is unscoped.
-      # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10.
-      - run: npm install -g npm@latest
+      # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10. Pinned to the
+      # major rather than `latest`, which is a moving target on the one lane where a surprise
+      # is unrecoverable: npm's next major could change `publish` and break releases on a day
+      # nothing in this repo changed.
+      - run: npm install -g npm@^11.5.1
       # `ci`, not `install`: a release builds from the committed lockfile. `install` is free
       # to resolve a newer transitive dependency, so the tarball would stop matching the tree
       # CI tested — and an npm version cannot be recalled once that divergence ships.
@@ -75,9 +79,31 @@ jobs:
       - run: npm run build
       # The suite ci.yml runs. A tag is the last moment a broken build is still cheap to fix.
       - run: npm test
+
+      # ci.yml treats a missing denylist as a hard error on push to main, because "the
+      # boundary check would pass without checking anything". This lane had no equivalent and
+      # so ran the scan unarmed: run 32932564689 printed `boundary - 180 file(s) scanned, no
+      # term list configured` on its way to publishing. The weakest of the three scans was the
+      # one guarding the bytes that actually leave for npm, where a mistake cannot be recalled.
+      #
+      # There is no fork case to accommodate here - the job already refuses to run outside the
+      # canonical repo - so a missing secret is a broken release, not a degraded one.
+      #
+      # Never `cat` this file in a step: Actions masks the secret's value, not a line-by-line
+      # dump of it.
+      - name: Materialise the boundary denylist
+        env:
+          BOUNDARY_TERMS: ${{ secrets.BOUNDARY_TERMS }}
+        run: |
+          if [ -z "$BOUNDARY_TERMS" ]; then
+            echo "::error::BOUNDARY_TERMS is missing - refusing to publish behind a boundary check that would scan against an empty list"
+            exit 1
+          fi
+          printf '%s\n' "$BOUNDARY_TERMS" > scripts/boundary-terms.private.txt
+          echo "denylist materialised ($(grep -cvE '^\s*#|^\s*$' scripts/boundary-terms.private.txt) terms)"
+
       # The gate that matters. Scans shipped JS and .d.ts for internal identifiers before
-      # anything leaves the runner. Vacuous without a term list, which is correct for a
-      # fork and is why the armed run also happens at sync time in the private repo.
+      # anything leaves the runner.
       - run: npm run boundary
       # The other half of the boundary, and the half that scales. `boundary` asks whether
       # anything shipped mentions a term we listed; this asks whether every name we export
