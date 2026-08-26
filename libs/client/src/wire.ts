@@ -409,12 +409,12 @@ export const liveKitSessionGrantSchema = z
     participant_token: z.string().min(1),
     participant_identity: z.string().min(1),
     reservation_expires_at: z.string().datetime({ offset: true }),
-    stt_mode: liveKitSttModeSchema.default("off"),
+    stt_mode: liveKitSttModeSchema.default("server"),
     room_created: z.boolean().default(false),
     dispatch_created: z.boolean().default(false),
-    join_timeout_seconds: z.number().int().nonnegative().default(DEFAULT_JOIN_TIMEOUT_SECONDS),
-    idle_timeout_seconds: z.number().int().nonnegative().default(DEFAULT_IDLE_TIMEOUT_SECONDS),
-    max_session_seconds: z.number().int().nonnegative().default(DEFAULT_MAX_SESSION_SECONDS),
+    join_timeout_seconds: z.number().int().nonnegative().default(0),
+    idle_timeout_seconds: z.number().int().nonnegative().default(0),
+    max_session_seconds: z.number().int().nonnegative().default(0),
   })
   .passthrough();
 
