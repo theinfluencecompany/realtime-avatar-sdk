@@ -16,7 +16,12 @@
     "allowImportingTsExtensions": true,
     "types": [
       "node"
-    ]
+    ],
+    "paths": {
+      "realtime-avatar": [
+        "../http-client/src/index.ts"
+      ]
+    }
   },
   "include": [
     "src"
