@@ -2,16 +2,16 @@
 /**
  * Set every publishable workspace to one version, and repoint the internal deps at it.
  *
- * The six libs ship in lockstep — they are one SDK cut at one version, not six packages
+ * All eight workspaces ship in lockstep — they are one SDK cut at one version, not eight packages
  * on their own schedules — and libs/mcp depends on `realtime-avatar` at an
- * EXACT version rather than a range. So a bump is eight edits, of which two are in a
+ * EXACT version rather than a range. So a bump is ten edits, of which two are in a
  * `dependencies` block that nothing about a version bump reminds you to open.
  *
  * Missing one of those two is the failure this exists to prevent, and it is silent in the
  * worst way: the packages still typecheck, still build, and still pass tests, because the
  * workspace link resolves locally regardless of what the manifest says. It only breaks at
  * a consumer, after publish, when `npm i realtime-avatar-proxy` pulls a realtime-avatar
- * that is a version behind. release.yml's tag check catches the six top-level versions;
+ * that is a version behind. release.yml's tag check catches the top-level versions;
  * nothing catches the two pinned deps.
  *
  *   node scripts/set-version.mjs 0.3.0
