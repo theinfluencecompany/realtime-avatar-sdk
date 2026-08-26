@@ -506,9 +506,18 @@ apps/demo/*       showcases — larger, read these second
 The split between server and browser is the ONE boundary worth an npm name, and it is worth it
 for a reason that was measured rather than assumed: webpack 5 with `target: "web"` compiled a
 literal secret key into a 966 KB browser bundle at **exit 0, with no error and no warning**.
-An `exports` condition cannot prevent that — conditions choose WHICH file is bundled, never
-WHETHER the package is. A different name is what makes `import ... from "realtime-avatar"`
-inside a client component look wrong.
+**That last sentence used to say an `exports` condition cannot prevent this, and it was wrong.**
+Measured 2026-08-26 on a fixture: a subpath whose `browser` condition points at a throwing stub
+keeps the server file out of the module graph entirely — the secret appears **0 times** in an
+esbuild `--platform=browser` bundle and 1 time in the `--platform=node` control. A condition does
+decide WHETHER, not just which. Do not use `"browser": null` for this: Vite 8/rolldown ignores it
+and silently bundles the server file WITH the secret, which is worse than no guard. Use a stub
+that throws.
+
+So a different npm name buys a review signal, not a mechanism, and this repo ships neither —
+`libs/sdk-server/package.json` has only `types` and `default` on all six subpaths. The one real
+guard today is the runtime throw in `new RealtimeAvatar()`, which is already stricter than every
+SDK surveyed (fal only `console.warn`s, and its warning is suppressible).
 
 Everything else is a subpath, because tsup treeshakes per entry: `realtime-avatar/server` is
 18.8 KB with no React and no LiveKit in it. Paying for what you do not import is the cost
