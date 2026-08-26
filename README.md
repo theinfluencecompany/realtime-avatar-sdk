@@ -111,13 +111,18 @@ live instead of reading about them.
 
 ## Packages
 
-| Package | Install | What it does |
+Three, and a full-stack app installs two. The split is the credential boundary: one package
+holds your API key, the other never can. Everything else is a subpath, treeshaken per entry.
+
+| Package | Import | What it does |
 | --- | --- | --- |
-| [`libs/http-client`](./libs/http-client) | `realtime-avatar` | The server client. **Zero dependencies.** |
-| [`libs/react`](./libs/client) | `realtime-avatar-react` | React + React Native. `<AvatarCall>` and `useAvatarCall`. |
-| [`libs/proxy`](./libs/proxy) | `realtime-avatar-proxy` | Next.js / Hono / Express adapters that keep your key server-side |
-| [`libs/browser`](./libs/browser) | `realtime-avatar-browser` | Mic and playback, with the six failure modes turned into values |
-| [`libs/tools`](./libs/tools) | `realtime-avatar-tools` | The browser tool plane — your functions, called mid-conversation |
+| [`libs/sdk-server`](./libs/sdk-server) | `realtime-avatar` | The server client. **Zero dependencies.** Holds your key. |
+| | `realtime-avatar/server` | The same client, without the route adapters |
+| | `realtime-avatar/{nextjs,hono,express,tanstack-start}` | Mount a route that keeps the key server-side |
+| [`libs/sdk-react`](./libs/sdk-react) | `realtime-avatar-react` | React bindings. **Never holds a key.** |
+| | `realtime-avatar-react/react-native` | The same, for Expo and React Native |
+| | `realtime-avatar-react/browser` | Mic and playback, with the six failure modes turned into values |
+| | `realtime-avatar-react/tools` | The browser tool plane — your functions, called mid-conversation |
 | [`libs/mcp`](./libs/mcp) | `realtime-avatar-mcp` | MCP server for coding agents |
 
 ---

@@ -131,7 +131,7 @@ mid-`await`, and the rejection becomes an unhandled promise nobody is watching. 
 reported back is one sentence, "the mic won't start", covering causes with different fixes.
 
 ```ts
-import { enableMicrophone, attachRemoteAudio } from "realtime-avatar/browser";
+import { enableMicrophone, attachRemoteAudio } from "realtime-avatar-react/browser";
 
 const audio = attachRemoteAudio(room, {                 // BEFORE connect — see below
   onPlaybackBlocked: (unblock) => { btn.hidden = unblock === null; btn.onclick = () => unblock?.(); },
@@ -597,9 +597,13 @@ npm now refuses a publish unless the account has 2FA **or** the token is a granu
 "bypass 2FA" checked — and a bypass-2FA token is in turn refused for org and account changes
 (that restriction landed 2026-08). With 2FA off, no single token does both jobs.
 
-**Deprecated names.** `realtime-avatar-proxy`, `realtime-avatar-browser` and
-`realtime-avatar-tools` were published on 2026-08-26 and superseded the same day; their code is
-now subpaths. Deprecate rather than unpublish, pointing at the subpath that replaced each.
+**Every name was unpublished on 2026-08-26, and npm will not take it back for 24 hours.**
+`realtime-avatar-proxy`, `-browser` and `-tools` were superseded by subpaths the day they shipped
+and were removed on purpose; `realtime-avatar`, `-react` and `-mcp` came down in the same sweep.
+So the registry currently 404s for all six, and the next release is a FIRST publish again — which
+means `NPM_TOKEN`, not OIDC, because a trusted publisher cannot exist for a name that does not.
+A version number, once unpublished, is burned permanently: 0.2.1 can never be republished, so the
+next release must be 0.3.0 or higher.
 
 ### TypeScript 7 is worth 3x on typecheck, and is blocked on tsup
 

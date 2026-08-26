@@ -25,7 +25,6 @@
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import { RealtimeAvatar, RealtimeAvatarHttpError, isQueued } from "realtime-avatar";
 
 const PORT = Number(process.env.PORT ?? 4199);
@@ -402,10 +401,8 @@ const STRANDS = new Set(["geometry", "trigonometry", "signals"]);
 
 /** Served raw so this example needs no build step. A real app imports the package and bundles it. */
 const require_ = createRequire(import.meta.url);
-const TOOLS_MODULE = require_.resolve("realtime-avatar-tools");
-/* The browser package is several files that import each other by relative path, so the folder is
-   what gets served, not one file — the page imports the entry and the rest follows. */
-const BROWSER_DIR = dirname(require_.resolve("realtime-avatar-browser"));
+const TOOLS_MODULE = require_.resolve("realtime-avatar-react/tools");
+const BROWSER_MODULE = require_.resolve("realtime-avatar-react/browser");
 
 /** Calls THIS process minted, so /api/end can only end its own. */
 const started = new Map();
@@ -589,10 +586,8 @@ const server = createServer(async (req, res) => {
       const js = await readFile(TOOLS_MODULE);
       return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);
     }
-    if (req.method === "GET" && path.startsWith("/sdk/browser/")) {
-      const f = path.slice("/sdk/browser/".length);
-      if (!/^[a-z0-9-]+\.js$/i.test(f)) return void json(res, 404, { error: "not_found" });
-      const js = await readFile(join(BROWSER_DIR, f));
+    if (req.method === "GET" && path === "/sdk/browser.js") {
+      const js = await readFile(BROWSER_MODULE);
       return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);
     }
     if (req.method === "GET" && (path === "/" || path === "/index.html")) {
