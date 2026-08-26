@@ -49,7 +49,6 @@ export {
   type SurfaceLayers,
 } from "../react/avatar-video-surface";
 
-export { RealtimeAvatarProvider, useRealtimeAvatarClient, useRealtimeAvatarContext } from "../react/provider";
 
 // The grant/capacity layer + portable LiveKit re-exports. Web-only pieces are
 // deliberately ABSENT here: RoomAudioRenderer/StartAudio exist for the browser

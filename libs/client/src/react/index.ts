@@ -6,7 +6,6 @@ export {
   type AvatarCallProps,
   type AvatarCallStatus,
 } from "./avatar-call";
-export { RealtimeAvatarProvider, useRealtimeAvatarClient, useRealtimeAvatarContext } from "./provider";
 export {
   AudioTrack,
   ConnectionState,
