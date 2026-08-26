@@ -19,6 +19,23 @@
  * full duplex cost you the video track. Both modes are full duplex now, so that trade-off
  * is gone. Interruption is not a mode you select — it is how calls work.
  */
+import type { components } from "./generated/openapi.ts";
+
+/**
+ * The wire shapes, from the published contract at https://realtimeavatar.ai/openapi.json.
+ *
+ * The public types below are DERIVED from these rather than declared beside them, so a field
+ * whose type changes upstream changes here too, and a field that disappears fails to compile
+ * instead of going quietly `undefined` at runtime.
+ *
+ * What stays hand-written is the CURATION — which fields surface and what they are called.
+ * That is a product decision the spec cannot make: the platform's `Avatar` carries a tenant
+ * id, a model id and an idle-video status that an integrator has no use for, and `publicUrl`
+ * reads better as `url` at the call site. `Pick` keeps that choice explicit and makes it fail
+ * loudly if the field it names ever goes away.
+ */
+type Wire = components["schemas"];
+
 export type CallMode = "avatar" | "voice";
 
 /** A prior message replayed as memory when the call opens. */
@@ -187,13 +204,7 @@ export function isQueued(result: StartCallResult): result is CallQueued {
  * slot identically. `page_hide` is the one a tab-close beacon sends; `manual` is an explicit
  * server-side decision.
  */
-export type EndCallReason =
-  | "page_hide"
-  | "disconnected"
-  | "superseded"
-  | "unmount"
-  | "manual"
-  | "idle_timeout";
+export type EndCallReason = NonNullable<Wire["LiveKitSessionReleaseRequest"]["reason"]>;
 
 export interface EndCallOptions {
   reason?: EndCallReason;
@@ -205,71 +216,70 @@ export interface EndCallOptions {
   capacityPool?: string;
 }
 
-export type AssetKind = "image" | "video" | "audio";
+/** The kinds the contract accepts. Derived, so adding one upstream is not a second edit here. */
+export type AssetKind = Wire["Asset"]["kind"];
 
-export interface Asset {
-  id: string;
-  kind: AssetKind;
+export type Asset = Pick<Wire["Asset"], "id" | "kind"> & {
+  /**
+   * The contract declares these REQUIRED and non-nullable. This half of the SDK does no
+   * runtime validation, and client.ts coerces a missing or wrong-typed value to `null` rather
+   * than handing back `undefined` — so the type says `| null` deliberately, widening what the
+   * contract promises rather than deriving it unchanged. A proxy that drops a field, or a
+   * server a version behind, is the case that coercion exists for.
+   */
+  contentType: Wire["Asset"]["contentType"] | null;
+  sizeBytes: Wire["Asset"]["sizeBytes"] | null;
   /**
    * Public, unguessable, range-capable. Feed straight into a state url.
    *
-   * The API calls this field `publicUrl`; it is surfaced as `url` here because that is what
-   * it is used for. Black-box testing caught the mapper reading the wrong name and handing
-   * back `undefined` — hence the regression test.
+   * The contract calls this `publicUrl`; it is surfaced as `url` because that is what it is
+   * used for. Black-box testing caught the mapper reading the wrong name and handing back
+   * `undefined` — hence the regression test. The RENAME is the ergonomics; the type comes
+   * from the contract, so the two cannot drift apart.
    */
-  url: string;
+  url: Wire["Asset"]["publicUrl"];
   /**
    * Open on purpose: this is a response field, and a reader that treats a status it has
    * never heard of as an error breaks the next time one is added. `(string & {})` rather
-   * than a bare `string`, which would absorb the literals and lose the autocomplete.
+   * than a bare `string`, which would absorb the literals and lose the autocomplete — so
+   * this widens what the contract declares rather than deriving it unchanged.
    */
-  status:
-    | "pending_upload"
-    | "uploaded"
-    | "processing"
-    | "ready"
-    | "failed"
-    | "deleted"
-    | (string & {});
-  contentType: string | null;
-  sizeBytes: number | null;
-}
+  status: Wire["Asset"]["status"] | (string & {});
+};
 
-export interface Avatar {
-  id: string;
-  displayName: string;
-  sourceKind: "image" | "video";
-  status: "draft" | "preprocessing" | "ready" | "failed" | "disabled" | "deleted";
-  defaultVoiceId: string | null;
-}
+export type Avatar = Pick<
+  Wire["Avatar"],
+  "id" | "displayName" | "sourceKind" | "status" | "defaultVoiceId"
+>;
 
-/** One billable session — when it ran, how long it was billable for, what it cost. */
-export interface UsageSession {
-  sessionId: string;
-  avatarId: string | null;
-  status: "reserved" | "started" | "released" | "failed";
-  startedAt: string | null;
-  endedAt: string | null;
-  /** Billable wall time in SECONDS. Null until the session settles. */
-  activeSeconds: number | null;
-  billedCreditMicros: number | null;
-  /**
-   * Whatever you passed as `metadata` to `startCall`. `{}` if you passed nothing — tagging
-   * is optional, and per-session billing works either way.
-   */
-  metadata: Record<string, unknown>;
-  createdAt: string;
-}
+type UsageSessionsResponse = Wire["ListUsageSessionsResponse"];
+
+/**
+ * One billable session — when it ran, how long it was billable for, what it cost.
+ *
+ * `activeSeconds` is billable wall time in SECONDS and is null until the session settles;
+ * `metadata` is whatever you passed to `startCall`, `{}` if you passed nothing. The contract
+ * declares this shape inline inside the page rather than as a named schema, so it is indexed
+ * out of the array rather than picked off a `Wire[...]` key.
+ */
+export type UsageSession = UsageSessionsResponse["data"][number];
 
 export interface UsageSessionPage {
+  /** The contract calls this `data`; it is surfaced under the name of what it holds. */
   sessions: UsageSession[];
   /** Pass as `cursor` for the next page. Null on the last one. */
-  nextCursor: string | null;
+  nextCursor: UsageSessionsResponse["nextCursor"];
   /** The window actually served — the platform clamps wide or inverted ranges. */
-  from: string;
-  to: string;
+  from: UsageSessionsResponse["from"];
+  to: UsageSessionsResponse["to"];
 }
 
+/**
+ * NOT derived, because the published contract declares no query parameters on
+ * `GET /v1/usage/sessions` — the route reads them, the spec does not describe them. This is
+ * the one place in this file where a shape is asserted rather than taken from the contract,
+ * and the fix belongs upstream in the spec export, not here.
+ */
 export interface ListSessionsOptions {
   /** ISO timestamps. Defaults to the trailing 30 days; 90 days is the widest served. */
   from?: string;
@@ -281,17 +291,13 @@ export interface ListSessionsOptions {
   cursor?: string;
 }
 
-export interface CreditBalance {
-  balanceCreditMicros: number;
-  reservedCreditMicros: number;
-}
+export type CreditBalance = Pick<
+  Wire["CreditBalance"],
+  "balanceCreditMicros" | "reservedCreditMicros"
+>;
 
 /** Result of reconciling an avatar's clip set to the cache tier. */
-export interface ClipSyncResult {
-  queued: string[];
-  ready: string[];
-  retired: string[];
-}
+export type ClipSyncResult = Wire["SyncAvatarClipsResponse"];
 
 /** The signed payload delivered to `CallPolicy.transcript.url` after a call ends. */
 export interface TranscriptPayload {

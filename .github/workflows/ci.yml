@@ -80,6 +80,9 @@ jobs:
       # anything shipped mentions a term we listed; this asks whether every name we export
       # is one we meant to export. A new internal export fails by default.
       - run: npm run surface
+      # The vendored spec must still equal what the platform serves. Non-blocking when the
+      # network is unreachable — a fork or an in-flight deploy must not redden someone's PR.
+      - run: npm run spec:check
       # Cheap, catches the obvious: no credential should ever reach a commit here.
       - name: Scan for leaked credentials
         run: |

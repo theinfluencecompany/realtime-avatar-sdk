@@ -10,7 +10,7 @@
  * Missing one of those two is the failure this exists to prevent, and it is silent in the
  * worst way: the packages still typecheck, still build, and still pass tests, because the
  * workspace link resolves locally regardless of what the manifest says. It only breaks at
- * a consumer, after publish, when `npm i realtime-avatar-proxy` pulls a realtime-avatar
+ * a consumer, after publish, when `npm i realtime-avatar-mcp` pulls a realtime-avatar
  * that is a version behind. release.yml's tag check catches the top-level versions;
  * nothing catches the two pinned deps.
  *
@@ -29,7 +29,7 @@ const VERSION_CONSTANTS = [
   ["libs/mcp/src/server.ts", "MCP_VERSION"],
 ];
 
-const LIBS = ["http-client", "browser", "tools", "proxy", "client", "sdk-server", "sdk-react", "mcp"];
+const LIBS = ["http-client", "browser", "tools", "proxy", "client", "sdk-server", "mcp"];
 // The one name other packages pin. Kept as a list so a second such dep is one line.
 const INTERNAL = ["realtime-avatar"];
 

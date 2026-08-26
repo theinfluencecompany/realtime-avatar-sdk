@@ -1,9 +1,21 @@
 name: Release all packages
 
-# Publishes the TWO public packages at the version committed in their package.json:
-# `realtime-avatar` (libs/sdk — everything an app imports, behind subpaths) and
-# `realtime-avatar-mcp` (libs/mcp — a CLI whose consumer is a coding agent, not an app).
-# The other five workspaces are `private`; their code ships bundled inside libs/sdk.
+# Publishes the THREE public packages at the version committed in their package.json:
+# `realtime-avatar` (libs/sdk-server — the whole SDK; the server half at `.`, `/server` and the
+#   route adapters, and the browser half at `/react`, `/react-native`, `/browser`, `/tools`), and
+# `realtime-avatar-mcp` (libs/mcp — a CLI whose consumer is a coding agent, and which is run with
+#   npx rather than installed, so an APP installs exactly one package).
+# The other five workspaces are `private`; their code ships bundled inside the two above.
+#
+# The browser half was its own npm name until 2026-08-26, on the theory that an exports condition
+# could not keep a key out of a client bundle. Measured, that is false — the server subpaths now
+# carry `browser`/`react-native` conditions pointing at a module that throws, which is a build
+# time guarantee the separate name never gave.
+#
+# All three names were unpublished on 2026-08-26, so the next run is a FIRST publish for
+# each — OIDC cannot mint a first version (the trusted publisher lives in package settings
+# that do not exist until the name does), and npm blocks a fully-unpublished name for 24
+# hours. An unpublished VERSION is burned permanently, so 0.2.1 can never be reused.
 #
 # Runs off an annotated `v*` tag, on the `latest` dist-tag. There is no continuous lane:
 # a release is a decision, and a trigger you cannot decline is not one.
@@ -120,7 +132,7 @@ jobs:
             });
             console.log(dirs.sort().join(" "));
           ')
-          actual=$(printf "%s\n" sdk-server sdk-react mcp | sort | tr "\n" " " | sed "s/ $//")
+          actual=$(printf "%s\n" sdk-server mcp | sort | tr "\n" " " | sed "s/ $//")
           if [ "$expected" != "$actual" ]; then
             echo "::error::publish list is [$actual] but the non-private workspaces are [$expected]"
             exit 1
@@ -135,7 +147,7 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
           fail=0
-          for dir in sdk-server sdk-react mcp; do
+          for dir in sdk-server mcp; do
             version=$(node -p "require('./libs/$dir/package.json').version")
             if [ "$version" != "$tag" ]; then
               echo "::error::libs/$dir is $version but the tag says $tag"
@@ -161,7 +173,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          ALL="sdk-server sdk-react mcp"
+          ALL="sdk-server mcp"
 
           if [ -n "$NODE_AUTH_TOKEN" ]; then
             # Token auth: provenance is opt-in, so ask for it. On an OIDC publish npm emits

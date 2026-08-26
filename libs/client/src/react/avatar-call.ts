@@ -20,7 +20,7 @@ import { AvatarVideoSurface, type AvatarVideoFit } from "./avatar-video-surface"
 import { RealtimeAvatarLiveKitRoom } from "./livekit";
 import { SessionLifecycleRoomBridge } from "./session-lifecycle";
 import { useRealtimeSession, type RealtimeSessionApi } from "./use-realtime-session";
-import type { RealtimeAvatarClient } from "../client";
+import type { AvatarSessionClient } from "../session-client";
 
 /**
  * What the app renders a banner for. Deliberately NOT the internal phase union: those arms
@@ -65,7 +65,7 @@ export type AvatarCallHandle = {
 };
 
 export type AvatarCallProps = {
-  client: RealtimeAvatarClient;
+  client: AvatarSessionClient;
   /** Which character. */
   avatarId: string;
   /** `voice` is audio-only and cheaper; `avatar` (default) is the full call. */

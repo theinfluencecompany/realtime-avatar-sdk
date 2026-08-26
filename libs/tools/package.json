@@ -2,7 +2,7 @@
   "name": "@realtime-avatar/internal-tools",
   "private": true,
   "version": "0.3.0",
-  "description": "Browser tool plane for Realtime Avatar — your page's functions, callable by the avatar. No React required.",
+  "description": "Browser tool plane for Realtime Avatar \u2014 your page's functions, callable by the avatar. No React required.",
   "license": "MIT",
   "author": "The Influence Company",
   "homepage": "https://realtimeavatar.ai/docs",
@@ -28,23 +28,8 @@
     "browser"
   ],
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
   "engines": {
     "node": ">=20"
   },
-  "sideEffects": false,
-  "scripts": {
-    "build": "tsc -p tsconfig.build.json"
-  }
+  "sideEffects": false
 }

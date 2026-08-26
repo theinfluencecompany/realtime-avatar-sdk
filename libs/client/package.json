@@ -29,42 +29,11 @@
     "webrtc"
   ],
   "type": "module",
-  "main": "./dist/index.js",
   "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./browser": {
-      "types": "./dist/browser/index.d.ts",
-      "import": "./dist/browser/index.js"
-    },
-    "./server": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
-    },
-    "./react": {
-      "types": "./dist/react/index.d.ts",
-      "import": "./dist/react/index.js"
-    },
-    "./react-native": {
-      "types": "./dist/react-native/index.d.ts",
-      "import": "./dist/react-native/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
   "engines": {
     "node": ">=20"
   },
   "sideEffects": false,
-  "scripts": {
-    "build": "tsup"
-  },
   "peerDependencies": {
     "@livekit/components-react": "^2.9.0",
     "@livekit/react-native": "^2.11.0",
@@ -83,7 +52,6 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-native": "0.81.5",
-    "tsup": "^8.5.0",
     "typescript": "^5.9.2"
   },
   "peerDependenciesMeta": {

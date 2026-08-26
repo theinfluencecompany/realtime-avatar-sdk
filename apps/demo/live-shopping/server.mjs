@@ -35,7 +35,6 @@
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import { RealtimeAvatar, RealtimeAvatarHttpError, isQueued } from "realtime-avatar";
 
 const PORT = Number(process.env.PORT ?? 4197);
@@ -241,10 +240,8 @@ const VOICE_ID = process.env.VOICE_ID ?? "e3cd384158934cc9a01029cd7d278634";
 const VOICE = VOICE_ID ? { provider: "fish", voice_id: VOICE_ID, language: "en" } : undefined;
 
 const require_ = createRequire(import.meta.url);
-const TOOLS_MODULE = require_.resolve("realtime-avatar-tools");
-/* The browser package is several files importing each other by relative path, so the folder is
-   what gets served, not one file — the page imports the entry and the rest follows. */
-const BROWSER_DIR = dirname(require_.resolve("realtime-avatar-browser"));
+const TOOLS_MODULE = require_.resolve("realtime-avatar/tools");
+const BROWSER_MODULE = require_.resolve("realtime-avatar/browser");
 
 /**
  * Calls THIS process started, so `/api/end` can only end its own. The route hears from any
@@ -373,10 +370,8 @@ const server = createServer(async (req, res) => {
       const js = await readFile(TOOLS_MODULE);
       return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);
     }
-    if (req.method === "GET" && path.startsWith("/sdk/browser/")) {
-      const f = path.slice("/sdk/browser/".length);
-      if (!/^[a-z0-9-]+\.js$/i.test(f)) return void json(res, 404, { error: "not_found" });
-      const js = await readFile(join(BROWSER_DIR, f));
+    if (req.method === "GET" && path === "/sdk/browser.js") {
+      const js = await readFile(BROWSER_MODULE);
       return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);
     }
     if (req.method === "GET" && (path === "/" || path === "/index.html")) {

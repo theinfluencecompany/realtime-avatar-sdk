@@ -141,16 +141,6 @@ function finishPendingRelease(token: symbol): void {
 	releaseMicLease(token);
 }
 
-/** The token currently holding the mic lease (or null). Test/introspection only. */
-export function currentMicLeaseHolder(): symbol | null {
-	return holder;
-}
-
-/** The token pending an `ended`-gated release, if any. Test/introspection only. */
-export function pendingMicLeaseRelease(): symbol | null {
-	return pendingEnded;
-}
-
 /** How long the deferred (`ended`-gated) release waits for the track's `ended`
  *  event before handing the lease on anyway. A backstop against a track that
  *  never fires `ended`; comfortably longer than a normal stop (~tens of ms). */
@@ -219,9 +209,3 @@ function timeoutSetter(fn: () => void, ms: number): () => void {
 	return () => clearTimeout(id);
 }
 
-/** Reset all lease state. TEST-ONLY — never call from product code. */
-export function __resetMicLeaseForTest(): void {
-	holder = null;
-	pendingEnded = null;
-	queue.length = 0;
-}

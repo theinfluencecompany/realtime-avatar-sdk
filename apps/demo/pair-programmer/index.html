@@ -290,7 +290,7 @@
       // from the installed packages. In a bundled app both are plain imports of
       // "realtime-avatar-tools" and "-browser".
       import { attachAvatarTools } from "/sdk/tools.js";
-      import { enableMicrophone, attachRemoteAudio } from "/sdk/browser/index.js";
+      import { enableMicrophone, attachRemoteAudio } from "/sdk/browser.js";
 
       const $ = (id) => document.getElementById(id);
       const cap = (t, bad = false) => {

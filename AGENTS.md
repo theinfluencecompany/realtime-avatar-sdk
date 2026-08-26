@@ -484,15 +484,14 @@ npm run check          # typecheck + tests + build, all of it
 Layout follows the fal-js convention — libraries in `libs/`, runnable demos in `apps/`:
 
 ```
-libs/sdk-server   realtime-avatar          ← the SERVER half. Holds your API key.
-                    .  ./server              the client that talks to the platform
-                    ./nextjs ./hono ./express ./tanstack-start   route adapters
-libs/sdk-react    realtime-avatar-react    ← the BROWSER half. Never holds a key.
-                    .                        React bindings
-                    ./react-native ./browser ./tools
-libs/mcp          realtime-avatar-mcp      ← a CLI whose consumer is a coding agent
+libs/sdk-server   realtime-avatar          ← the WHOLE SDK, one install
+                    .  ./server              server client. HOLDS YOUR API KEY
+                    ./nextjs ./hono ./express ./tanstack-start   route adapters. Key-holding
+                    ./react ./react-native   React and Expo bindings. Never hold a key
+                    ./browser ./tools        mic + playback, and the browser tool plane
+libs/mcp          realtime-avatar-mcp      ← a CLI run with npx, never installed by an app
 
-libs/http-client  private   the core libs/sdk-server bundles
+libs/http-client  private   the core the key-holding entries bundle
 libs/client       private   the carried upstream SDK; source of the React bindings
 libs/proxy        private   source of the route-adapter entries
 libs/tools        private   source of ./tools
@@ -502,13 +501,35 @@ apps/quickstart/* the smallest correct integration per stack
 apps/demo/*       showcases — larger, read these second
 ```
 
-**Three published packages, and a full-stack app installs two.** There were six until 2026-08.
-The split between server and browser is the ONE boundary worth an npm name, and it is worth it
-for a reason that was measured rather than assumed: webpack 5 with `target: "web"` compiled a
-literal secret key into a 966 KB browser bundle at **exit 0, with no error and no warning**.
-An `exports` condition cannot prevent that — conditions choose WHICH file is bundled, never
-WHETHER the package is. A different name is what makes `import ... from "realtime-avatar"`
-inside a client component look wrong.
+**One package. An app installs exactly one thing.** There were six until 2026-08, then three, and
+now `realtime-avatar` plus `realtime-avatar-mcp` — and the MCP one is run with `npx`, so no app
+ever installs it.
+
+The credential boundary is real and it is enforced HARDER than before, by a mechanism rather than
+by a name. webpack 5 with `target: "web"` compiled a literal secret key into a 966 KB browser
+bundle at **exit 0, with no error and no warning** — that measurement stands. What was wrong was
+the conclusion drawn from it, that only a separate npm name could prevent it.
+Measured 2026-08-26 on a fixture: a subpath whose `browser` condition points at a throwing stub
+keeps the server file out of the module graph entirely — the secret appears **0 times** in an
+esbuild `--platform=browser` bundle and 1 time in the `--platform=node` control. A condition does
+decide WHETHER, not just which. Do not use `"browser": null` for this: Vite 8/rolldown ignores it
+and silently bundles the server file WITH the secret, which is worse than no guard. Use a stub
+that throws.
+
+A different npm name buys a review signal; a condition buys a build failure. So the six
+key-holding subpaths now carry `browser` and `react-native` conditions pointing at
+`src/server-only-guard.ts`, whose only statement is a `throw`. Measured on the real package: a
+browser bundle importing both halves contains **0** occurrences of `Bearer` or `apiKey`.
+
+**Two traps, both of which silently disarm this.** `"browser": null` looks like the obvious
+spelling and is worse than nothing — webpack errors, but Vite 8/rolldown ignores it and bundles the
+server file WITH the secret. And `"sideEffects": false` lets a bundler treeshake a throw-only
+module away; the guard tested as doing NOTHING until `sideEffects` was narrowed to name it. If you
+touch either field, re-run the bundle-and-grep before believing the guard is armed.
+
+For what it is worth, 0 of 11 SDKs surveyed put a React binding on its own npm name for a
+credential reason — and fal, whose conventions this layout follows, publishes no React binding at
+all and only `console.warn`s about a key in the browser.
 
 Everything else is a subpath, because tsup treeshakes per entry: `realtime-avatar/server` is
 18.8 KB with no React and no LiveKit in it. Paying for what you do not import is the cost
@@ -532,17 +553,22 @@ the wire translator 6 → 0, and the bundles 124.4 KB → 94.3 KB (react) and 11
 > them operational machinery an integrator has no use for, while `libs/http-client` exports
 > five: `RealtimeAvatar`, its two error classes, `isQueued` and `verifyTranscript`.
 >
-> That asymmetry is the shape of the remaining work. The carry is here for one reason, the
-> React and React Native bindings, and it brings a second wire translator, a second HTTP
-> client and a second error hierarchy with it — the seven divergences. Those bindings are
-> coupled to the upstream `RealtimeAvatarClient` (`react/provider.ts` constructs it), so
-> dropping the duplicate means giving them a client to use instead, upstream.
+> **The second HTTP client is gone.** It was here because the React bindings named its class in
+> a prop type; once that prop was widened to a five-method interface, a module-graph walk showed
+> the class — and `index.ts`, `api-keys.ts`, `llm.ts`, `platform.ts`, `proxy-contract.ts`,
+> `schemas.ts` — were reachable from nothing. 1,230 lines deleted. `npm run reachable` is that
+> walk, and it now fails the build if the number goes above zero again.
+>
+> What the carry still brings is the second WIRE translator, `src/wire.ts`, and it stays because
+> the React bindings genuinely use its zod schemas. `libs/client/test/wire-parity.test.ts` is what
+> keeps it honest, and it now drives both translators from SOURCE — it used to import the deleted
+> client from `dist`, which is the only reason that file survived as long as it did.
 
 - `libs/http-client/src/types.ts` is the whole public surface. Read it first.
 - `libs/http-client/src/client.ts` owns the camelCase → snake_case translation. Never add a
   second one — that is how a wire drifts, and it already did. `libs/client/src/wire.ts` carries a
   second translator, and for the same minimal `startCall({ avatarId })` the two sent opposite
-  bytes: `stt_mode: "server"` from `realtime-avatar`, `"off"` from `realtime-avatar-react`. A
+  bytes: `stt_mode: "server"` from `realtime-avatar`, `"off"` from `realtime-avatar/react`. A
   call minted by the React package therefore did not listen — the user talks, she never answers,
   and nothing errors — against rule 4, which says full duplex is not a setting.
   Fixed in 0.3.0 (wire.ts:297,382 now default `"server"`), and `libs/client/test/wire-parity.test.ts`
@@ -597,9 +623,13 @@ npm now refuses a publish unless the account has 2FA **or** the token is a granu
 "bypass 2FA" checked — and a bypass-2FA token is in turn refused for org and account changes
 (that restriction landed 2026-08). With 2FA off, no single token does both jobs.
 
-**Deprecated names.** `realtime-avatar-proxy`, `realtime-avatar-browser` and
-`realtime-avatar-tools` were published on 2026-08-26 and superseded the same day; their code is
-now subpaths. Deprecate rather than unpublish, pointing at the subpath that replaced each.
+**Every name was unpublished on 2026-08-26, and npm will not take it back for 24 hours.**
+`realtime-avatar-proxy`, `-browser` and `-tools` were superseded by subpaths the day they shipped
+and were removed on purpose; `realtime-avatar`, `-react` and `-mcp` came down in the same sweep.
+So the registry currently 404s for all six, and the next release is a FIRST publish again — which
+means `NPM_TOKEN`, not OIDC, because a trusted publisher cannot exist for a name that does not.
+A version number, once unpublished, is burned permanently: 0.2.1 can never be republished, so the
+next release must be 0.3.0 or higher.
 
 ### TypeScript 7 is worth 3x on typecheck, and is blocked on tsup
 

@@ -19,7 +19,6 @@
 import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import { RealtimeAvatar, RealtimeAvatarHttpError, isQueued } from "realtime-avatar";
 
 const PORT = Number(process.env.PORT ?? 4194);
@@ -116,12 +115,12 @@ async function avatarId() {
  *
  * Both are resolved as PACKAGES, not as paths into this repo, so copying this folder out and
  * running `npm i` is all it takes. An app with a bundler has neither route — it imports
- * `realtime-avatar-tools` and `-browser` and lets the bundler do it. They
- * are served raw here only so the example has no build step.
+ * `realtime-avatar/tools` and `/browser` and lets the bundler do it.
+ * They are served raw here only so the example has no build step.
  */
 const require_ = createRequire(import.meta.url);
-const TOOLS_MODULE = require_.resolve("realtime-avatar-tools");
-const BROWSER_DIR = dirname(require_.resolve("realtime-avatar-browser"));
+const TOOLS_MODULE = require_.resolve("realtime-avatar/tools");
+const BROWSER_MODULE = require_.resolve("realtime-avatar/browser");
 
 /**
  * Calls THIS process started, so `/api/end` can only end its own. The route hears from any
@@ -186,10 +185,8 @@ const server = createServer(async (req, res) => {
       const js = await readFile(TOOLS_MODULE);
       return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);
     }
-    if (req.method === "GET" && path.startsWith("/sdk/browser/")) {
-      const f = path.slice("/sdk/browser/".length);
-      if (!/^[a-z0-9-]+\.js$/i.test(f)) return void json(res, 404, { error: "not_found" });
-      const js = await readFile(join(BROWSER_DIR, f));
+    if (req.method === "GET" && path === "/sdk/browser.js") {
+      const js = await readFile(BROWSER_MODULE);
       return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);
     }
 

@@ -1,0 +1,2408 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Realtime Avatar LiveKit API",
+    "version": "1.0.0",
+    "description": "LiveKit-first realtime avatar session, capacity, and AgentWorker lifecycle API."
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "LiveKitSessionRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "avatar_id": {
+            "default": "maria",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "background_id": {
+            "default": "plain_white",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "capacity_pool": {
+            "default": "primary",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "mode": {
+            "default": "avatar",
+            "type": "string",
+            "enum": [
+              "avatar",
+              "voice"
+            ]
+          },
+          "create_room": {
+            "default": true,
+            "type": "boolean"
+          },
+          "dispatch_agent": {
+            "default": true,
+            "type": "boolean"
+          },
+          "instructions": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "initial_context": {
+            "default": [],
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "system",
+                    "user",
+                    "assistant"
+                  ]
+                },
+                "content": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "role",
+                "content"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "initial_say": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "llm": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "backend": {
+                    "type": "string",
+                    "enum": [
+                      "local",
+                      "gemini",
+                      "openai"
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_session_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1800
+          },
+          "participant_identity": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "participant_name": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "character_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "queue_ticket_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "room_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "source_kind": {
+            "default": "source_video",
+            "description": "The realtime source. Creation is image-only — every avatar grows its own PLATFORM-GENERATED looping source video from the uploaded portrait — so this is always \"source_video\".",
+            "type": "string",
+            "enum": [
+              "source_video"
+            ]
+          },
+          "source_video_url": {
+            "description": "Normally omitted: the avatar's platform-generated idle loop is resolved server-side. Overriding it with a custom video URL is a legacy channel for existing integrations — custom video is not part of the public contract.",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stt_mode": {
+            "default": "server",
+            "type": "string",
+            "enum": [
+              "server",
+              "off"
+            ]
+          },
+          "video_cache_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "const": "cartesia"
+                      },
+                      "model": {
+                        "default": "cartesia/sonic-3",
+                        "type": "string",
+                        "enum": [
+                          "cartesia/sonic-2",
+                          "cartesia/sonic-2-latest",
+                          "cartesia/sonic-3",
+                          "cartesia/sonic-3-latest",
+                          "cartesia/sonic-turbo",
+                          "cartesia/sonic-turbo-latest"
+                        ]
+                      },
+                      "voice_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "speed": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0.5,
+                            "maximum": 2
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "emotion": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "language": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 2,
+                            "maxLength": 16
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "voice_id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "const": "breezeblue"
+                      },
+                      "model": {
+                        "default": "bluebell-v1-en",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "voice_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "guidance_scale": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "instructions": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "language": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 2,
+                            "maxLength": 16
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "voice_id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "const": "fish"
+                      },
+                      "model": {
+                        "default": "speech-1.6",
+                        "type": "string",
+                        "enum": [
+                          "speech-1.6",
+                          "s1",
+                          "s2-pro",
+                          "speech-1.5",
+                          "s1-mini"
+                        ]
+                      },
+                      "voice_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "speed": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0.5,
+                            "maximum": 2
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "emotion": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "language": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 2,
+                            "maxLength": 16
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "voice_id"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "voice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clip_library": {
+            "description": "The session's motion-state map. Normally omitted: the avatar's PLATFORM-GENERATED library (idle / listen / gesture clips rendered from the portrait at creation) is injected automatically. An explicit [] opts the call out of clips. Supplying custom clip URLs is a legacy channel for existing integrations — custom video is not part of the public contract.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "clip_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                },
+                "source_video_url": {
+                  "description": "The clip's video URL — for a platform-generated library this is the generated clip's hosted URL, filled in server-side at hydration.",
+                  "type": "string",
+                  "format": "uri"
+                },
+                "video_cache_id": {
+                  "type": "string",
+                  "minLength": 8,
+                  "maxLength": 160
+                },
+                "max_seconds": {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "trigger": {
+                  "type": "string",
+                  "enum": [
+                    "idle",
+                    "listen",
+                    "think",
+                    "directive"
+                  ]
+                },
+                "loop": {
+                  "type": "boolean"
+                },
+                "weight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "crossfade_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000
+                },
+                "trim_start_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2000
+                },
+                "trim_end_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2000
+                },
+                "when": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "hint": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "clip_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "choreography": {
+            "type": "object",
+            "properties": {
+              "idle_dwell_min_seconds": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 60
+              },
+              "idle_dwell_max_seconds": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 120
+              },
+              "special_weight": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "start_grace_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 60
+              },
+              "crossfade_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000
+              },
+              "crossfade_easing": {
+                "type": "string",
+                "enum": [
+                  "linear",
+                  "smooth",
+                  "ease_out"
+                ]
+              },
+              "wrap_crossfade_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000
+              }
+            },
+            "additionalProperties": false
+          },
+          "scene_graph": {
+            "type": "object",
+            "properties": {
+              "scenes": {
+                "minItems": 1,
+                "maxItems": 4,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "scene_id": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,40}$"
+                    },
+                    "hub_clip_id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                    },
+                    "clips": {
+                      "minItems": 1,
+                      "maxItems": 4,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "clip_id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                          },
+                          "source_video_url": {
+                            "description": "The clip's video URL — for a platform-generated library this is the generated clip's hosted URL, filled in server-side at hydration.",
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "video_cache_id": {
+                            "type": "string",
+                            "minLength": 8,
+                            "maxLength": 160
+                          },
+                          "max_seconds": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 10
+                          },
+                          "trigger": {
+                            "type": "string",
+                            "enum": [
+                              "idle",
+                              "listen",
+                              "think",
+                              "directive"
+                            ]
+                          },
+                          "loop": {
+                            "type": "boolean"
+                          },
+                          "weight": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100
+                          },
+                          "crossfade_ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000
+                          },
+                          "trim_start_ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 2000
+                          },
+                          "trim_end_ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 2000
+                          },
+                          "when": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "hint": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "clip_id"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "scene_id",
+                    "hub_clip_id",
+                    "clips"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "transitions": {
+                "minItems": 2,
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "clip_id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                    },
+                    "source_video_url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "from_scene": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,40}$"
+                    },
+                    "to_scene": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9_]{1,40}$"
+                    },
+                    "max_seconds": {
+                      "type": "number",
+                      "minimum": 1,
+                      "maximum": 10
+                    }
+                  },
+                  "required": [
+                    "clip_id",
+                    "source_video_url",
+                    "from_scene",
+                    "to_scene"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "scenes",
+              "transitions"
+            ],
+            "additionalProperties": false
+          },
+          "behavior": {
+            "type": "object",
+            "properties": {
+              "gestures_enabled": {
+                "type": "boolean"
+              },
+              "gesture_freq": {
+                "type": "string",
+                "enum": [
+                  "sparse",
+                  "balanced",
+                  "lively"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "expression_profile": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "render_backend": {
+            "type": "string",
+            "enum": [
+              "warp",
+              "generative"
+            ]
+          },
+          "support_edits": {
+            "type": "object",
+            "properties": {
+              "instruction": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "reference_url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "live_edit": {
+                "description": "EXPERIMENTAL (\"runtime edit\") — let the look follow the conversation mid-call. Less settled than the fixed `instruction` lane: the shape may still change, and the re-dress does not reach every capacity tier yet, so a live session is accepted and runs normally but may hold its opening set for the whole call. Absent means `instruction` is fixed for the session, which is the incumbent behavior.",
+                "type": "object",
+                "properties": {
+                  "rules": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "cooldown_seconds": {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 600
+                  },
+                  "renderer": {
+                    "type": "string",
+                    "enum": [
+                      "editor",
+                      "generative"
+                    ]
+                  }
+                },
+                "required": [
+                  "rules"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "instruction"
+            ],
+            "additionalProperties": false
+          },
+          "transcript_webhook": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "maxLength": 500,
+                "format": "uri"
+              },
+              "secret": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "url",
+              "secret"
+            ],
+            "additionalProperties": false
+          },
+          "extend_secret": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 200
+          },
+          "client_metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 200
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "LiveKitSessionGrant": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "default": "ready",
+            "type": "string",
+            "const": "ready"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "room_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "livekit_url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "participant_token": {
+            "type": "string",
+            "minLength": 1
+          },
+          "participant_identity": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "capacity_pool": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reservation_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "max_sessions_per_gpu": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "stt_mode": {
+            "default": "server",
+            "type": "string",
+            "enum": [
+              "server",
+              "off"
+            ]
+          },
+          "room_created": {
+            "default": false,
+            "type": "boolean"
+          },
+          "dispatch_created": {
+            "default": false,
+            "type": "boolean"
+          },
+          "join_timeout_seconds": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "idle_timeout_seconds": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "max_session_seconds": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "status",
+          "session_id",
+          "room_name",
+          "livekit_url",
+          "participant_token",
+          "participant_identity",
+          "agent_name",
+          "capacity_pool",
+          "reservation_expires_at",
+          "max_sessions_per_gpu",
+          "stt_mode",
+          "room_created",
+          "dispatch_created",
+          "join_timeout_seconds",
+          "idle_timeout_seconds",
+          "max_session_seconds"
+        ],
+        "additionalProperties": false
+      },
+      "LiveKitCapacitySnapshot": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "capacity_pool": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agent_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "max_sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "max_sessions_per_gpu": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "worker_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "active_sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "reserved_sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "observed_worker_active_sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "available_sessions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "queue_size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "admission_open": {
+            "type": "boolean"
+          },
+          "recommended_retry_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "load": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "capacity_pool",
+          "agent_name",
+          "max_sessions",
+          "max_sessions_per_gpu",
+          "worker_count",
+          "active_sessions",
+          "reserved_sessions",
+          "observed_worker_active_sessions",
+          "available_sessions",
+          "queue_size",
+          "admission_open",
+          "recommended_retry_ms",
+          "load"
+        ],
+        "additionalProperties": false
+      },
+      "CapacityBusyResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "capacity": {
+            "type": "object",
+            "properties": {
+              "capacity_pool": {
+                "type": "string",
+                "minLength": 1
+              },
+              "agent_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "max_sessions": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "max_sessions_per_gpu": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "worker_count": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "active_sessions": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reserved_sessions": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "observed_worker_active_sessions": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "available_sessions": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "queue_size": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "admission_open": {
+                "type": "boolean"
+              },
+              "recommended_retry_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "load": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "capacity_pool",
+              "agent_name",
+              "max_sessions",
+              "max_sessions_per_gpu",
+              "worker_count",
+              "active_sessions",
+              "reserved_sessions",
+              "observed_worker_active_sessions",
+              "available_sessions",
+              "queue_size",
+              "admission_open",
+              "recommended_retry_ms",
+              "load"
+            ],
+            "additionalProperties": false
+          },
+          "queue_size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "queue_ticket_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "queue_position": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "recommended_retry_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "message",
+          "capacity",
+          "queue_size",
+          "recommended_retry_ms"
+        ],
+        "additionalProperties": false
+      },
+      "LiveKitSessionReleaseRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "queue_ticket_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "page_hide",
+              "disconnected",
+              "superseded",
+              "unmount",
+              "manual",
+              "idle_timeout"
+            ]
+          },
+          "capacity_pool": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "additionalProperties": false
+      },
+      "Avatar": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 80
+          },
+          "tenantId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 80
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video"
+            ]
+          },
+          "modelId": {
+            "type": "string",
+            "enum": [
+              "realtime-avatar-live-v1",
+              "realtime-avatar-video-v1"
+            ]
+          },
+          "sourceAssetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 8,
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "preprocessing",
+              "ready",
+              "failed",
+              "disabled",
+              "deleted"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "idleVideoStatus": {
+            "type": "string",
+            "enum": [
+              "none",
+              "queued",
+              "generating",
+              "ready",
+              "failed"
+            ]
+          },
+          "defaultVoiceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "llm": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "local",
+                      "gemini",
+                      "openai"
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "displayName",
+          "sourceKind",
+          "modelId",
+          "sourceAssetId",
+          "status",
+          "error",
+          "idleVideoStatus",
+          "defaultVoiceId",
+          "llm",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "CreateAvatarRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "sourceKind": {
+            "default": "image",
+            "type": "string",
+            "enum": [
+              "image",
+              "video"
+            ]
+          },
+          "modelId": {
+            "type": "string",
+            "enum": [
+              "realtime-avatar-live-v1",
+              "realtime-avatar-video-v1"
+            ]
+          },
+          "sourceAssetId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 80
+          },
+          "motionPrompt": {
+            "type": "string",
+            "maxLength": 1200
+          },
+          "defaultVoiceId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 160
+          },
+          "voice": {
+            "type": "object",
+            "properties": {
+              "auto_description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "voice": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "cartesia",
+                      "fish"
+                    ]
+                  },
+                  "voice_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "speed": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0.5,
+                        "maximum": 2
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "emotion": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "language": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 16
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "voice_id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "llm": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "local",
+                  "gemini",
+                  "openai"
+                ]
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider"
+            ],
+            "additionalProperties": false
+          },
+          "settings": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "metadata": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "displayName"
+        ],
+        "additionalProperties": false
+      },
+      "UpdateAvatarRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "defaultVoiceId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 8,
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "llm": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "local",
+                      "gemini",
+                      "openai"
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "llmProvider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "gemini",
+              "openai"
+            ]
+          },
+          "llmModel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settings": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "persona": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "personality": {
+                "default": "",
+                "type": "string",
+                "maxLength": 500
+              },
+              "background": {
+                "default": "",
+                "type": "string",
+                "maxLength": 700
+              },
+              "replyStyle": {
+                "default": "short, warm, specific, and spoken",
+                "type": "string",
+                "maxLength": 400
+              }
+            },
+            "additionalProperties": false
+          },
+          "artDirection": {
+            "type": "string",
+            "maxLength": 1200
+          },
+          "stylePreset": {
+            "type": "string",
+            "enum": [
+              "cinematic-founder",
+              "editorial-companion",
+              "warm-anime",
+              "luxury-realism",
+              "soft-3d",
+              "noir-avatar"
+            ]
+          },
+          "portraitUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Asset": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 80
+          },
+          "tenantId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 80
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_upload",
+              "uploaded",
+              "processing",
+              "ready",
+              "failed",
+              "deleted"
+            ]
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publicUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "kind",
+          "status",
+          "contentType",
+          "sizeBytes",
+          "sha256",
+          "publicUrl",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "CreateRemoteAssetRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ]
+          },
+          "remoteUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "originalFilename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "metadata": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "kind",
+          "remoteUrl"
+        ],
+        "additionalProperties": false
+      },
+      "CreditBalance": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 80
+          },
+          "balanceCreditMicros": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "reservedCreditMicros": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "availableCreditMicros": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lifetimeGrantedCreditMicros": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lifetimeUsedCreditMicros": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenantId",
+          "balanceCreditMicros",
+          "reservedCreditMicros",
+          "availableCreditMicros",
+          "lifetimeGrantedCreditMicros",
+          "lifetimeUsedCreditMicros",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "ListUsageSessionsResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "minLength": 8,
+                  "maxLength": 80
+                },
+                "avatarId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "reserved",
+                    "started",
+                    "released",
+                    "failed"
+                  ]
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "endedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "activeSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "billedCreditMicros": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "metadata": {
+                  "default": {},
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "createdAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sessionId",
+                "avatarId",
+                "status",
+                "startedAt",
+                "endedAt",
+                "activeSeconds",
+                "billedCreditMicros",
+                "metadata",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor",
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "ListAvatarClipsResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "clipId": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "idle",
+                    "listen",
+                    "gesture"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "generating",
+                    "ready",
+                    "failed"
+                  ]
+                },
+                "url": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "whenHint": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "clipId",
+                "role",
+                "status",
+                "url",
+                "whenHint",
+                "createdAt",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "SyncAvatarClipsRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "clipUrls": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "required": [
+          "clipUrls"
+        ],
+        "additionalProperties": false
+      },
+      "SyncAvatarClipsResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "queued": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ready": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retired": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "queued",
+          "ready",
+          "retired"
+        ],
+        "additionalProperties": false
+      },
+      "OkResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/capacity": {
+      "get": {
+        "operationId": "getLiveKitCapacity",
+        "responses": {
+          "200": {
+            "description": "Capacity snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveKitCapacitySnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/realtime/livekit/session": {
+      "post": {
+        "operationId": "createLiveKitSession",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveKitSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "LiveKit session grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveKitSessionGrant"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "No GPU slot available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityBusyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/realtime/livekit/session/release": {
+      "post": {
+        "operationId": "releaseLiveKitClientSession",
+        "description": "Releases a held capacity lease immediately (client beacon on tab-close, terminal disconnect, or a superseded reconnect) so the GPU slot is freed instead of lingering until its TTL. Idempotent.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveKitSessionReleaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Released",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/avatars": {
+      "get": {
+        "operationId": "listAvatars",
+        "responses": {
+          "200": {
+            "description": "Avatars",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Avatar"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAvatar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAvatarRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Avatar"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/avatars/{avatarId}": {
+      "get": {
+        "operationId": "getAvatar",
+        "parameters": [
+          {
+            "name": "avatarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Avatar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Avatar"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateAvatar",
+        "parameters": [
+          {
+            "name": "avatarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAvatarRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Avatar"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAvatar",
+        "parameters": [
+          {
+            "name": "avatarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/avatars/{avatarId}/clips": {
+      "get": {
+        "operationId": "listAvatarClips",
+        "parameters": [
+          {
+            "name": "avatarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Clips",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAvatarClipsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "syncAvatarClips",
+        "description": "Prepares and caches clips by URL hash. Idempotent — the serve path only LOADS that cache, so a clip that was never synced silently does nothing on the first call after it is added.",
+        "parameters": [
+          {
+            "name": "avatarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncAvatarClipsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Synced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncAvatarClipsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/assets": {
+      "post": {
+        "operationId": "uploadAsset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/assets/remote": {
+      "post": {
+        "operationId": "createRemoteAsset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRemoteAssetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/credits/balance": {
+      "get": {
+        "operationId": "getCreditBalance",
+        "description": "A BALANCE, not a bill. Per-session detail for reconciliation is /v1/usage/sessions.",
+        "responses": {
+          "200": {
+            "description": "Balance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditBalance"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/usage/sessions": {
+      "get": {
+        "operationId": "listUsageSessions",
+        "description": "Per-second billable detail. The window defaults to the trailing 30 days and is CLAMPED to 90 — a wider range is served narrowed, not refused, so read back the returned from/to.",
+        "responses": {
+          "200": {
+            "description": "Sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListUsageSessionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

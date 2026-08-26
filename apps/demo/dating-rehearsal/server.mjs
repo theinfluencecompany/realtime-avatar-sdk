@@ -166,11 +166,11 @@ async function runCast(jobId, blob) {
 
 /**
  * Ship the tool plane to the page. Resolved as a PACKAGE, not a path into this repo, so copying this
- * folder out and running `npm i realtime-avatar-tools` is all it takes. In an app with a bundler this
- * route does not exist — you `import { attachAvatarTools } from "realtime-avatar-tools"`. Served raw
+ * folder out and running `npm i realtime-avatar` is all it takes. In an app with a bundler this
+ * route does not exist — you `import { attachAvatarTools } from "realtime-avatar/tools"`. Served raw
  * here only so the example has no build step.
  */
-const TOOLS_MODULE = createRequire(import.meta.url).resolve("realtime-avatar-tools");
+const TOOLS_MODULE = createRequire(import.meta.url).resolve("realtime-avatar/tools");
 
 /**
  * Calls THIS process started, so `/api/end` can only end its own. Relaying an arbitrary id from a
