@@ -766,11 +766,6 @@
             ],
             "additionalProperties": false
           },
-          "extend_secret": {
-            "type": "string",
-            "minLength": 16,
-            "maxLength": 200
-          },
           "client_metadata": {
             "type": "object",
             "propertyNames": {
