@@ -153,8 +153,12 @@ export { createProxyClient, type ProxyClientOptions } from "../proxy-client";
  * So `toLiveKitSessionWireRequest` and `normalizeRealtimeAvatarError` stay unexported. They are
  * how the request becomes bytes and how an error is shaped, which is the SDK's job, not yours.
  */
+// LiveKitSessionRequest comes from livekit-grant, NOT wire — wire.ts declares a type of the
+// SAME NAME that is the zod OUTPUT (defaults applied, `model` required). The one the client
+// actually accepts is the ergonomic generic here. Exporting the wrong one produced a type that
+// imported fine and could not be constructed, which is a worse failure than not exporting it.
+export type { LiveKitSessionRequest } from "../livekit-grant";
 export type {
-  LiveKitSessionRequest,
   LLMProvider,
   LLMSelection,
   VoiceSpec,
