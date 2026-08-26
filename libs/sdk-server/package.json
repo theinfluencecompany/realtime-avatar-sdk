@@ -115,7 +115,8 @@
     "@livekit/react-native": "^2.11.0",
     "react": ">=18",
     "react-dom": ">=18",
-    "react-native": ">=0.78"
+    "react-native": ">=0.78",
+    "livekit-client": "^2.9.0"
   },
   "peerDependenciesMeta": {
     "@livekit/components-react": {
@@ -132,10 +133,12 @@
     },
     "react": {
       "optional": true
+    },
+    "livekit-client": {
+      "optional": true
     }
   },
   "dependencies": {
-    "livekit-client": "^2.9.0",
     "zod": "^4.4.3"
   }
 }
