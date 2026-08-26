@@ -72,7 +72,29 @@ test("a busy pool is passed through as 429 with a position", async () => {
   const res = await handler(connect({ avatarId: "ava_1" }));
   restore();
   assert.equal(res.status, 429);
-  assert.deepEqual(await res.json(), { queued: true, position: 2, retryAfterMs: 4000 });
+  assert.deepEqual(await res.json(), {
+    queued: true,
+    position: 2,
+    size: 0,
+    retryAfterMs: 4000,
+    queue_ticket_id: null,
+  });
+});
+
+test("the queue ticket travels, because it is the only thing that can release a place in line", async () => {
+  // A queued call holds no session id yet, so `POST …/end` cannot free it. Dropping the ticket
+  // here meant a user who closed the tab while waiting kept their slot until it timed out —
+  // invisible, because the page had already gone.
+  const { restore } = upstream({
+    status: 429,
+    body: { queue_position: 3, queue_size: 9, queue_ticket_id: "qt_abc", recommended_retry_ms: 2500 },
+  });
+  const handler = createProxyHandler({ apiKey: "k" });
+  const res = await handler(connect({ avatarId: "ava_1" }));
+  restore();
+  const body = (await res.json()) as Record<string, unknown>;
+  assert.equal(body.queue_ticket_id, "qt_abc", "the queue ticket did not reach the client");
+  assert.equal(body.size, 9);
 });
 
 test("a missing avatarId is a 422, not a call", async () => {

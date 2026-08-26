@@ -238,6 +238,13 @@ export interface CallQueued {
   position: NonNullable<Wire["CapacityBusyResponse"]["queue_position"]> | null;
   size: Wire["CapacityBusyResponse"]["queue_size"];
   retryAfterMs: Wire["CapacityBusyResponse"]["recommended_retry_ms"];
+  /**
+   * The queue's own handle on this attempt. A queued call holds no session id yet, so this is
+   * the ONLY thing that can release the place in line — without it a user who closes the tab
+   * while waiting keeps their slot until it times out. `null` when the platform did not issue
+   * one, which is why it is read rather than assumed.
+   */
+  queueTicketId: NonNullable<Wire["CapacityBusyResponse"]["queue_ticket_id"]> | null;
 }
 
 export type StartCallResult = CallConnection | CallQueued;
