@@ -29,7 +29,7 @@ const VERSION_CONSTANTS = [
   ["libs/mcp/src/server.ts", "MCP_VERSION"],
 ];
 
-const LIBS = ["http-client", "browser", "tools", "proxy", "client", "sdk-server", "sdk-react", "mcp"];
+const LIBS = ["http-client", "browser", "tools", "proxy", "client", "sdk-server", "mcp"];
 // The one name other packages pin. Kept as a list so a second such dep is one line.
 const INTERNAL = ["realtime-avatar"];
 

@@ -2,7 +2,7 @@
  * What the React bindings actually need from a client: mint a call, and give the slot back.
  *
  * They used to demand `RealtimeAvatarClient` itself, and that is why `AvatarCall` could not be
- * used at all. The component is exported at runtime from `realtime-avatar-react` and required
+ * used at all. The component is exported at runtime from `realtime-avatar/react` and required
  * `client: RealtimeAvatarClient` — but that package exports no client constructor, because the
  * class carries an API-key path and keeping it out of the browser is what took `apiKey`/`Bearer`
  * to zero occurrences in the shipped bundles. So the prop named a type no consumer could produce.

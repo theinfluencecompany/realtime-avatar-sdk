@@ -240,8 +240,8 @@ const VOICE_ID = process.env.VOICE_ID ?? "e3cd384158934cc9a01029cd7d278634";
 const VOICE = VOICE_ID ? { provider: "fish", voice_id: VOICE_ID, language: "en" } : undefined;
 
 const require_ = createRequire(import.meta.url);
-const TOOLS_MODULE = require_.resolve("realtime-avatar-react/tools");
-const BROWSER_MODULE = require_.resolve("realtime-avatar-react/browser");
+const TOOLS_MODULE = require_.resolve("realtime-avatar/tools");
+const BROWSER_MODULE = require_.resolve("realtime-avatar/browser");
 
 /**
  * Calls THIS process started, so `/api/end` can only end its own. The route hears from any

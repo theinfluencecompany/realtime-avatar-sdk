@@ -90,8 +90,10 @@ verifyTranscript(rawBytes, headers, secret)
 
 ## Subpaths
 
-The package is one install; tsup treeshakes per entry, so importing an adapter does not
-drag the rest in.
+**One install.** tsup treeshakes per entry, so a server-only app importing `realtime-avatar/server`
+gets 18.8 KB with no React and no LiveKit in it, even though they sit in the same tarball.
+
+Server — these hold your API key:
 
 | Import | What it is |
 | --- | --- |
@@ -102,15 +104,52 @@ drag the rest in.
 | `realtime-avatar/express` | `realtimeAvatarExpress` |
 | `realtime-avatar/tanstack-start` | TanStack Start server route |
 
+Browser — these never can:
+
+| Import | What it is |
+| --- | --- |
+| `realtime-avatar/react` | `AvatarCall`, `useAvatarCall`, `useRealtimeSession`, `useSessionLifecycle` |
+| `realtime-avatar/react-native` | The same surface for Expo / React Native |
+| `realtime-avatar/browser` | `enableMicrophone`, `attachRemoteAudio` — no React |
+| `realtime-avatar/tools` | `attachAvatarTools` — the browser tool plane |
+
 Every adapter takes the same two hooks: `authorize` gates the request, `session` decides the
 call. Policy — `instructions`, `maxSeconds`, `voice`, `video` — is decided in `session`, on
 your server. A route that spreads the request body into `startCall` hands your caller your
 system prompt and your bill.
 
-There is no browser entry here on purpose. The browser half is
-[`realtime-avatar-react`](../sdk-react), a different npm name, because an `exports` condition
-chooses which file is bundled and never whether the package is — and a bundler will inline a
-secret key into a browser bundle at exit 0 with no warning.
+### Importing a server entry into a browser build throws
+
+Not a lint rule and not a naming convention — the six server subpaths carry `browser` and
+`react-native` export conditions pointing at a module whose only statement is a `throw`, so the
+key-holding code never enters a client module graph. Measured: a browser bundle that imports both
+halves contains **0** occurrences of `Bearer` or `apiKey`.
+
+This lived under a second npm name (`realtime-avatar-react`) until 2026-08-26, on the theory that a
+condition "chooses which file is bundled, never whether the package is". That was tested and is
+false. Two things worth knowing if you copy the pattern: do **not** use `"browser": null` — Vite 8
+and rolldown ignore it and bundle the server file *with* the secret — and do not leave
+`"sideEffects": false` in place, which lets a bundler treeshake a throw-only module away and
+silently disarms the whole guard.
+
+## The two subpaths that are not React
+
+`enableMicrophone` returns the cause as a value instead of throwing, because "the mic won't
+start" is one sentence covering six causes with different fixes — and one of them, a macOS
+system denial, cannot be fixed from the address bar and needs the browser restarted.
+`attachRemoteAudio` attaches into the DOM *before* `connect`, which is what stops a track
+arriving mid-connect from being lost on a fast connection.
+
+`attachAvatarTools` runs your functions in the page. Nothing is executed on the platform, and
+a tool has **2.5 seconds** to answer before the call gives up on it and tells her it failed.
+
+## Known rough edge
+
+The default entry re-exports a great deal more than the facade needs — LiveKit symbols
+(`Room`, `RoomEvent`, `Track`, `useRoomContext`) and internal machinery (`acquireMicLease`,
+`stepQualityGovernor`, `retryStep`, `resolveWarnBeforeMs`). That is not a surface to depend
+on and it will narrow. Prefer `AvatarCall` / `useAvatarCall` and the hooks named above.
+
 
 ---
 

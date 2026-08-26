@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-// Against realtime-avatar-react's OWN dist — the bytes a consumer installs, not the carry it is
+// Against the react entry's OWN dist — the bytes a consumer installs, not the carry it is
 // built from. The defect this guards only existed from the consumer side, so only dist can show it.
-import * as pkg from "../dist/index.js";
-import type { AvatarSessionClient } from "../dist/index.js";
+import * as pkg from "../dist/react.js";
+import type { AvatarSessionClient } from "../dist/react.js";
 
 /**
  * `AvatarCall` was exported at runtime and required `client: RealtimeAvatarClient` — a class this

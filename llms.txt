@@ -16,9 +16,9 @@ Runtime: Node >= 20. Zero dependencies. Server-only (it holds the API key).
 - libs/http-client (realtime-avatar): the server client, zero dependencies
 - libs/proxy (realtime-avatar/nextjs, /hono, /express): route adapters
   that keep the API key on the server
-- libs/tools (realtime-avatar-react/tools): browser tool plane — she calls your
+- libs/tools (realtime-avatar/tools): browser tool plane — she calls your
   functions mid-conversation; a call has 2.5s to answer
-- libs/browser (realtime-avatar-react/browser): browser audio — enableMicrophone()
+- libs/browser (realtime-avatar/browser): browser audio — enableMicrophone()
   returns WHY the mic did not start (the macOS system denial is not the browser denial, and the
   address bar cannot fix it), attachRemoteAudio() plays her and surfaces a blocked autoplay.
   No React, no livekit-client dependency
@@ -50,7 +50,7 @@ Demos — larger showcases:
   identical brief, tools and build engine, composited the way `terminal-tutor` composites
   (character full height in her own column, the app on glass in front of her). Kept as a PAIR
   with `coding-companion` on purpose, so the only variable is the layout. It also uses
-  `realtime-avatar-react/browser` for the microphone and remote audio where the
+  `realtime-avatar/browser` for the microphone and remote audio where the
   companion inlines the same logic, which is the shortest side-by-side of what that package is
   for. Its layout facts: a panel may overlap the character only into her mask fade, and the
   vertical stack is measured by `fit()` rather than guessed in CSS — a dock that wraps at

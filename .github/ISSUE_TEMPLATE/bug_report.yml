@@ -17,7 +17,7 @@ body:
       label: Package
       options:
         - "realtime-avatar (server client)"
-        - "realtime-avatar-react"
+        - "realtime-avatar/react"
         - "realtime-avatar-mcp"
         - "An example app under apps/"
         - "Not sure"

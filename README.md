@@ -45,7 +45,7 @@ return call.raw;            // relay to the browser, byte-for-byte
 Join it from your **client**.
 
 ```tsx
-import { AvatarCall } from "realtime-avatar-react";
+import { AvatarCall } from "realtime-avatar/react";
 
 <AvatarCall grant={grant} onEnd={() => router.push("/")} />;
 ```
@@ -111,18 +111,23 @@ live instead of reading about them.
 
 ## Packages
 
-Three, and a full-stack app installs two. The split is the credential boundary: one package
-holds your API key, the other never can. Everything else is a subpath, treeshaken per entry.
+**One.** `npm install realtime-avatar` and you have the server client, the route adapters, the
+React bindings and the browser helpers. Everything is a subpath, treeshaken per entry, so a
+server-only app still ships 18.8 KB with no React and no LiveKit in it.
+
+The credential boundary is enforced by the build, not by the package name: importing a
+key-holding entry into a browser bundle **throws at bundle time**. `realtime-avatar-mcp` is a
+separate name only because it is a CLI you run with `npx` and never install.
 
 | Package | Import | What it does |
 | --- | --- | --- |
-| [`libs/sdk-server`](./libs/sdk-server) | `realtime-avatar` | The server client. **Zero dependencies.** Holds your key. |
+| [`libs/sdk-server`](./libs/sdk-server) | `realtime-avatar` | The whole SDK, one install. `.` and the adapters hold your key. |
 | | `realtime-avatar/server` | The same client, without the route adapters |
 | | `realtime-avatar/{nextjs,hono,express,tanstack-start}` | Mount a route that keeps the key server-side |
-| [`libs/sdk-react`](./libs/sdk-react) | `realtime-avatar-react` | React bindings. **Never holds a key.** |
-| | `realtime-avatar-react/react-native` | The same, for Expo and React Native |
-| | `realtime-avatar-react/browser` | Mic and playback, with the six failure modes turned into values |
-| | `realtime-avatar-react/tools` | The browser tool plane — your functions, called mid-conversation |
+| | `realtime-avatar/react` | React bindings. **Never holds a key.** |
+| | `realtime-avatar/react-native` | The same, for Expo and React Native |
+| | `realtime-avatar/browser` | Mic and playback, with the six failure modes turned into values |
+| | `realtime-avatar/tools` | The browser tool plane — your functions, called mid-conversation |
 | [`libs/mcp`](./libs/mcp) | `realtime-avatar-mcp` | MCP server for coding agents |
 
 ---

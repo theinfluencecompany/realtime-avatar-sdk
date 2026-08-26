@@ -401,8 +401,8 @@ const STRANDS = new Set(["geometry", "trigonometry", "signals"]);
 
 /** Served raw so this example needs no build step. A real app imports the package and bundles it. */
 const require_ = createRequire(import.meta.url);
-const TOOLS_MODULE = require_.resolve("realtime-avatar-react/tools");
-const BROWSER_MODULE = require_.resolve("realtime-avatar-react/browser");
+const TOOLS_MODULE = require_.resolve("realtime-avatar/tools");
+const BROWSER_MODULE = require_.resolve("realtime-avatar/browser");
 
 /** Calls THIS process minted, so /api/end can only end its own. */
 const started = new Map();

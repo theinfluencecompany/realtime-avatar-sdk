@@ -1,7 +1,7 @@
 {
   "name": "realtime-avatar",
   "version": "0.3.0",
-  "description": "Server-side client for Realtime Avatar, with Next.js / Hono / Express / TanStack Start route adapters. Holds your API key; never import it from a browser file.",
+  "description": "Realtime Avatar SDK. `realtime-avatar` and the route adapters hold your API key and are server-only; `realtime-avatar/react`, `/browser` and `/tools` never can — importing a server entry into a browser build throws at bundle time.",
   "license": "MIT",
   "author": "The Influence Company",
   "homepage": "https://realtimeavatar.ai/docs",
@@ -24,7 +24,8 @@
     "livekit",
     "sdk",
     "api-client",
-    "zero-dependency"
+    "react",
+    "react-native"
   ],
   "type": "module",
   "main": "./dist/index.js",
@@ -32,27 +33,55 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "browser": "./dist/server-only-guard.js",
+      "react-native": "./dist/server-only-guard.js",
       "default": "./dist/index.js"
     },
     "./server": {
       "types": "./dist/server.d.ts",
+      "browser": "./dist/server-only-guard.js",
+      "react-native": "./dist/server-only-guard.js",
       "default": "./dist/server.js"
     },
     "./nextjs": {
       "types": "./dist/nextjs.d.ts",
+      "browser": "./dist/server-only-guard.js",
+      "react-native": "./dist/server-only-guard.js",
       "default": "./dist/nextjs.js"
     },
     "./hono": {
       "types": "./dist/hono.d.ts",
+      "browser": "./dist/server-only-guard.js",
+      "react-native": "./dist/server-only-guard.js",
       "default": "./dist/hono.js"
     },
     "./express": {
       "types": "./dist/express.d.ts",
+      "browser": "./dist/server-only-guard.js",
+      "react-native": "./dist/server-only-guard.js",
       "default": "./dist/express.js"
     },
     "./tanstack-start": {
       "types": "./dist/tanstack-start.d.ts",
+      "browser": "./dist/server-only-guard.js",
+      "react-native": "./dist/server-only-guard.js",
       "default": "./dist/tanstack-start.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    },
+    "./react-native": {
+      "types": "./dist/react-native.d.ts",
+      "default": "./dist/react-native.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
+    "./tools": {
+      "types": "./dist/tools.d.ts",
+      "default": "./dist/tools.js"
     }
   },
   "files": [
@@ -62,7 +91,9 @@
   "engines": {
     "node": ">=20"
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/server-only-guard.js"
+  ],
   "publishConfig": {
     "access": "public"
   },
@@ -71,6 +102,44 @@
   },
   "devDependencies": {
     "tsup": "^8.5.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "@livekit/components-react": "2.9.21",
+    "@livekit/react-native": "^2.11.1",
+    "@types/react": "19.2.7",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-native": "0.81.5"
+  },
+  "peerDependencies": {
+    "livekit-client": "^2.9.0",
+    "zod": "^4.4.3",
+    "@livekit/components-react": "^2.9.0",
+    "@livekit/react-native": "^2.11.0",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "react-native": ">=0.78"
+  },
+  "peerDependenciesMeta": {
+    "@livekit/components-react": {
+      "optional": true
+    },
+    "@livekit/react-native": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    },
+    "livekit-client": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   }
 }

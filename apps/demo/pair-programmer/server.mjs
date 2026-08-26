@@ -168,12 +168,12 @@ async function avatarId() {
  *
  * Both are resolved as PACKAGES, not as paths into this repo, so copying this folder out and
  * running `npm i` is all it takes. An app with a bundler has neither route — it imports
- * `realtime-avatar-react/tools` and `/browser` and lets the bundler do it.
+ * `realtime-avatar/tools` and `/browser` and lets the bundler do it.
  * They are served raw here only so the example has no build step.
  */
 const require_ = createRequire(import.meta.url);
-const TOOLS_MODULE = require_.resolve("realtime-avatar-react/tools");
-const BROWSER_MODULE = require_.resolve("realtime-avatar-react/browser");
+const TOOLS_MODULE = require_.resolve("realtime-avatar/tools");
+const BROWSER_MODULE = require_.resolve("realtime-avatar/browser");
 
 /**
  * Calls THIS process started, so `/api/end` can only end its own — and so `/api/publish` can

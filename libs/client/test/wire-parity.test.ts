@@ -11,7 +11,7 @@ import { RealtimeAvatarClient } from "../dist/index.js";
 /**
  * Two packages translate the same call into the same wire, and nothing was checking that they
  * agreed. They did not: for `startCall({ avatarId })`, `realtime-avatar` sent
- * `stt_mode: "server"` and `realtime-avatar-react` sent `"off"` — so whichever package an app
+ * `stt_mode: "server"` and `realtime-avatar/react` sent `"off"` — so whichever package an app
  * installed decided whether the avatar could hear the user, with no error on either side.
  * AGENTS.md rule 4 says full duplex "is not a setting"; one of the two implementations had
  * made it one.
@@ -45,7 +45,7 @@ test("both packages ask the platform to listen, for the same minimal call", asyn
   assert.equal(
     react.stt_mode,
     core.stt_mode,
-    "realtime-avatar-react disagrees with realtime-avatar about whether she listens",
+    "realtime-avatar/react disagrees with realtime-avatar about whether she listens",
   );
 });
 
@@ -88,13 +88,13 @@ test("every wire key present on both sides carries the same value", async () => 
       react[key],
       core[key],
       `wire key '${key}' differs: realtime-avatar sends ${JSON.stringify(core[key])}, ` +
-        `realtime-avatar-react sends ${JSON.stringify(react[key])}`,
+        `realtime-avatar/react sends ${JSON.stringify(react[key])}`,
     );
   }
 });
 
 test("browser() threads timeoutMs through — it lists its fields by hand", () => {
-  // The bug this guards: `realtime-avatar` aborts at a 60s deadline, `realtime-avatar-react`
+  // The bug this guards: `realtime-avatar` aborts at a 60s deadline, `realtime-avatar/react`
   // passed only the caller's signal, so an upstream that never answered left a promise that
   // never settled — a page stuck with no error and a call slot held until the join timeout.
   // Verified separately that the deadline fires (a stalled fetch aborts at ~timeoutMs); what
