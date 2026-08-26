@@ -2,7 +2,7 @@
   "name": "@realtime-avatar/internal-tools",
   "private": true,
   "version": "0.3.0",
-  "description": "Browser tool plane for Realtime Avatar — your page's functions, callable by the avatar. No React required.",
+  "description": "Browser tool plane for Realtime Avatar \u2014 your page's functions, callable by the avatar. No React required.",
   "license": "MIT",
   "author": "The Influence Company",
   "homepage": "https://realtimeavatar.ai/docs",
@@ -37,8 +37,7 @@
     }
   },
   "files": [
-    "dist",
-    "README.md"
+    "dist"
   ],
   "engines": {
     "node": ">=20"

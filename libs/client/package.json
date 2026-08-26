@@ -55,8 +55,7 @@
     }
   },
   "files": [
-    "dist",
-    "README.md"
+    "dist"
   ],
   "engines": {
     "node": ">=20"

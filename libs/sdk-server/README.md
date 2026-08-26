@@ -60,7 +60,9 @@ Two facts follow from that picture and drive everything else:
 ## API
 
 Everything is on one class. The full types are in
-[`libs/client/src/types.ts`](./libs/client/src/types.ts) — one file, no import chasing.
+[`libs/http-client/src/types.ts`](../http-client/src/types.ts) — one file, no import chasing,
+and every shape in it is derived from the published OpenAPI contract rather than declared
+beside it.
 
 ```ts
 // calls
@@ -83,6 +85,32 @@ rta.creditBalance()
 // webhooks
 verifyTranscript(rawBytes, headers, secret)
 ```
+
+---
+
+## Subpaths
+
+The package is one install; tsup treeshakes per entry, so importing an adapter does not
+drag the rest in.
+
+| Import | What it is |
+| --- | --- |
+| `realtime-avatar` | `RealtimeAvatar`, `isQueued`, `verifyTranscript`, the two error classes |
+| `realtime-avatar/server` | The same client with no route adapters — 18.8 KB |
+| `realtime-avatar/nextjs` | `createRealtimeAvatarRoute` — App Router `{ GET, POST }` |
+| `realtime-avatar/hono` | `realtimeAvatarHono` — Hono, Workers, Bun, Deno |
+| `realtime-avatar/express` | `realtimeAvatarExpress` |
+| `realtime-avatar/tanstack-start` | TanStack Start server route |
+
+Every adapter takes the same two hooks: `authorize` gates the request, `session` decides the
+call. Policy — `instructions`, `maxSeconds`, `voice`, `video` — is decided in `session`, on
+your server. A route that spreads the request body into `startCall` hands your caller your
+system prompt and your bill.
+
+There is no browser entry here on purpose. The browser half is
+[`realtime-avatar-react`](../sdk-react), a different npm name, because an `exports` condition
+chooses which file is bundled and never whether the package is — and a bundler will inline a
+secret key into a browser bundle at exit 0 with no warning.
 
 ---
 
