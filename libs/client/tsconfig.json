@@ -9,7 +9,11 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true,
+    // The tests import with .ts extensions because node --experimental-transform-types runs
+    // them directly. Without this the test files cannot be typechecked at all — which is how a
+    // type-level gate in libs/client/test sat inert.
+    "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }
