@@ -19,7 +19,7 @@ import {
   type SendTextOptions,
   type UseLiveKitAvatarGrantInput,
 } from "./livekit";
-import type { RealtimeAvatarClient } from "../client";
+import type { AvatarSessionClient } from "../session-client";
 import type { LiveKitSessionGrant, LiveKitSessionRequest } from "../livekit-grant";
 import {
   RTA_LIFECYCLE_TOPIC,
@@ -472,7 +472,7 @@ export const DEFAULT_IDLE_WARN_LEAD_SECONDS = 20;
 export const DEFAULT_TURN_TIMEOUT_SECONDS = 20;
 
 export type UseSessionLifecycleInput<T extends LLMProvider = LLMProvider> = {
-  client: RealtimeAvatarClient<T>;
+  client: AvatarSessionClient<T>;
   session: LiveKitSessionRequest<T> | null | undefined;
   active?: boolean;
   /**

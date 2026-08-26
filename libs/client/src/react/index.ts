@@ -174,3 +174,10 @@ export {
   type SessionBehavior,
   type SessionClip,
 } from "../wire";
+
+// The contract `AvatarCall` and the hooks ask for. Exported so a consumer can implement it.
+export type {
+  AvatarSessionClient,
+  LiveKitSessionStartResult,
+  RealtimeAvatarRequestOptions,
+} from "../session-client";

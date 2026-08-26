@@ -117,14 +117,11 @@ type RealtimeAvatarClientOptions<
   llm?: LLMCredentialsConfig;
 };
 
-export type RealtimeAvatarRequestOptions = {
-  signal?: AbortSignal;
-  headers?: HeadersInit;
-};
+import type { AvatarSessionClient, LiveKitSessionStartResult, RealtimeAvatarRequestOptions } from "./session-client";
 
-export type LiveKitSessionStartResult =
-  | { status: "ready"; grant: LiveKitSessionGrant }
-  | { status: "busy"; busy: CapacityBusyResponse };
+export type { LiveKitSessionStartResult, RealtimeAvatarRequestOptions } from "./session-client";
+
+
 
 const MAX_MULTIPART_VIDEO_BYTES = 2 * 1024 * 1024;
 const SERVER_ENDPOINTS: RealtimeAvatarEndpointMap = {
@@ -692,3 +689,12 @@ function assertServerClientRuntime(): void {
     "RealtimeAvatarClient.server() can only run in trusted server code. Use RealtimeAvatarClient.browser() in browsers.",
   );
 }
+
+/**
+ * The React bindings ask for {@link SessionReleaseClient}, not for this class. That is what makes
+ * `AvatarCall` usable from a package that cannot construct one. This assertion is the link between
+ * the two: change a release method's signature here and the build fails, rather than the widened
+ * prop silently drifting away from the client everyone actually passes.
+ */
+const _clientSatisfiesSessionContract: AvatarSessionClient = undefined as unknown as RealtimeAvatarClient;
+void _clientSatisfiesSessionContract;

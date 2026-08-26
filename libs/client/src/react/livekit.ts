@@ -23,7 +23,7 @@ import type { ReactElement, ReactNode } from "react";
 import { DisconnectReason, RemoteTrack, Room, Track } from "livekit-client";
 import { confirmMicTrackEnded } from "./mic-single-flight";
 import { RealtimeAvatarCapacityError } from "../errors";
-import type { RealtimeAvatarClient, RealtimeAvatarRequestOptions } from "../client";
+import type { AvatarSessionClient, RealtimeAvatarRequestOptions } from "../session-client";
 import type { LiveKitSessionGrant, LiveKitSessionRequest } from "../livekit-grant";
 import type {
   CapacityBusyResponse,
@@ -349,7 +349,7 @@ export function capacityStateFromGrant(
 export type UseLiveKitAvatarGrantInput<
   TLlmProvider extends LLMProvider = LLMProvider,
 > = {
-  client: RealtimeAvatarClient<TLlmProvider>;
+  client: AvatarSessionClient<TLlmProvider>;
   session: LiveKitSessionRequest<TLlmProvider> | null | undefined;
   active?: boolean;
   autoRetryBusy?: boolean;

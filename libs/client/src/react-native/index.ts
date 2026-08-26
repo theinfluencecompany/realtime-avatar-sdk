@@ -192,3 +192,10 @@ export {
 // both, so the native entry reaches full parity with the web one.
 export { useMicLease } from "../react/mic-single-flight";
 export { useReleaseMicLeaseOnTrackEnded } from "../react/livekit";
+
+// The contract `AvatarCall` and the hooks ask for. Exported so a consumer can implement it.
+export type {
+  AvatarSessionClient,
+  LiveKitSessionStartResult,
+  RealtimeAvatarRequestOptions,
+} from "../session-client";
