@@ -8,9 +8,13 @@
  * to zero occurrences in the shipped bundles. So the prop named a type no consumer could produce.
  *
  * The fix is nominal, not structural: the bindings depend on this INTERFACE instead of on that
- * class. Anything with these five methods satisfies it — the keyless `RealtimeAvatarClient.browser()`,
- * a server-side client, a fake in a test, or a thin fetch wrapper over an app's own proxy routes.
- * The class is no longer named by the React half, so nothing about it is dragged in.
+ * class. Anything with these five methods satisfies it — a fake in a test, or a thin fetch wrapper
+ * over an app's own proxy routes, which is what an integrator writes anyway.
+ *
+ * The carried class itself is GONE as of 2026-08-26. Once nothing named it, a module-graph walk
+ * (`npm run reachable`) showed it and six files with it were reachable from nothing at all: 1,230
+ * lines of a second HTTP client, a second error path and a second key parser, shipping nowhere.
+ * So this interface is now the only client contract in the repo, which is the point.
  *
  * The LLM-provider generic is KEPT. It pairs the client with `session: LiveKitSessionRequest<T>`,
  * so a client built for one provider set still cannot be handed a session requesting another —

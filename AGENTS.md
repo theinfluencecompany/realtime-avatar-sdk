@@ -553,11 +553,16 @@ the wire translator 6 → 0, and the bundles 124.4 KB → 94.3 KB (react) and 11
 > them operational machinery an integrator has no use for, while `libs/http-client` exports
 > five: `RealtimeAvatar`, its two error classes, `isQueued` and `verifyTranscript`.
 >
-> That asymmetry is the shape of the remaining work. The carry is here for one reason, the
-> React and React Native bindings, and it brings a second wire translator, a second HTTP
-> client and a second error hierarchy with it — the seven divergences. Those bindings are
-> coupled to the upstream `RealtimeAvatarClient` (`react/provider.ts` constructs it), so
-> dropping the duplicate means giving them a client to use instead, upstream.
+> **The second HTTP client is gone.** It was here because the React bindings named its class in
+> a prop type; once that prop was widened to a five-method interface, a module-graph walk showed
+> the class — and `index.ts`, `api-keys.ts`, `llm.ts`, `platform.ts`, `proxy-contract.ts`,
+> `schemas.ts` — were reachable from nothing. 1,230 lines deleted. `npm run reachable` is that
+> walk, and it now fails the build if the number goes above zero again.
+>
+> What the carry still brings is the second WIRE translator, `src/wire.ts`, and it stays because
+> the React bindings genuinely use its zod schemas. `libs/client/test/wire-parity.test.ts` is what
+> keeps it honest, and it now drives both translators from SOURCE — it used to import the deleted
+> client from `dist`, which is the only reason that file survived as long as it did.
 
 - `libs/http-client/src/types.ts` is the whole public surface. Read it first.
 - `libs/http-client/src/client.ts` owns the camelCase → snake_case translation. Never add a

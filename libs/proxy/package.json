@@ -29,36 +29,10 @@
     "proxy"
   ],
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./nextjs": {
-      "types": "./dist/nextjs.d.ts",
-      "default": "./dist/nextjs.js"
-    },
-    "./hono": {
-      "types": "./dist/hono.d.ts",
-      "default": "./dist/hono.js"
-    },
-    "./express": {
-      "types": "./dist/express.d.ts",
-      "default": "./dist/express.js"
-    }
-  },
-  "files": [
-    "dist"
-  ],
   "engines": {
     "node": ">=20"
   },
   "sideEffects": false,
-  "scripts": {
-    "build": "tsc -p tsconfig.build.json"
-  },
   "dependencies": {
     "realtime-avatar": "0.3.0"
   }
