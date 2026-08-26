@@ -513,3 +513,45 @@ apps/demo/*       showcases — larger, read these second
 
 When you add a capability, add it to `src/types.ts` and `src/client.ts` **and** to the rules
 above if it has a trap in it. A rule that is only in someone's head is not a rule.
+
+### Releasing
+
+Every release is **manual**. Nothing publishes on a merge — cutting a version is a decision,
+and a trigger you cannot decline is not one.
+
+The six libs ship in lockstep at one version, and `libs/proxy` and `libs/mcp` pin
+`realtime-avatar` at an **exact** version. So bump with the script rather than by hand; it is
+the two pinned deps, not the six `version` fields, that get missed:
+
+```bash
+npm run set-version 0.3.0        # all 6 + the pinned internal deps
+npm install --package-lock-only
+npm run check
+git commit -am "release: 0.3.0"
+git tag -a v0.3.0 -m "0.3.0" && git push origin main v0.3.0   # -> release.yml publishes
+```
+
+Missing a pinned dep is silent locally — the workspace link resolves whatever the manifest
+says, so it typechecks, builds and tests clean, and only breaks at a consumer after publish.
+
+Prefer a dry run first: **Actions → Release all packages → Run workflow**, `dry_run` on
+(the default). `packages:` narrows a run to named workspaces, which is how a new package name
+gets its first version out.
+
+**Auth has two modes, and the second one is temporary.** OIDC trusted publishing is the
+destination — no stored credential, nothing to leak or rotate. But OIDC **cannot publish a
+package's first version**: the trusted publisher lives in package settings on npmjs.com that do
+not exist until the name does. So each name is bootstrapped once with `NPM_TOKEN`, then
+configured on npmjs.com, and the secret is deleted once all six are done. `release.yml` picks
+the mode by whether the secret is present, so that last step is a deletion, not an edit.
+
+| Package | Published | Trusted publisher |
+| --- | --- | --- |
+| `realtime-avatar` | ✅ 0.2.1 | pending |
+| the other five | not yet | pending |
+
+npm now refuses a publish unless the account has 2FA **or** the token is a granular token with
+"bypass 2FA" checked — and a bypass-2FA token is in turn refused for org and account changes
+(that restriction landed 2026-08). With 2FA off, no single token does both jobs. Turning 2FA on
+collapses that split, and it is also what `Require two-factor authentication and disallow
+bypass 2fa tokens` on each package wants.

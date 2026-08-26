@@ -12,6 +12,20 @@ name: Release all packages
 #
 #   git tag -a v0.2.1 -m "0.2.1" && git push origin v0.2.1   -> publish all 6 at 0.2.1
 #   workflow_dispatch (dry_run defaults true)                -> build + pack, publish nothing
+#
+# AUTH, and why there are two modes. Trusted publishing is the destination: npm is
+# restricting 2FA-bypassing tokens (account changes Aug 2026, direct publishing Jan 2027),
+# so a long-lived NPM_TOKEN is on a deadline. But OIDC **cannot publish a package's first
+# version** — the trusted publisher is configured in that package's settings on npmjs.com,
+# and those do not exist until the name does (npm/cli#8544). So:
+#
+#   1. BOOTSTRAP once per package name, with `packages:` naming it and NPM_TOKEN set.
+#   2. Configure the trusted publisher on npmjs.com for that package — this repo, and this
+#      filename, release.yml.
+#   3. Delete NPM_TOKEN. Every later release is OIDC and needs no stored credential.
+#
+# The publish step picks the mode by whether NPM_TOKEN is present, so one file serves both
+# phases and step 3 is a secret deletion rather than an edit.
 on:
   push:
     tags: ["v*"]
@@ -21,8 +35,14 @@ on:
         description: "Build + validate only (no publish)"
         type: boolean
         default: true
+      packages:
+        description: "Workspaces under libs/ to publish, space-separated — or 'all'"
+        type: string
+        default: all
 
 # A tag push and a manual run must never interleave two publishes of the same version.
+# release-react.yml shares this group: it publishes libs/client too, so a prerelease run
+# racing a release run would double-publish that one package.
 concurrency:
   group: release-all
   cancel-in-progress: false
@@ -47,8 +67,14 @@ jobs:
           # No `scope:` — every package here is unscoped.
       # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10.
       - run: npm install -g npm@latest
-      - run: npm install
+      # `ci`, not `install`: a release builds from the committed lockfile. `install` is free
+      # to resolve a newer transitive dependency, so the tarball would stop matching the tree
+      # CI tested — and an npm version cannot be recalled once that divergence ships.
+      - run: npm ci
+      - run: npm run typecheck
       - run: npm run build
+      # The suite ci.yml runs. A tag is the last moment a broken build is still cheap to fix.
+      - run: npm test
       # The gate that matters. Scans shipped JS and .d.ts for internal identifiers before
       # anything leaves the runner. Vacuous without a term list, which is correct for a
       # fork and is why the armed run also happens at sync time in the private repo.
@@ -107,14 +133,45 @@ jobs:
       - name: Publish (or dry-run)
         env:
           DRY: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          SELECTED: ${{ github.event_name == 'workflow_dispatch' && inputs.packages || 'all' }}
+          # setup-node already wrote the .npmrc line that reads this. Empty once every name
+          # has a trusted publisher configured, which is the intended steady state.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          for dir in http-client browser tools proxy mcp client; do
+          ALL="http-client browser tools proxy mcp client"
+
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            # Token auth: provenance is opt-in, so ask for it. On an OIDC publish npm emits
+            # provenance automatically and the flag is redundant rather than harmful.
+            extra="--provenance"
+            echo "auth: NPM_TOKEN — bootstrap mode"
+          else
+            extra=""
+            echo "auth: OIDC trusted publishing"
+          fi
+
+          # A typo'd selection must not quietly publish nothing and report success.
+          if [ "$SELECTED" != "all" ]; then
+            for want in $SELECTED; do
+              case " $ALL " in
+                *" $want "*) ;;
+                *) echo "::error::unknown workspace '$want' — expected some of: $ALL"; exit 1 ;;
+              esac
+            done
+          fi
+
+          # Dependency order, not alphabetical (see above). Filtering the canonical order by
+          # the selection preserves that order however the input happens to be written.
+          for dir in $ALL; do
+            if [ "$SELECTED" != "all" ]; then
+              case " $SELECTED " in *" $dir "*) ;; *) continue ;; esac
+            fi
             name=$(node -p "require('./libs/$dir/package.json').name")
             version=$(node -p "require('./libs/$dir/package.json').version")
             if [ "$DRY" = "true" ]; then
               echo "::group::dry-run $name@$version"
-              ( cd "libs/$dir" && npm publish --dry-run --access public )
+              ( cd "libs/$dir" && npm publish --dry-run --access public $extra )
               echo "::endgroup::"
               continue
             fi
@@ -123,6 +180,6 @@ jobs:
               continue
             fi
             echo "::group::publish $name@$version"
-            ( cd "libs/$dir" && npm publish --access public )
+            ( cd "libs/$dir" && npm publish --access public $extra )
             echo "::endgroup::"
           done
