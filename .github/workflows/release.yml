@@ -64,7 +64,7 @@ jobs:
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
-          cache: npm
+          # No `cache: npm` — measured a net loss on this tree; see ci.yml.
           # No `scope:` — every package here is unscoped.
       # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10. Pinned to the
       # major rather than `latest`, which is a moving target on the one lane where a surprise

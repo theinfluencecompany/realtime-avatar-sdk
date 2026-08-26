@@ -53,7 +53,7 @@ jobs:
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
-          cache: npm
+          # No `cache: npm` — measured a net loss on this tree; see ci.yml.
           # No `scope:` — these packages are unscoped. setup-node's scope only writes a
           # `@scope:registry=` line into .npmrc, which would bind a scope nothing uses.
       # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10. Pinned to the
