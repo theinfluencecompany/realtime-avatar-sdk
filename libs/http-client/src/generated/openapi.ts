@@ -360,7 +360,6 @@ export interface components {
                 url: string;
                 secret: string;
             };
-            extend_secret?: string;
             client_metadata?: {
                 [key: string]: string;
             };
