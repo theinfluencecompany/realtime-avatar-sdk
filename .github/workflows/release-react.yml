@@ -53,15 +53,32 @@ jobs:
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
+          cache: npm
           # No `scope:` — these packages are unscoped. setup-node's scope only writes a
           # `@scope:registry=` line into .npmrc, which would bind a scope nothing uses.
-      # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10.
-      - run: npm install -g npm@latest
+      # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10. Pinned to the
+      # major rather than `latest`, which is a moving target on the one lane where a surprise
+      # is unrecoverable: npm's next major could change `publish` and break releases on a day
+      # nothing in this repo changed.
+      - run: npm install -g npm@^11.5.1
       # `ci`, not `install` — the prerelease must be built from the committed lockfile.
       - run: npm ci
       # The wire schemas are src/wire.ts inside libs/client now, so there is no sibling
       # package to build first.
       - run: npm run build -w libs/client
+      # Same as release.yml: without the denylist this scan reports success having compared
+      # the artifact against nothing. A prerelease still ships real bytes to real consumers.
+      - name: Materialise the boundary denylist
+        env:
+          BOUNDARY_TERMS: ${{ secrets.BOUNDARY_TERMS }}
+        run: |
+          if [ -z "$BOUNDARY_TERMS" ]; then
+            echo "::error::BOUNDARY_TERMS is missing - refusing to publish behind a boundary check that would scan against an empty list"
+            exit 1
+          fi
+          printf '%s\n' "$BOUNDARY_TERMS" > scripts/boundary-terms.private.txt
+          echo "denylist materialised ($(grep -cvE '^\s*#|^\s*$' scripts/boundary-terms.private.txt) terms)"
+
       # Re-scan the built artifact before it leaves the runner. Sourcemaps embed original
       # source via sourcesContent, so a clean source tree can still ship a leaky tarball.
       - run: npm run boundary
