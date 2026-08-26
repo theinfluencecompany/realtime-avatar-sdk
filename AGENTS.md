@@ -520,9 +520,21 @@ bundle `RealtimeAvatarClient`, which carries an `apiKey` field and a `Bearer` he
 file imports it as a `type`. `./browser` and `./tools` are clean (no `apiKey`, no `Bearer`).
 Splitting that class into a browser client and a server client upstream is what closes it.
 
-> **Source of truth:** every `libs/` package is a scrubbed carry from an upstream source, not
-> hand-authored here. An edit to `libs/*/src` will not survive the next sync — take the change
-> upstream, or it lands twice and diverges.
+> **Source of truth — and it is only ONE package.** `libs/client` is a scrubbed carry of the
+> upstream `@theinfluencecompany/realtime-avatar`; an edit to `libs/client/src` will not
+> survive the next sync, so take it upstream too or it lands twice and diverges.
+>
+> `libs/http-client`, `libs/proxy`, `libs/tools` and `libs/browser` are **hand-authored here**
+> and are the public SDK proper — 1,798 lines against the carry's 8,796. The two are easy to
+> tell apart by size of surface: the upstream server entry hands out a dozen names, most of
+> them operational machinery an integrator has no use for, while `libs/http-client` exports
+> five: `RealtimeAvatar`, its two error classes, `isQueued` and `verifyTranscript`.
+>
+> That asymmetry is the shape of the remaining work. The carry is here for one reason, the
+> React and React Native bindings, and it brings a second wire translator, a second HTTP
+> client and a second error hierarchy with it — the seven divergences. Those bindings are
+> coupled to the upstream `RealtimeAvatarClient` (`react/provider.ts` constructs it), so
+> dropping the duplicate means giving them a client to use instead, upstream.
 
 - `libs/http-client/src/types.ts` is the whole public surface. Read it first.
 - `libs/http-client/src/client.ts` owns the camelCase → snake_case translation. Never add a

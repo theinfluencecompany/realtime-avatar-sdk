@@ -70,6 +70,8 @@ export type RealtimeAvatarBrowserOptions = {
   fetch?: FetchLike;
   /** Non-secret provider ids this browser may request. */
   llmProviders?: readonly LLMProvider[];
+  /** Per-request deadline. Default 60s, matching `realtime-avatar`. 0 disables it. */
+  timeoutMs?: number;
 };
 
 export type RealtimeAvatarServerOptions<
@@ -93,6 +95,8 @@ type RealtimeAvatarClientOptions<
   apiPathPrefix?: string;
   fetch?: FetchLike;
   headers?: HeaderFactory;
+  /** Per-request deadline. Default 60s, the same as `realtime-avatar`. 0 disables it. */
+  timeoutMs?: number;
   llmProviders?: readonly TLlmProvider[];
   llm?: LLMCredentialsConfig;
 };
@@ -128,9 +132,26 @@ export class RealtimeAvatarClient<
   private readonly headers?: HeaderFactory;
   private readonly llmProviders: readonly LLMProvider[];
   private readonly llmConfig?: LLMCredentialsConfig;
+  private readonly timeoutMs: number;
+
+
+  /**
+   * The caller's signal, plus this client's deadline. `AbortSignal.any` is the only way to
+   * honour both — a bare `AbortSignal.timeout` would discard a caller's cancellation, and a
+   * bare caller signal is what left requests pending forever.
+   */
+  private deadline(signal?: AbortSignal): AbortSignal | undefined {
+    if (!this.timeoutMs) return signal;
+    const timeout = AbortSignal.timeout(this.timeoutMs);
+    if (!signal) return timeout;
+    return typeof AbortSignal.any === "function" ? AbortSignal.any([signal, timeout]) : signal;
+  }
 
   private constructor(options: RealtimeAvatarClientOptions<TLlmProvider>) {
     this.fetchImpl = options.fetch ?? globalThis.fetch?.bind(globalThis);
+    // Matches realtime-avatar's default. Without one, a stalled upstream leaves a promise
+    // that never settles: the page hangs with no error, no rejection and nothing to render.
+    this.timeoutMs = options.timeoutMs ?? 60_000;
     if (!this.fetchImpl) throw new RealtimeAvatarConfigError("A fetch implementation is required");
     this.baseUrl = normalizeBaseUrl(options.baseUrl ?? "");
     this.apiKey = options.apiKey;
@@ -148,6 +169,7 @@ export class RealtimeAvatarClient<
     const proxyUrl = normalizePathPrefix(options.proxyUrl ?? DEFAULT_BROWSER_PROXY_URL);
     return new RealtimeAvatarClient({
       fetch: options.fetch,
+      timeoutMs: options.timeoutMs,
       endpoints: browserEndpoints(proxyUrl),
       apiPathPrefix: proxyUrl,
       llmProviders: options.llmProviders ?? (["local"] as unknown as TLlmProviders),
@@ -217,7 +239,7 @@ export class RealtimeAvatarClient<
       const response = await this.fetchImpl(this.url(this.requireEndpoint("livekitSessionRelease")), {
         method: "POST",
         headers: await this.releaseHeaders(options.headers),
-        signal: options.signal,
+        signal: this.deadline(options.signal),
         // `keepalive` lets the request OUTLIVE the page so a release fired from a
         // visibilitychange/unmount on the way out still reaches the server.
         keepalive: true,
@@ -277,7 +299,7 @@ export class RealtimeAvatarClient<
       const response = await this.fetchImpl(this.url(this.requireEndpoint("livekitSessionRelease")), {
         method: "POST",
         headers: await this.releaseHeaders(options.headers),
-        signal: options.signal,
+        signal: this.deadline(options.signal),
         // `keepalive` lets the request OUTLIVE the page so a release fired from a
         // visibilitychange/unmount on the way out still reaches the server.
         keepalive: true,
@@ -363,7 +385,7 @@ export class RealtimeAvatarClient<
     const response = await this.fetchImpl(this.url(`${this.requireEndpoint("avatars")}/${encodeURIComponent(avatarId)}`), {
       method: "DELETE",
       headers: await this.buildHeaders(options.headers),
-      signal: options.signal,
+      signal: this.deadline(options.signal),
     });
     if (!response.ok) throw await RealtimeAvatarApiError.fromResponse(response);
   }
@@ -490,7 +512,7 @@ export class RealtimeAvatarClient<
     const response = await this.fetchImpl(this.url(path), {
       method: "GET",
       headers: await this.buildHeaders(options.headers),
-      signal: options.signal,
+      signal: this.deadline(options.signal),
     });
     return this.readJsonResponse<T>(response);
   }
@@ -514,7 +536,7 @@ export class RealtimeAvatarClient<
     const response = await this.fetchImpl(this.url(path), {
       method,
       headers,
-      signal: options.signal,
+      signal: this.deadline(options.signal),
       body: JSON.stringify(body),
     });
     return this.readJsonResponse<T>(response);
@@ -524,7 +546,7 @@ export class RealtimeAvatarClient<
     const response = await this.fetchImpl(this.url(path), {
       method: "POST",
       headers: await this.buildHeaders(options.headers),
-      signal: options.signal,
+      signal: this.deadline(options.signal),
       body,
     });
     return this.readJsonResponse<T>(response);
