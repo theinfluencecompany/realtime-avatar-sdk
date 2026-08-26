@@ -64,6 +64,18 @@ type EndpointName =
 
 type RealtimeAvatarEndpointMap = Record<EndpointName, string>;
 
+// The transport policy lives in ONE place — libs/http-client/src/retry.ts — and both request
+// loops import it. Copying it here is what let retry, the idempotency key and the 429
+// semantics drift apart between the two published packages in the first place.
+import {
+  MUTATING,
+  RETRYABLE_STATUS,
+  backoffMs,
+  isTransient,
+  newIdempotencyKey,
+  sleep,
+} from "../../http-client/src/retry";
+
 export type RealtimeAvatarBrowserOptions = {
   /** Same-origin proxy that mints LiveKit session grants. */
   proxyUrl?: string;
@@ -72,6 +84,8 @@ export type RealtimeAvatarBrowserOptions = {
   llmProviders?: readonly LLMProvider[];
   /** Per-request deadline. Default 60s, matching `realtime-avatar`. 0 disables it. */
   timeoutMs?: number;
+  /** Extra attempts after a transient failure. Default 2, matching `realtime-avatar`. */
+  maxRetries?: number;
 };
 
 export type RealtimeAvatarServerOptions<
@@ -97,6 +111,8 @@ type RealtimeAvatarClientOptions<
   headers?: HeaderFactory;
   /** Per-request deadline. Default 60s, the same as `realtime-avatar`. 0 disables it. */
   timeoutMs?: number;
+  /** Extra attempts after a transient failure. Default 2, matching `realtime-avatar`. */
+  maxRetries?: number;
   llmProviders?: readonly TLlmProvider[];
   llm?: LLMCredentialsConfig;
 };
@@ -133,6 +149,7 @@ export class RealtimeAvatarClient<
   private readonly llmProviders: readonly LLMProvider[];
   private readonly llmConfig?: LLMCredentialsConfig;
   private readonly timeoutMs: number;
+  private readonly maxRetries: number;
 
 
   /**
@@ -152,6 +169,7 @@ export class RealtimeAvatarClient<
     // Matches realtime-avatar's default. Without one, a stalled upstream leaves a promise
     // that never settles: the page hangs with no error, no rejection and nothing to render.
     this.timeoutMs = options.timeoutMs ?? 60_000;
+    this.maxRetries = Math.max(0, options.maxRetries ?? 2);
     if (!this.fetchImpl) throw new RealtimeAvatarConfigError("A fetch implementation is required");
     this.baseUrl = normalizeBaseUrl(options.baseUrl ?? "");
     this.apiKey = options.apiKey;
@@ -170,6 +188,7 @@ export class RealtimeAvatarClient<
     return new RealtimeAvatarClient({
       fetch: options.fetch,
       timeoutMs: options.timeoutMs,
+      maxRetries: options.maxRetries,
       endpoints: browserEndpoints(proxyUrl),
       apiPathPrefix: proxyUrl,
       llmProviders: options.llmProviders ?? (["local"] as unknown as TLlmProviders),
@@ -508,12 +527,45 @@ export class RealtimeAvatarClient<
     return path;
   }
 
+/**
+   * One place every request goes through, so retry, the idempotency key and the deadline
+   * cannot diverge between call sites — which is how they went missing here in the first
+   * place while `realtime-avatar` had all three.
+   *
+   * The key is minted ONCE per logical request and reused on every attempt. That reuse is the
+   * whole point: a fresh key per attempt would let a 503 on a call the platform actually
+   * started bill the caller again on the retry.
+   */
+  private async send(
+    path: string,
+    init: { method: string; headers: Headers; body?: BodyInit },
+    options: RealtimeAvatarRequestOptions,
+  ): Promise<Response> {
+    if (MUTATING.has(init.method) && !init.headers.has("idempotency-key")) {
+      init.headers.set("idempotency-key", newIdempotencyKey());
+    }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const response = await this.fetchImpl(this.url(path), {
+          method: init.method,
+          headers: init.headers,
+          body: init.body,
+          // A fresh deadline per attempt: the budget is per try, not shared across retries.
+          signal: this.deadline(options.signal),
+        });
+        if (attempt >= this.maxRetries || !RETRYABLE_STATUS.has(response.status)) return response;
+        // Discard the body we are not going to read, or the socket can be held open.
+        await response.body?.cancel().catch(() => {});
+        await sleep(backoffMs(attempt, response.headers.get("retry-after")));
+      } catch (cause) {
+        if (attempt >= this.maxRetries || !isTransient(cause)) throw cause;
+        await sleep(backoffMs(attempt, null));
+      }
+    }
+  }
+
   private async getJson<T>(path: string, options: RealtimeAvatarRequestOptions): Promise<T> {
-    const response = await this.fetchImpl(this.url(path), {
-      method: "GET",
-      headers: await this.buildHeaders(options.headers),
-      signal: this.deadline(options.signal),
-    });
+    const response = await this.send(path, { method: "GET", headers: await this.buildHeaders(options.headers) }, options);
     return this.readJsonResponse<T>(response);
   }
 
@@ -533,22 +585,12 @@ export class RealtimeAvatarClient<
   ): Promise<T> {
     const headers = await this.buildHeaders(options.headers);
     headers.set("Content-Type", "application/json");
-    const response = await this.fetchImpl(this.url(path), {
-      method,
-      headers,
-      signal: this.deadline(options.signal),
-      body: JSON.stringify(body),
-    });
+    const response = await this.send(path, { method, headers, body: JSON.stringify(body) }, options);
     return this.readJsonResponse<T>(response);
   }
 
   private async postForm<T>(path: string, body: FormData, options: RealtimeAvatarRequestOptions): Promise<T> {
-    const response = await this.fetchImpl(this.url(path), {
-      method: "POST",
-      headers: await this.buildHeaders(options.headers),
-      signal: this.deadline(options.signal),
-      body,
-    });
+    const response = await this.send(path, { method: "POST", headers: await this.buildHeaders(options.headers), body }, options);
     return this.readJsonResponse<T>(response);
   }
 
