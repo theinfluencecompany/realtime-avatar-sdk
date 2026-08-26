@@ -47,7 +47,11 @@ Join it from your **client**.
 ```tsx
 import { AvatarCall } from "realtime-avatar/react";
 
-<AvatarCall grant={grant} onEnd={() => router.push("/")} />;
+<AvatarCall
+  client={client}                       // anything with the five AvatarSessionClient methods
+  avatarId="ava_…"
+  onEnded={({ reason }) => router.push("/")}
+/>;
 ```
 
 That's the whole integration. Two halves, one payload between them.
@@ -118,6 +122,11 @@ server-only app still ships 18.8 KB with no React and no LiveKit in it.
 The credential boundary is enforced by the build, not by the package name: importing a
 key-holding entry into a browser bundle **throws at bundle time**. `realtime-avatar-mcp` is a
 separate name only because it is a CLI you run with `npx` and never install.
+
+Two runtime dependencies come with it — `livekit-client` and `zod` — because `/react` and
+`/react-native` import them. Nothing else does: `.`, `/server`, `/browser` and `/tools` have **zero**
+external imports, so a server-only app downloads those two and bundles neither. React itself and
+the `@livekit/*` framework packages stay optional peers; install the one for your platform.
 
 | Package | Import | What it does |
 | --- | --- | --- |

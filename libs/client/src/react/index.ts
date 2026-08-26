@@ -132,3 +132,8 @@ export type {
   LiveKitSessionStartResult,
   RealtimeAvatarRequestOptions,
 } from "../session-client";
+
+// `capacityErrorFromBusy` is exported below and RETURNS this, so withholding the class left a
+// value a consumer could receive, could not name, and could not `instanceof`. One or the other
+// had to go; the mapper is the useful half for building a queue UI, so the class comes with it.
+export { RealtimeAvatarCapacityError } from "../errors";
