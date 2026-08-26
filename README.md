@@ -123,10 +123,17 @@ The credential boundary is enforced by the build, not by the package name: impor
 key-holding entry into a browser bundle **throws at bundle time**. `realtime-avatar-mcp` is a
 separate name only because it is a CLI you run with `npx` and never install.
 
-Two runtime dependencies come with it — `livekit-client` and `zod` — because `/react` and
-`/react-native` import them. Nothing else does: `.`, `/server`, `/browser` and `/tools` have **zero**
-external imports, so a server-only app downloads those two and bundles neither. React itself and
-the `@livekit/*` framework packages stay optional peers; install the one for your platform.
+**A server-only app pays for nothing it does not import.** `.`, `/server`, the route adapters,
+`/browser` and `/tools` have **zero** external imports — `npm run externals` prints that per entry
+and fails the build if it stops being true.
+
+One runtime dependency comes along: `zod` (4.3 MB), which `/react` and `/react-native` need for
+runtime validation. It is deliberately **not** bundled — inlining it costs every React app **+64 KB
+gzipped** in shipped bytes (15 KB → 79 KB gzip, measured), and shipped bytes are what your users
+feel, while `node_modules` is what a developer feels once. `livekit-client` (11.7 MB) is **not**
+declared here at all: `@livekit/components-react` and `@livekit/react-native` both peer-depend on
+it, so the consumers who need it get it and nobody else does. React and the `@livekit/*` packages
+are optional peers — install the one for your platform.
 
 | Package | Import | What it does |
 | --- | --- | --- |
