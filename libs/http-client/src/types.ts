@@ -5,20 +5,34 @@
  *
  * Naming is camelCase throughout. The HTTP wire is snake_case and strict — that translation
  * happens once, inside `client.ts`, and nowhere else.
+ *
+ * ── WHERE A TYPE COMES FROM ────────────────────────────────────────────────────────────
+ *
+ *   zod schemas on the platform  (a different repo — the origin, not editable here)
+ *     -> https://realtimeavatar.ai/openapi.json          the published contract
+ *     -> spec/realtime-avatar.openapi.json               vendored, so a build needs no network
+ *     -> src/generated/openapi.ts                        `npm run spec` regenerates; never hand-edit
+ *     -> THIS FILE                                       curated, camelCased, derived
+ *
+ * `npm run spec:check` reports drift between the vendored copy and the live one, and exits 0
+ * offline so a fork or an air-gapped runner does not go red for it.
+ *
+ * THREE types here are NOT derived, and each has a reason rather than an oversight:
+ *
+ *   ListSessionsOptions   the contract declares NO query parameters on GET /v1/usage/sessions.
+ *                         The route reads them; the spec does not describe them. Fixing that
+ *                         belongs upstream in the spec export, not here.
+ *   TranscriptPayload     the transcript webhook body is not in the published contract at all.
+ *                         Same upstream gap, bigger: nothing describes this shape publicly.
+ *   VideoPolicy and its   deliberately NOT one-to-one with the wire. `{ loop, states, edits }`
+ *   VideoState/VideoEdits is an SDK-designed surface over `clip_library`, `support_edits` and
+ *                         `render_backend`. Deriving it would leak three wire concepts into one
+ *                         product decision and make the ergonomics hostage to the transport.
+ *
+ * Everything else indexes into the contract, so `npm run check` is what catches a divergence.
+ * Verified by mutation: renaming `participant_token` in the generated file fails the typecheck.
  */
 
-/**
- * Live video and audio (default), or audio only.
- *
- * `mode` picks the RENDERER, not the turn-taking. Both modes run the same full-duplex
- * loop — she listens the entire time she is speaking, and she stops when you cut in.
- * `voice` skips rendering video entirely (cheaper, no video track); `avatar` publishes it.
- *
- * There is deliberately no `duplex` option. An earlier version of this SDK had one, and
- * `{ mode: "avatar", duplex: "full" }` silently rewrote `mode` to `"voice"` — so asking for
- * full duplex cost you the video track. Both modes are full duplex now, so that trade-off
- * is gone. Interruption is not a mode you select — it is how calls work.
- */
 import type { components } from "./generated/openapi.ts";
 
 /**
@@ -36,13 +50,27 @@ import type { components } from "./generated/openapi.ts";
  */
 type Wire = components["schemas"];
 
-export type CallMode = "avatar" | "voice";
+/**
+ * Live video and audio (default), or audio only.
+ *
+ * `mode` picks the RENDERER, not the turn-taking. Both modes run the same full-duplex
+ * loop — she listens the entire time she is speaking, and she stops when you cut in.
+ * `voice` skips rendering video entirely (cheaper, no video track); `avatar` publishes it.
+ *
+ * There is deliberately no `duplex` option. An earlier version of this SDK had one, and
+ * `{ mode: "avatar", duplex: "full" }` silently rewrote `mode` to `"voice"` — so asking for
+ * full duplex cost you the video track. Both modes are full duplex now, so that trade-off
+ * is gone. Interruption is not a mode you select — it is how calls work.
+ */
+export type CallMode = NonNullable<Wire["LiveKitSessionRequest"]["mode"]>;
 
-/** A prior message replayed as memory when the call opens. */
-export interface ContextMessage {
-  role: "user" | "assistant" | "system";
-  content: string;
-}
+/**
+  * A prior message replayed as memory when the call opens.
+  *
+  * The contract declares this shape inline inside the request rather than as a named schema, so
+  * it is indexed out of the array. At most 32, and `content` is capped at 4,000 characters.
+  */
+export type ContextMessage = NonNullable<Wire["LiveKitSessionRequest"]["initial_context"]>[number];
 
 /** One named state the character can rest in, and when she should be in it. */
 export interface VideoState {
@@ -169,28 +197,47 @@ export interface CallPolicy {
  * What a client needs to join. Treat it as OPAQUE and relay it byte-for-byte — the browser
  * SDK validates it strictly, and adding or wrapping a key throws.
  */
+type Grant = Wire["LiveKitSessionGrant"];
+
 export interface CallConnection {
-  status: "ready";
-  sessionId: string;
-  roomName: string;
+  status: Grant["status"];
+  sessionId: Grant["session_id"];
+  roomName: Grant["room_name"];
   /** Hand these two to `livekit-client` if you are not using the browser SDK. */
-  livekitUrl: string;
-  participantToken: string;
-  participantIdentity: string;
-  maxSessionSeconds: number;
-  idleTimeoutSeconds: number;
+  livekitUrl: Grant["livekit_url"];
+  participantToken: Grant["participant_token"];
+  participantIdentity: Grant["participant_identity"];
+  maxSessionSeconds: Grant["max_session_seconds"];
+  idleTimeoutSeconds: Grant["idle_timeout_seconds"];
   /** Join before this or the slot returns to the pool. */
-  reservationExpiresAt: string;
-  /** The untouched server payload. Relay THIS, not the parsed object above. */
+  reservationExpiresAt: Grant["reservation_expires_at"];
+  /**
+   * The untouched server payload. Relay THIS, not the parsed object above.
+   *
+   * Deliberately NOT derived. It is the whole grant including fields this SDK does not surface,
+   * and typing it as the contract's grant would invite reading it field-by-field — which is the
+   * habit rule 2 exists to stop. It is opaque on purpose.
+   */
   raw: Record<string, unknown>;
 }
 
-/** Every slot is busy. Not an error — hold and retry. */
+/**
+ * Every slot is busy. Not an error — hold and retry.
+ *
+ * The field NAMES are this SDK's; the types come from the contract, so a widening upstream
+ * cannot silently disagree with what a caller branches on.
+ */
 export interface CallQueued {
+  /** Invented here, not on the wire — it is what makes {@link isQueued} a one-word check. */
   queued: true;
-  position: number | null;
-  size: number;
-  retryAfterMs: number;
+  /**
+   * `queue_position` is optional in the contract. `client.ts` coerces an absent one to `null`
+   * rather than `undefined`, so this widens deliberately: a caller renders "position unknown"
+   * instead of crashing on a queue that has not placed them yet.
+   */
+  position: NonNullable<Wire["CapacityBusyResponse"]["queue_position"]> | null;
+  size: Wire["CapacityBusyResponse"]["queue_size"];
+  retryAfterMs: Wire["CapacityBusyResponse"]["recommended_retry_ms"];
 }
 
 export type StartCallResult = CallConnection | CallQueued;
@@ -213,7 +260,7 @@ export interface EndCallOptions {
    * the release cannot miss it. Optional — without it the platform frees against its default
    * placement, which is where calls land today — but if the grant is in hand, pass it.
    */
-  capacityPool?: string;
+  capacityPool?: Wire["LiveKitSessionReleaseRequest"]["capacity_pool"];
 }
 
 /** The kinds the contract accepts. Derived, so adding one upstream is not a second edit here. */
