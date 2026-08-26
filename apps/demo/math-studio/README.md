@@ -163,7 +163,7 @@ what a cast that is not this one will get.
   learner their own sentence with her name on it, and the "she is about to speak" latch trips on a
   line she never said.
 - **The microphone reports a cause, not a failure.** Both the self-test and the in-call publish go
-  through `enableMicrophone` from `realtime-avatar-browser`, so the panel says
+  through `enableMicrophone` from `realtime-avatar-react/browser`, so the panel says
   `denied-by-os` or `no-answer` or `device-in-use` rather than "failed", and the drawer carries the
   sentence naming the fix. Two of those are why it is worth the import: a macOS denial and a
   browser denial are the same `NotAllowedError` with completely different fixes, and an unanswered

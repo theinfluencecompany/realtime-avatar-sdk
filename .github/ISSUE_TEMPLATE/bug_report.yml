@@ -18,9 +18,6 @@ body:
       options:
         - "realtime-avatar (server client)"
         - "realtime-avatar-react"
-        - "realtime-avatar-proxy"
-        - "realtime-avatar-browser"
-        - "realtime-avatar-tools"
         - "realtime-avatar-mcp"
         - "An example app under apps/"
         - "Not sure"

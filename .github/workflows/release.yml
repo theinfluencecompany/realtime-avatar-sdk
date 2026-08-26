@@ -1,9 +1,15 @@
 name: Release all packages
 
-# Publishes the TWO public packages at the version committed in their package.json:
-# `realtime-avatar` (libs/sdk — everything an app imports, behind subpaths) and
+# Publishes the THREE public packages at the version committed in their package.json:
+# `realtime-avatar` (libs/sdk-server — the server half, holds the API key),
+# `realtime-avatar-react` (libs/sdk-react — the browser half, never holds one), and
 # `realtime-avatar-mcp` (libs/mcp — a CLI whose consumer is a coding agent, not an app).
-# The other five workspaces are `private`; their code ships bundled inside libs/sdk.
+# The other five workspaces are `private`; their code ships bundled inside the two above.
+#
+# All three names were unpublished on 2026-08-26, so the next run is a FIRST publish for
+# each — OIDC cannot mint a first version (the trusted publisher lives in package settings
+# that do not exist until the name does), and npm blocks a fully-unpublished name for 24
+# hours. An unpublished VERSION is burned permanently, so 0.2.1 can never be reused.
 #
 # Runs off an annotated `v*` tag, on the `latest` dist-tag. There is no continuous lane:
 # a release is a decision, and a trigger you cannot decline is not one.

@@ -75,7 +75,7 @@ export default function Page() {
 
 /**
  * Why the microphone did not start. The published version of this is
- * `realtime-avatar-browser`; it is inlined here so this example stays
+ * `realtime-avatar-react/browser`; it is inlined here so this example stays
  * standalone.
  *
  * It returns a reason rather than throwing because "the mic won't start" is one sentence

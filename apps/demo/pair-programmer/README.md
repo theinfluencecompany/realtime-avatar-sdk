@@ -124,7 +124,7 @@ is where their reasoning lives.
 - **The audio elements are off-screen, not `display: none`.** A hidden media element is subject
   to the same autoplay rules and only loses the browser's own affordance. `attachRemoteAudio`
   takes the container, so they land there and go with the call.
-- **This page uses `realtime-avatar-browser`; the coding companion inlines
+- **This page uses `realtime-avatar-react/browser`; the coding companion inlines
   the same logic.** That is the one functional difference between the two, and it is not a
   behaviour change — `enableMicrophone` returns the same six causes as a value, and
   `attachRemoteAudio` attaches into the DOM before `connect` and surfaces the autoplay block.
