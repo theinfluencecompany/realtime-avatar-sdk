@@ -23,13 +23,13 @@ jobs:
       # At the default depth 1 it resolves to nothing and passes vacuously.
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      # `cache: npm` keys ~/.npm on package-lock.json. It does not cache node_modules, so
-      # `npm ci` still relinks; what it removes is the download, which was the bulk of the
-      # ~11s that step took uncached.
+      # No `cache: npm` here, and that is measured rather than an omission. ~/.npm for this
+      # tree is 71MB, which takes ~7.5s to restore, while a warm cache saves only 2-5s of
+      # `npm ci` — most of that step is linking, not downloading. Three paired runs on
+      # release.yml: uncached setup+install 12.0s, cached 16.4s and 14.3s. Re-measure before
+      # adding it back; the answer flips once the dependency tree is big enough.
       - uses: actions/setup-node@v4
-        with:
-          node-version: "${{ matrix.node }}"
-          cache: npm
+        with: { node-version: "${{ matrix.node }}" }
       # Materialise the denylist from a secret. It is NOT in this repo by design — the list
       # is an inventory of what is private, so shipping it would leak the thing it protects.
       #
