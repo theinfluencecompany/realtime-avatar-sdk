@@ -294,7 +294,7 @@ export const liveKitSessionWireRequestSchema = z
     room_name: z.string().min(1).max(160).optional(),
     source_kind: avatarSourceKindSchema.default("portrait"),
     source_video_url: nullableUrlSchema.optional(),
-    stt_mode: liveKitSttModeSchema.default("off"),
+    stt_mode: liveKitSttModeSchema.default("server"),
     video_cache_id: z.string().min(1).max(240).nullable().optional(),
     voice: voiceSpecSchema.nullable().optional(),
     voice_id: z.string().min(1).max(240).nullable().optional(),
@@ -379,7 +379,7 @@ export const liveKitSessionRequestSchema = z
     participantName: z.string().max(160).optional(),
     queueTicketId: z.string().min(1).max(160).optional(),
     roomName: z.string().min(1).max(160).optional(),
-    sttMode: liveKitSttModeSchema.default("off"),
+    sttMode: liveKitSttModeSchema.default("server"),
     voice: voiceSpecSchema.nullable().optional(),
     voiceId: z.string().min(1).max(240).nullable().optional(),
 

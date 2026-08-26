@@ -1,7 +1,7 @@
 {
   "name": "realtime-avatar-react",
-  "version": "0.2.1",
-  "description": "React, React Native and browser bindings for Realtime Avatar. Talks to your proxy route \u2014 never to the platform, and never with your API key.",
+  "version": "0.3.0",
+  "description": "React, React Native and browser bindings for Realtime Avatar. Talks to your proxy route — never to the platform, and never with your API key.",
   "license": "MIT",
   "author": "The Influence Company",
   "homepage": "https://realtimeavatar.ai/docs",

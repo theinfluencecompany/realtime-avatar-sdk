@@ -1,6 +1,6 @@
 {
   "name": "realtime-avatar",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Server-side client for Realtime Avatar, with Next.js / Hono / Express / TanStack Start route adapters. Holds your API key; never import it from a browser file.",
   "license": "MIT",
   "author": "The Influence Company",

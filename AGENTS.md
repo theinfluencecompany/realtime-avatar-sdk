@@ -526,11 +526,15 @@ Splitting that class into a browser client and a server client upstream is what 
 
 - `libs/http-client/src/types.ts` is the whole public surface. Read it first.
 - `libs/http-client/src/client.ts` owns the camelCase → snake_case translation. Never add a
-  second one — that is how a wire drifts, and it already has: `libs/client/src/wire.ts` carries a
-  second translator, and the two disagree. Same minimal `startCall({ avatarId })`, opposite bytes:
-  `realtime-avatar` sends `stt_mode: "server"` (client.ts:116), `realtime-avatar-react` sends
-  `stt_mode: "off"` (wire.ts:297,382,412) — so which package an app installs decides whether she
-  hears the user, against rule 4 above. Do not add a third; collapsing these two to one is open work.
+  second one — that is how a wire drifts, and it already did. `libs/client/src/wire.ts` carries a
+  second translator, and for the same minimal `startCall({ avatarId })` the two sent opposite
+  bytes: `stt_mode: "server"` from `realtime-avatar`, `"off"` from `realtime-avatar-react`. A
+  call minted by the React package therefore did not listen — the user talks, she never answers,
+  and nothing errors — against rule 4, which says full duplex is not a setting.
+  Fixed in 0.3.0 (wire.ts:297,382 now default `"server"`), and `libs/client/test/wire-parity.test.ts`
+  now asserts that every wire key the two both emit carries the same value, so the next
+  divergence fails the build instead of shipping. Collapsing the two translators into one is
+  still the real fix, and belongs upstream.
 - `libs/proxy` is the shortest correct way to mount a route: `authorize` gates, `session`
   decides. Prefer it over hand-rolling; the hand-rolled version is where policy leaks in.
 - Example apps are standalone — no shared local imports, so one can be copied out and still

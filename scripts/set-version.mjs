@@ -21,6 +21,14 @@
  */
 import { readFile, writeFile } from "node:fs/promises";
 
+// Two source constants mirror the version so the User-Agent and the MCP server identity
+// cannot go stale. Tests assert they match package.json; bumping only the manifests turns
+// those tests red at the end of a release rather than at the start of one.
+const VERSION_CONSTANTS = [
+  ["libs/http-client/src/client.ts", "SDK_VERSION"],
+  ["libs/mcp/src/server.ts", "MCP_VERSION"],
+];
+
 const LIBS = ["http-client", "browser", "tools", "proxy", "client", "sdk-server", "sdk-react", "mcp"];
 // The one name other packages pin. Kept as a list so a second such dep is one line.
 const INTERNAL = ["realtime-avatar"];
@@ -68,3 +76,14 @@ for (const dir of LIBS) {
 }
 
 console.log(`\nNext:\n  npm install --package-lock-only\n  npm run check\n  git commit -am "release: ${version}"\n  git tag -a v${version} -m "${version}" && git push origin main v${version}`);
+
+for (const [file, name] of VERSION_CONSTANTS) {
+  const path = new URL(`../${file}`, import.meta.url);
+  const before = await readFile(path, "utf8");
+  const pattern = new RegExp(`(export const ${name} = ")[^"]+(")`);
+  // Match, not difference: re-running at the same version is a no-op, not a missing constant.
+  if (!pattern.test(before)) throw new Error(`${file}: could not find ${name}`);
+  const after = before.replace(pattern, `$1${version}$2`);
+  if (after !== before) await writeFile(path, after);
+  console.log(`  ${file}  ${name} -> ${version}`);
+}
