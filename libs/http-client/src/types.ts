@@ -204,13 +204,7 @@ export function isQueued(result: StartCallResult): result is CallQueued {
  * slot identically. `page_hide` is the one a tab-close beacon sends; `manual` is an explicit
  * server-side decision.
  */
-export type EndCallReason =
-  | "page_hide"
-  | "disconnected"
-  | "superseded"
-  | "unmount"
-  | "manual"
-  | "idle_timeout";
+export type EndCallReason = NonNullable<Wire["LiveKitSessionReleaseRequest"]["reason"]>;
 
 export interface EndCallOptions {
   reason?: EndCallReason;
@@ -222,7 +216,8 @@ export interface EndCallOptions {
   capacityPool?: string;
 }
 
-export type AssetKind = "image" | "video" | "audio";
+/** The kinds the contract accepts. Derived, so adding one upstream is not a second edit here. */
+export type AssetKind = Wire["Asset"]["kind"];
 
 export type Asset = Pick<Wire["Asset"], "id" | "kind"> & {
   /**
@@ -257,33 +252,34 @@ export type Avatar = Pick<
   "id" | "displayName" | "sourceKind" | "status" | "defaultVoiceId"
 >;
 
-/** One billable session — when it ran, how long it was billable for, what it cost. */
-export interface UsageSession {
-  sessionId: string;
-  avatarId: string | null;
-  status: "reserved" | "started" | "released" | "failed";
-  startedAt: string | null;
-  endedAt: string | null;
-  /** Billable wall time in SECONDS. Null until the session settles. */
-  activeSeconds: number | null;
-  billedCreditMicros: number | null;
-  /**
-   * Whatever you passed as `metadata` to `startCall`. `{}` if you passed nothing — tagging
-   * is optional, and per-session billing works either way.
-   */
-  metadata: Record<string, unknown>;
-  createdAt: string;
-}
+type UsageSessionsResponse = Wire["ListUsageSessionsResponse"];
+
+/**
+ * One billable session — when it ran, how long it was billable for, what it cost.
+ *
+ * `activeSeconds` is billable wall time in SECONDS and is null until the session settles;
+ * `metadata` is whatever you passed to `startCall`, `{}` if you passed nothing. The contract
+ * declares this shape inline inside the page rather than as a named schema, so it is indexed
+ * out of the array rather than picked off a `Wire[...]` key.
+ */
+export type UsageSession = UsageSessionsResponse["data"][number];
 
 export interface UsageSessionPage {
+  /** The contract calls this `data`; it is surfaced under the name of what it holds. */
   sessions: UsageSession[];
   /** Pass as `cursor` for the next page. Null on the last one. */
-  nextCursor: string | null;
+  nextCursor: UsageSessionsResponse["nextCursor"];
   /** The window actually served — the platform clamps wide or inverted ranges. */
-  from: string;
-  to: string;
+  from: UsageSessionsResponse["from"];
+  to: UsageSessionsResponse["to"];
 }
 
+/**
+ * NOT derived, because the published contract declares no query parameters on
+ * `GET /v1/usage/sessions` — the route reads them, the spec does not describe them. This is
+ * the one place in this file where a shape is asserted rather than taken from the contract,
+ * and the fix belongs upstream in the spec export, not here.
+ */
 export interface ListSessionsOptions {
   /** ISO timestamps. Defaults to the trailing 30 days; 90 days is the widest served. */
   from?: string;
@@ -295,17 +291,13 @@ export interface ListSessionsOptions {
   cursor?: string;
 }
 
-export interface CreditBalance {
-  balanceCreditMicros: number;
-  reservedCreditMicros: number;
-}
+export type CreditBalance = Pick<
+  Wire["CreditBalance"],
+  "balanceCreditMicros" | "reservedCreditMicros"
+>;
 
 /** Result of reconciling an avatar's clip set to the cache tier. */
-export interface ClipSyncResult {
-  queued: string[];
-  ready: string[];
-  retired: string[];
-}
+export type ClipSyncResult = Wire["SyncAvatarClipsResponse"];
 
 /** The signed payload delivered to `CallPolicy.transcript.url` after a call ends. */
 export interface TranscriptPayload {
