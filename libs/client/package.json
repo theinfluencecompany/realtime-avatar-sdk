@@ -41,10 +41,6 @@
       "types": "./dist/browser/index.d.ts",
       "import": "./dist/browser/index.js"
     },
-    "./server": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
-    },
     "./react": {
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.js"
