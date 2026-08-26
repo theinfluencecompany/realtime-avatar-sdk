@@ -1,15 +1,14 @@
 {
-  "name": "@realtime-avatar/internal-client",
-  "private": true,
+  "name": "realtime-avatar-react",
   "version": "0.2.1",
-  "description": "React and React Native client for Realtime Avatar.",
+  "description": "React, React Native and browser bindings for Realtime Avatar. Talks to your proxy route \u2014 never to the platform, and never with your API key.",
   "license": "MIT",
   "author": "The Influence Company",
   "homepage": "https://realtimeavatar.ai/docs",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/theinfluencecompany/realtime-avatar-sdk.git",
-    "directory": "libs/client"
+    "directory": "libs/sdk-react"
   },
   "bugs": {
     "url": "https://github.com/theinfluencecompany/realtime-avatar-sdk/issues"
@@ -23,35 +22,29 @@
     "agent",
     "full-duplex",
     "livekit",
-    "react",
-    "react-native",
-    "hooks",
-    "webrtc"
+    "sdk",
+    "api-client",
+    "zero-dependency"
   ],
   "type": "module",
   "main": "./dist/index.js",
-  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./browser": {
-      "types": "./dist/browser/index.d.ts",
-      "import": "./dist/browser/index.js"
-    },
-    "./server": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
-    },
-    "./react": {
-      "types": "./dist/react/index.d.ts",
-      "import": "./dist/react/index.js"
+      "default": "./dist/index.js"
     },
     "./react-native": {
-      "types": "./dist/react-native/index.d.ts",
-      "import": "./dist/react-native/index.js"
+      "types": "./dist/react-native.d.ts",
+      "default": "./dist/react-native.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    },
+    "./tools": {
+      "types": "./dist/tools.d.ts",
+      "default": "./dist/tools.js"
     }
   },
   "files": [
@@ -62,8 +55,15 @@
     "node": ">=20"
   },
   "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup"
+  },
+  "dependencies": {
+    "livekit-client": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@livekit/components-react": "^2.9.0",
@@ -71,20 +71,6 @@
     "react": ">=18",
     "react-dom": ">=18",
     "react-native": ">=0.78"
-  },
-  "dependencies": {
-    "livekit-client": "^2.9.0",
-    "zod": "^4.4.3"
-  },
-  "devDependencies": {
-    "@livekit/components-react": "2.9.21",
-    "@livekit/react-native": "^2.11.1",
-    "@types/react": "19.2.7",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
-    "react-native": "0.81.5",
-    "tsup": "^8.5.0",
-    "typescript": "^5.9.2"
   },
   "peerDependenciesMeta": {
     "@livekit/components-react": {
@@ -99,5 +85,15 @@
     "react-native": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "@livekit/components-react": "2.9.21",
+    "@livekit/react-native": "^2.11.1",
+    "@types/react": "19.2.7",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-native": "0.81.5",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
   }
 }

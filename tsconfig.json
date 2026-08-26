@@ -32,6 +32,8 @@
     "libs/tools/src",
     "libs/tools/test",
     "libs/browser/src",
-    "libs/browser/test", "libs/mcp/src", "libs/mcp/test"
+    "libs/browser/test",
+    "libs/mcp/src",
+    "libs/mcp/test"
   ]
 }

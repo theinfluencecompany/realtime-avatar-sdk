@@ -3,7 +3,7 @@
  * Set every publishable workspace to one version, and repoint the internal deps at it.
  *
  * The six libs ship in lockstep — they are one SDK cut at one version, not six packages
- * on their own schedules — and libs/proxy and libs/mcp depend on `realtime-avatar` at an
+ * on their own schedules — and libs/mcp depends on `realtime-avatar` at an
  * EXACT version rather than a range. So a bump is eight edits, of which two are in a
  * `dependencies` block that nothing about a version bump reminds you to open.
  *
@@ -21,7 +21,7 @@
  */
 import { readFile, writeFile } from "node:fs/promises";
 
-const LIBS = ["http-client", "browser", "tools", "proxy", "mcp", "client"];
+const LIBS = ["http-client", "browser", "tools", "proxy", "client", "sdk-server", "sdk-react", "mcp"];
 // The one name other packages pin. Kept as a list so a second such dep is one line.
 const INTERNAL = ["realtime-avatar"];
 

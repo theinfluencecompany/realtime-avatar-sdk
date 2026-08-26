@@ -22,7 +22,7 @@ mid-sentence the moment someone cuts in, the way a person stops.
 ## Quickstart
 
 ```bash
-npm install realtime-avatar realtime-avatar-proxy
+npm install realtime-avatar
 ```
 
 Start the call on your **server**. Your key never touches a browser.

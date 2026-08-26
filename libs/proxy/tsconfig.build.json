@@ -5,7 +5,11 @@
     "outDir": "dist",
     "declaration": true,
     "rootDir": "src",
-    "paths": {},
+    "paths": {
+      "realtime-avatar": [
+        "../http-client/dist/index.d.ts"
+      ]
+    },
     "baseUrl": "."
   },
   "include": [
