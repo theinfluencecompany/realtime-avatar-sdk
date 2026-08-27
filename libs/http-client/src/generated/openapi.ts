@@ -302,39 +302,6 @@ export interface components {
                 crossfade_easing?: "linear" | "smooth" | "ease_out";
                 wrap_crossfade_ms?: number;
             };
-            scene_graph?: {
-                scenes: {
-                    scene_id: string;
-                    hub_clip_id: string;
-                    clips: {
-                        clip_id: string;
-                        /**
-                         * Format: uri
-                         * @description The clip's video URL — for a platform-generated library this is the generated clip's hosted URL, filled in server-side at hydration.
-                         */
-                        source_video_url?: string;
-                        video_cache_id?: string;
-                        max_seconds?: number;
-                        /** @enum {string} */
-                        trigger?: "idle" | "listen" | "think" | "directive";
-                        loop?: boolean;
-                        weight?: number;
-                        crossfade_ms?: number;
-                        trim_start_ms?: number;
-                        trim_end_ms?: number;
-                        when?: string;
-                        hint?: string;
-                    }[];
-                }[];
-                transitions: {
-                    clip_id: string;
-                    /** Format: uri */
-                    source_video_url: string;
-                    from_scene: string;
-                    to_scene: string;
-                    max_seconds?: number;
-                }[];
-            };
             behavior?: {
                 gestures_enabled?: boolean;
                 /** @enum {string} */
