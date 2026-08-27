@@ -694,7 +694,12 @@ export function useLiveKitAvatarGrant<
     // polling so its ticket decays (switch-away frees the slot); re-showing re-runs
     // this effect and resumes.
     if (!autoRetryBusy || !active || !tabVisible || state.status !== "busy" || !state.busy) return;
-    const retryMs = Math.max(state.busy.recommended_retry_ms, 250);
+    // The 429 body is relayed by the proxy client AS-IS (no schema pass), so a proxy that rides
+    // 429 for its own throttle may omit recommended_retry_ms — and Math.max(undefined, 250) is
+    // NaN, which setTimeout treats as 0: an as-fast-as-the-network mint loop against the very
+    // limiter that answered. An absent or malformed hint falls back to 5s; the 250ms floor stays.
+    const hinted = state.busy.recommended_retry_ms;
+    const retryMs = Math.max(Number.isFinite(hinted) ? hinted : 5_000, 250);
     const timer = window.setTimeout(refresh, retryMs);
     return () => window.clearTimeout(timer);
   }, [active, autoRetryBusy, tabVisible, refresh, state.busy, state.status]);
