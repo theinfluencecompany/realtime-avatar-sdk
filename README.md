@@ -192,6 +192,8 @@ rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempo
 rta.createAvatarFromVideo({ displayName, videoUrl, voice? })
 rta.listAvatars()
 rta.getAvatar(avatarId)
+rta.updateAvatar(avatarId, patch)       // re-point displayName / defaultVoiceId
+rta.deleteAvatar(avatarId)
 rta.syncClips(avatarId, clipUrls)       // after ANY clip change
 
 // assets
