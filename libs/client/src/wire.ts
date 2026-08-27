@@ -223,40 +223,6 @@ export const sessionBehaviorSchema = z
   .strict();
 export type SessionBehavior = z.infer<typeof sessionBehaviorSchema>;
 
-const _SCENE_CLIP_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-
-const sceneIdSchema = z.string().regex(/^[a-z0-9_]{1,40}$/, "scene_id must be a lowercase slug");
-
-const sceneTransitionSchema = z
-  .object({
-    clip_id: z.string().regex(_SCENE_CLIP_ID_RE, "clip_id must be a slug"),
-    source_video_url: z.string().url(),
-    from_scene: sceneIdSchema,
-    to_scene: sceneIdSchema,
-    max_seconds: z.number().min(1).max(10).optional(),
-  })
-  .strict()
-  .superRefine((v, ctx) => {
-    if (v.from_scene === v.to_scene) {
-      ctx.addIssue({ code: "custom", message: "a transition's from_scene must differ from to_scene", path: ["to_scene"] });
-    }
-  });
-
-const sceneClusterSchema = z
-  .object({
-    scene_id: sceneIdSchema,
-    hub_clip_id: z.string().regex(_SCENE_CLIP_ID_RE, "hub_clip_id must be a slug"),
-    clips: z.array(sessionClipSchema).min(1).max(4),
-  })
-  .strict();
-
-const sceneGraphSchema = z
-  .object({
-    scenes: z.array(sceneClusterSchema).min(1).max(4),
-    transitions: z.array(sceneTransitionSchema).min(2).max(12),
-  })
-  .strict();
-
 const transcriptWebhookSchema = z
   .object({
 
@@ -313,7 +279,6 @@ export const liveKitSessionWireRequestSchema = z
 
     choreography: sessionChoreographySchema.optional(),
 
-    scene_graph: sceneGraphSchema.optional(),
     behavior: sessionBehaviorSchema.optional(),
 
     expression_profile: z.string().min(1).max(40).optional(),
@@ -391,8 +356,6 @@ export const liveKitSessionRequestSchema = z
 
     // Unbounded, for the same reason as `clip_library` on the wire schema above.
     clipLibrary: z.array(sessionClipSchema).optional(),
-
-    sceneGraph: sceneGraphSchema.optional(),
 
     behavior: sessionBehaviorSchema.optional(),
 
@@ -478,16 +441,6 @@ const behaviorStateFrameSchema = z
     loop: z.boolean().optional(),
 
     prev_clip_id: z.string().min(1).max(64).optional(),
-
-    scene: z.string().min(1).max(40).optional(),
-
-    scene_transition: z
-      .object({
-        clip_id: z.string().min(1).max(64),
-        from_scene: z.string().min(1).max(40),
-        to_scene: z.string().min(1).max(40),
-      })
-      .optional(),
   })
   .strip();
 

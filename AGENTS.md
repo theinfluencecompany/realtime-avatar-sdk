@@ -633,13 +633,15 @@ npm now refuses a publish unless the account has 2FA **or** the token is a granu
 "bypass 2FA" checked — and a bypass-2FA token is in turn refused for org and account changes
 (that restriction landed 2026-08). With 2FA off, no single token does both jobs.
 
-**Every name was unpublished on 2026-08-26, and npm will not take it back for 24 hours.**
-`realtime-avatar-proxy`, `-browser` and `-tools` were superseded by subpaths the day they shipped
-and were removed on purpose; `realtime-avatar`, `-react` and `-mcp` came down in the same sweep.
-So the registry currently 404s for all six, and the next release is a FIRST publish again — which
-means `NPM_TOKEN`, not OIDC, because a trusted publisher cannot exist for a name that does not.
-A version number, once unpublished, is burned permanently: 0.2.1 can never be republished, so the
-next release must be 0.3.0 or higher.
+**The re-bootstrap happened: `realtime-avatar@0.3.0` and `realtime-avatar-mcp@0.3.0` published
+2026-08-27** (via `NPM_TOKEN` — every name had been unpublished in the 2026-08-26 sweep, and a
+first publish cannot use OIDC), and the owner then moved both names under the
+`theinfluencecompany` npm org. The other four names stay dead on purpose: `realtime-avatar-proxy`,
+`-browser` and `-tools` were superseded by subpaths the day they shipped, and `-react`'s job is
+done by `realtime-avatar/react`. What remains of the auth migration: configure trusted publishers
+for the two live names on npmjs.com, then delete `NPM_TOKEN` — as above, `release.yml` switches
+modes by the secret's presence. A version number, once unpublished, is burned permanently: 0.2.1
+can never be republished, which is why the re-bootstrap started at 0.3.0.
 
 ### TypeScript 7 is worth 3x on typecheck, and is blocked on tsup
 
