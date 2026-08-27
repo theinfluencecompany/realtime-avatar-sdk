@@ -303,7 +303,7 @@ backstop. Every app in `apps/demo/` carries the full pattern end to end.
 `generative` synthesizes it — and one option on `looping`:
 
 ```ts
-video: { loop: "https://…/idle.mp4" }        // one clip she rests in
+video: {}                                     // rest in the avatar's stored source (default)
 video: { mode: "generative" }                 // no clips at all; synthesized
 video: {                                      // a state map we switch between
   states: {
@@ -312,11 +312,14 @@ video: {                                      // a state map we switch between
     shy:      { when: "when she is flustered", weight: 0.3,        url: "…/shy.mp4" },
   },
 }
-video: {                                      // the clip you have, in a different world
-  loop: "https://…/idle.mp4",
+video: {                                      // her stored clip, in a different world
   edits: { instruction: "turn the room into a snowy cabin at night" },
 }
 ```
+
+The clip she **rests** in is deliberately not a call option. A call identifies the character,
+and the character's stored source video is what she rests in — upload it once at creation,
+not as a URL per call. A call that carries its own rest media is rejected outright.
 
 `when` is read **by the character**, not by a rules engine you write. Brief it like an actor.
 `sentiment > 0.7` does nothing — nothing evaluates it.
@@ -356,8 +359,7 @@ paths produce the loop for you:
 
 ```ts
 video: { mode: "generative" }                 // no clips at all — motion is synthesized
-video: { loop: "https://…/idle.mp4" }         // one clip she rests in
-video: {}                                     // omit `loop` to use the avatar's stored source
+video: {}                                     // rest in the avatar's stored source
 ```
 
 The same applies at avatar creation: give a **single looping video** and the rest pose is
@@ -389,8 +391,7 @@ Three things worth knowing before you reach for it:
    length of the call. Long "loops" are refused for that reason — keep it under ~30s.
 3. **Edits that cannot run show the plain clip.** If the editor is unreachable, the call
    still happens and she still talks — she is just wearing what you uploaded. The one
-   failure that refuses the call is having no clip to edit: pass a `loop`, or give the
-   avatar a source video.
+   failure that refuses the call is having no clip to edit: give the avatar a source video.
 
 ### Live edit — letting the conversation re-edit the clip
 
@@ -399,7 +400,6 @@ what the user says is read against your rules, the clip is re-edited, and the pi
 
 ```ts
 video: {
-  loop: character.idleUrl,
   edits: {
     instruction: "a warm study at golden hour",
     live: {

@@ -29,6 +29,7 @@ sibling. One can be copied out of this repo and still work.
 | [`terminal-tutor`](./demo/terminal-tutor) | Node + browser | She draws on the screen and never sends a coordinate: `highlight` takes `text:delay` or `line:14` and the page resolves it, because a model cannot see the page it is pointing at — teaching vim and tmux from behind translucent glass |
 | [`dating-rehearsal`](./demo/dating-rehearsal) | Node + browser | Four tools that are all the character's own call, not the page's: a first date you practice on rates its own interest into a live meter, pins the beats that turned it, walks out if it dies, and writes the debrief — the conversation is never scored by anything but him |
 | [`persuasion`](./demo/persuasion) | Node + browser | A win condition that is the character's own judgement: she holds an absurd position and concedes only by calling a `concede` tool when a genuinely new argument defeats her — nothing else decides it, and the win never rides a sentence speech recognition could mangle |
+| [`set-designer`](./demo/set-designer) | Node + browser | One clip, many worlds: `video.edits` made pressable — the browser picks a set by id and the id→prose map lives next to the key, so the conversation may repaint the room behind her but nothing a viewer sends can rewrite what she is; “as built” sends no `video` key at all |
 
 > This repository is **private**. A link to an example only opens for someone who already has
 > repo access — so anywhere one of these is offered as "clone the code", say so. The packages
@@ -76,6 +77,7 @@ example gallery is configured outside this repository and is not covered by that
    should know that before they run it.
 6. **Its own default port**, so two examples can run side by side. Taken today: 4192
    coding-companion, 4193 canvas-tools, 4194 terminal-tutor, 4195 dating-rehearsal, 4196
-   pair-programmer, 4197 live-shopping, 4198 livestream, 4199 math-studio, 4200 persuasion.
+   pair-programmer, 4197 live-shopping, 4198 livestream, 4199 math-studio, 4200 persuasion,
+   4201 set-designer.
 
 Keep them small. An example is read far more often than it is run.

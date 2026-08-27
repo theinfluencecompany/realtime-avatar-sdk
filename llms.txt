@@ -84,6 +84,11 @@ Demos — larger showcases:
   judgement. She holds one absurd position and concedes only by calling a `concede` tool when a
   genuinely novel argument defeats her — there is no scorer and no keyword list, and the win never
   rides a sentence speech recognition could re-spell. `clientTools: true` at the mint is the gate
+- [apps/demo/set-designer](./apps/demo/set-designer): one clip, many worlds. `video.edits`
+  made pressable: the browser picks a set by id, and the id→prose map lives server-side
+  next to the key — nothing a viewer sends can rewrite what she is. "As built" sends no
+  `video` key at all, byte-identical to a call from before edits existed, and `live` hands
+  the re-edit to the conversation under a rule whose negative clause does the work
 There is no archive folder: a superseded example is deleted, not parked, so everything under
 apps/ is current and safe to copy from.
 

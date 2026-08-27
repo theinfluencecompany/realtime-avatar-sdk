@@ -171,6 +171,7 @@ Every example runs standalone — copy one out of the repo and it still works.
 | [**terminal-tutor**](./apps/demo/terminal-tutor) | The character draws on the screen to teach vim and tmux, and never sends a coordinate — they name the thing, the page resolves where it is |
 | [**dating-rehearsal**](./apps/demo/dating-rehearsal) | A first date you practice on, and four tools that are all the character's own call — he rates his interest into a live meter, pins the beats that turned it, walks out if it dies, and writes the debrief |
 | [**persuasion**](./apps/demo/persuasion) | A win condition that is the character's own judgement — she concedes only by calling a `concede` tool when a genuinely new argument defeats her, and nothing else decides it |
+| [**set-designer**](./apps/demo/set-designer) | One clip, many worlds — the browser picks a set by id, the id→prose map lives next to the key, and "as built" sends no `video` key at all |
 
 See [`apps/README.md`](./apps/README.md) for what a new example has to contain and which tier
 it belongs in.
