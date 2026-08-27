@@ -184,6 +184,21 @@ export function createServer(options: CreateServerOptions): McpServer {
     },
   );
 
+  server.registerTool(
+    "list_clips",
+    {
+      title: "List an avatar's clip library",
+      description:
+        "The declared clip library: every non-retired clip with its render status, plus " +
+        "the library revision (pass it to set_clip_library as expectedRevision), the pose " +
+        "anchor and eligibility. status is the render JOB, not serveability — a clip " +
+        "re-rendering keeps serving its previous take.",
+      inputSchema: { avatarId: z.string() },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ avatarId }) => text(JSON.stringify(await rta.listClips(avatarId), null, 2)),
+  );
+
   if (!options.allowWrites) return server;
 
   // ── writes, opt-in only ────────────────────────────────────────────────────
@@ -238,11 +253,59 @@ export function createServer(options: CreateServerOptions): McpServer {
   );
 
   server.registerTool(
+    "set_clip_library",
+    {
+      title: "Declare an avatar's clip library",
+      description:
+        "Declare the avatar's FULL desired clip library — a declaration, not a delta: " +
+        "unchanged clips are kept, new or changed ones are queued to render, omitted ones " +
+        "are retired. The 202 is acceptance, not readiness — poll list_clips until no row " +
+        "is queued or generating. Pass expectedRevision from list_clips so a concurrent " +
+        "writer surfaces as a 409 instead of a lost update. Does not spend credits.",
+      inputSchema: {
+        avatarId: z.string(),
+        clips: z.array(z.object({
+          clipId: z.string().describe("Stable id you choose; same id + same source = kept"),
+          role: z.enum(["idle", "listen", "gesture"]),
+          whenHint: z.string().optional().describe("Briefed to the character, like an actor"),
+          source: z.union([
+            z.object({ motionPrompt: z.string() }),
+            z.object({ assetId: z.string() }),
+          ]).describe("motionPrompt renders motion; assetId uploads a clip that must start AND end on the rest pose"),
+          durationSeconds: z.number().optional(),
+          reroll: z.boolean().optional().describe("Set true to force a re-render of the same prompt"),
+        })).max(12).describe("The COMPLETE library. Omitted clips are retired."),
+        expectedRevision: z.number().int().optional()
+          .describe("CAS: the revision you last read. Omit to declare unconditionally."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ avatarId, clips, expectedRevision }) => {
+      const update = await rta.setClipLibrary(avatarId, { clips, expectedRevision });
+      const bucket = (label: string, ids: string[]) =>
+        `${label} (${ids.length})${ids.length ? `  ${ids.join(", ")}` : ""}`;
+      return text(
+        `revision ${update.revision}\n` +
+          [
+            bucket("kept — still serving", update.plan.kept),
+            bucket("queued — rendering now", update.plan.queued),
+            bucket("retired — no longer live", update.plan.retired),
+          ].join("\n") +
+          (update.plan.queued.length
+            ? "\n\nQueued clips render in the background — poll list_clips until no row is queued or generating."
+            : ""),
+      );
+    },
+  );
+
+  server.registerTool(
     "sync_clips",
     {
       title: "Sync an avatar's clips",
       description:
-        "Prepare an avatar's clip set. Clips are prepared once and cached by URL hash, and " +
+        "DEPRECATED — this serves the sunsetting external-URL clip tier; declare the " +
+        "library with set_clip_library instead. Clips are prepared once and cached by URL " +
+        "hash, and " +
         "the serve path only LOADS that cache — so a clip you added but never synced does " +
         "nothing at all on the next call, silently. Idempotent: call it after every clip " +
         "change. Pass the complete set you want live; anything omitted is retired. This does " +

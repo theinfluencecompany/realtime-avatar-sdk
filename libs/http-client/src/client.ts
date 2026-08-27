@@ -17,6 +17,9 @@ import type {
   AvatarUpdate,
   CallMode,
   CallPolicy,
+  ClipDeclaration,
+  ClipLibrary,
+  ClipLibraryUpdate,
   ClipSyncResult,
   CreditBalance,
   EndCallOptions,
@@ -265,6 +268,55 @@ export class RealtimeAvatar {
     await this.#json(await this.#request("DELETE", `/avatars/${avatarId}`));
   }
 
+  // A clip envelope missing `revision` would silently drop `expectedRevision` from the
+  // next declare — CAS degrades to unconditional with zero signal — so it throws instead.
+  #clipEnvelope<T extends ClipLibrary>(out: T): T {
+    if (typeof out.revision !== "number" || !Array.isArray(out.data)) {
+      throw new RealtimeAvatarError("clip library response did not match the contract");
+    }
+    return out;
+  }
+
+  /**
+   * Declare the avatar's full desired clip library — a declaration, not a delta. The
+   * platform reconciles it against what exists: unchanged clips are `kept` (still
+   * serving), new or changed ones are `queued` to render, and clips you dropped are
+   * `retired`. The 202 is acceptance, not readiness — poll `listClips` until no row is
+   * `queued` or `generating`. A rejected upload settles `failed`, which is terminal, so
+   * waiting for all-`ready` waits forever. While a re-render is in flight the previous
+   * take keeps serving, so a declaration never blanks a live avatar.
+   *
+   * `expectedRevision` is compare-and-set: pass the `revision` you last read and a
+   * concurrent writer surfaces as a 409 instead of a lost update. Omit it to declare
+   * unconditionally.
+   *
+   * At most 12 clips: one `idle`, up to two `listen`, the rest `gesture`. An uploaded
+   * clip (`source: { assetId }`) must start AND end on the avatar's rest pose — pose
+   * validation rejects it otherwise (`status: "failed"`, the verdict in `poseCheck`),
+   * and the rest of the library is untouched.
+   */
+  async setClipLibrary(
+    avatarId: string,
+    library: { clips: readonly ClipDeclaration[]; expectedRevision?: number },
+  ): Promise<ClipLibraryUpdate> {
+    const body: Record<string, unknown> = { clips: library.clips };
+    if (library.expectedRevision !== undefined) body.expectedRevision = library.expectedRevision;
+    return this.#clipEnvelope(
+      (await this.#json(
+        await this.#request("PUT", `/avatars/${avatarId}/clips`, { json: body }),
+      )) as ClipLibraryUpdate,
+    );
+  }
+
+  /** The avatar's clip library: every non-retired clip, plus revision, anchor and eligibility. */
+  async listClips(avatarId: string): Promise<ClipLibrary> {
+    return this.#clipEnvelope(
+      (await this.#json(
+        await this.#request("GET", `/avatars/${avatarId}/clips`),
+      )) as ClipLibrary,
+    );
+  }
+
   /**
    * Reconcile an avatar's clip set after it changes.
    *
@@ -275,6 +327,10 @@ export class RealtimeAvatar {
    * **At most 32 URLs per call.** This is the whole set for the avatar, not a delta, and the
    * endpoint rejects an oversize list rather than truncating it — so a library that outgrows
    * 32 needs the set trimmed, not split across two calls.
+   *
+   * @deprecated The externally-hosted clip tier this serves is sunsetting. Declare the
+   * library with {@link setClipLibrary} instead — the platform renders and hosts the
+   * clips, and pose-validates uploads against the avatar's rest pose.
    */
   async syncClips(avatarId: string, clipUrls: readonly string[]): Promise<ClipSyncResult> {
     const out = (await this.#json(

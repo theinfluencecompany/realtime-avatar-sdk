@@ -1761,6 +1761,166 @@
                     }
                   ]
                 },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "generated",
+                    "uploaded"
+                  ]
+                },
+                "motionPrompt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "durationSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "anchorVersion": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "poseCheck": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "verdict": {
+                          "type": "object",
+                          "properties": {
+                            "sameSubject": {
+                              "type": "boolean"
+                            },
+                            "firstFrameMatchesAnchor": {
+                              "type": "boolean"
+                            },
+                            "lastFrameMatchesAnchor": {
+                              "type": "boolean"
+                            },
+                            "framingComparable": {
+                              "type": "boolean"
+                            },
+                            "confidence": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            }
+                          },
+                          "required": [
+                            "sameSubject",
+                            "firstFrameMatchesAnchor",
+                            "lastFrameMatchesAnchor",
+                            "framingComparable",
+                            "confidence"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "firstFrameUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastFrameUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "trimStartMs": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "trimEndMs": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "verdict",
+                        "issues",
+                        "firstFrameUrl",
+                        "lastFrameUrl",
+                        "trimStartMs",
+                        "trimEndMs"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "createdAt": {
                   "type": "string"
                 },
@@ -1774,15 +1934,504 @@
                 "status",
                 "url",
                 "whenHint",
+                "source",
+                "motionPrompt",
+                "durationSeconds",
+                "anchorVersion",
+                "poseCheck",
+                "error",
                 "createdAt",
                 "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "avatarId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "anchorVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "portrait",
+                      "source_frame"
+                    ]
+                  },
+                  "timeMs": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "url",
+                  "source",
+                  "timeMs"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clipLibraryEligible": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data",
+          "avatarId",
+          "revision",
+          "anchorVersion",
+          "anchor",
+          "clipLibraryEligible"
+        ],
+        "additionalProperties": false
+      },
+      "PutAvatarClipsRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "clips": {
+            "maxItems": 12,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "clipId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z0-9][a-z0-9_-]*$"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "idle",
+                    "listen",
+                    "gesture"
+                  ]
+                },
+                "whenHint": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 280
+                },
+                "source": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "motionPrompt": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1200
+                        }
+                      },
+                      "required": [
+                        "motionPrompt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "assetId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "assetId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "durationSeconds": {
+                  "type": "integer",
+                  "minimum": 4,
+                  "maximum": 8
+                },
+                "reroll": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "clipId",
+                "role",
+                "source"
               ],
               "additionalProperties": false
             }
           }
         },
         "required": [
-          "data"
+          "clips"
+        ],
+        "additionalProperties": false
+      },
+      "PutAvatarClipsResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "clipId": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "idle",
+                    "listen",
+                    "gesture"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "generating",
+                    "ready",
+                    "failed"
+                  ]
+                },
+                "url": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "whenHint": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "generated",
+                    "uploaded"
+                  ]
+                },
+                "motionPrompt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "durationSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "anchorVersion": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "poseCheck": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "verdict": {
+                          "type": "object",
+                          "properties": {
+                            "sameSubject": {
+                              "type": "boolean"
+                            },
+                            "firstFrameMatchesAnchor": {
+                              "type": "boolean"
+                            },
+                            "lastFrameMatchesAnchor": {
+                              "type": "boolean"
+                            },
+                            "framingComparable": {
+                              "type": "boolean"
+                            },
+                            "confidence": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            }
+                          },
+                          "required": [
+                            "sameSubject",
+                            "firstFrameMatchesAnchor",
+                            "lastFrameMatchesAnchor",
+                            "framingComparable",
+                            "confidence"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "firstFrameUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastFrameUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "trimStartMs": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "trimEndMs": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "verdict",
+                        "issues",
+                        "firstFrameUrl",
+                        "lastFrameUrl",
+                        "trimStartMs",
+                        "trimEndMs"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "clipId",
+                "role",
+                "status",
+                "url",
+                "whenHint",
+                "source",
+                "motionPrompt",
+                "durationSeconds",
+                "anchorVersion",
+                "poseCheck",
+                "error",
+                "createdAt",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "avatarId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "anchorVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "portrait",
+                      "source_frame"
+                    ]
+                  },
+                  "timeMs": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "url",
+                  "source",
+                  "timeMs"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clipLibraryEligible": {
+            "type": "boolean"
+          },
+          "plan": {
+            "type": "object",
+            "properties": {
+              "kept": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "queued": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "retired": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "kept",
+              "queued",
+              "retired"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "avatarId",
+          "revision",
+          "anchorVersion",
+          "anchor",
+          "clipLibraryEligible",
+          "plan"
         ],
         "additionalProperties": false
       },
@@ -2118,6 +2767,42 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListAvatarClipsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putAvatarClips",
+        "description": "Declare the avatar's full desired clip library (docs/CLIP_LIBRARY_UPDATE_API_DESIGN.md §6.1). The platform reconciles: unchanged clips are kept, changed or new ones re-render in the background against the avatar's pose anchor, absent ones soft-retire. 202 returns the post-apply library plus the reconcile plan. Supports Idempotency-Key replay and expectedRevision compare-and-set.",
+        "parameters": [
+          {
+            "name": "avatarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAvatarClipsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Declaration accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutAvatarClipsResponse"
                 }
               }
             }

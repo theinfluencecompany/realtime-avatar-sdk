@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { RealtimeAvatar, SDK_VERSION } from "../src/client.ts";
-import { RealtimeAvatarHttpError } from "../src/errors.ts";
+import { RealtimeAvatarError, RealtimeAvatarHttpError } from "../src/errors.ts";
 import { isQueued } from "../src/types.ts";
 
 /** A fetch stub that records the request and replays a canned response. */
@@ -336,6 +336,86 @@ function scripted(script: Array<{ status?: number; body?: unknown } | "network">
   }) as unknown as typeof fetch;
   return { attempts, fetchImpl };
 }
+
+test("setClipLibrary declares the full library and hands back the plan", async () => {
+  const { seen, fetchImpl } = stub({ status: 202, body: {
+    data: [{
+      clipId: "wave", role: "gesture", status: "queued", url: null, whenHint: "when greeting",
+      source: "generated", motionPrompt: "waves hello", durationSeconds: 5, anchorVersion: 1,
+      poseCheck: null, error: null,
+      createdAt: "2026-08-27T00:00:00Z", updatedAt: "2026-08-27T00:00:00Z",
+    }],
+    avatarId: "ava_1", revision: 1, anchorVersion: 1,
+    anchor: { url: "https://cdn.example/rest.png", source: "portrait", timeMs: null },
+    clipLibraryEligible: true,
+    plan: { kept: [], queued: ["wave"], retired: ["old_idle"] },
+  } });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+
+  const update = await rta.setClipLibrary("ava_1", {
+    expectedRevision: 0,
+    clips: [{ clipId: "wave", role: "gesture", whenHint: "when greeting", source: { motionPrompt: "waves hello" } }],
+  });
+
+  assert.equal(seen.method, "PUT");
+  assert.ok(seen.url?.endsWith("/avatars/ava_1/clips"));
+  // This route's wire is already camelCase — the declaration passes through byte-for-byte.
+  assert.deepEqual(seen.body, {
+    expectedRevision: 0,
+    clips: [{ clipId: "wave", role: "gesture", whenHint: "when greeting", source: { motionPrompt: "waves hello" } }],
+  });
+  assert.deepEqual(update.plan, { kept: [], queued: ["wave"], retired: ["old_idle"] });
+  assert.equal(update.revision, 1);
+});
+
+test("setClipLibrary without expectedRevision omits the key — unconditional, not revision 0", async () => {
+  const { seen, fetchImpl } = stub({ status: 202, body: {
+    data: [], avatarId: "ava_1", revision: 2, anchorVersion: 1, anchor: null,
+    clipLibraryEligible: true, plan: { kept: [], queued: [], retired: [] },
+  } });
+  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", { clips: [] });
+  assert.ok(seen.body);
+  assert.ok(!("expectedRevision" in seen.body));
+});
+
+test("listClips hands back the envelope: rows plus revision, anchor and eligibility", async () => {
+  const { seen, fetchImpl } = stub({ body: {
+    data: [{
+      clipId: "wave", role: "gesture", status: "queued", url: null, whenHint: "when greeting",
+      source: "generated", motionPrompt: "waves hello", durationSeconds: 5, anchorVersion: 1,
+      poseCheck: null, error: null,
+      createdAt: "2026-08-27T00:00:00Z", updatedAt: "2026-08-27T00:00:00Z",
+    }],
+    avatarId: "ava_1", revision: 3, anchorVersion: 2,
+    anchor: { url: "https://cdn.example/rest.png", source: "source_frame", timeMs: 1200 },
+    clipLibraryEligible: true,
+  } });
+  const library = await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).listClips("ava_1");
+  assert.equal(seen.method, "GET");
+  assert.ok(seen.url?.endsWith("/avatars/ava_1/clips"));
+  assert.equal(library.revision, 3);
+  assert.equal(library.anchor?.timeMs, 1200);
+  assert.equal(library.data[0]?.clipId, "wave");
+});
+
+test("a clip envelope without a revision throws instead of disarming CAS", async () => {
+  // A missing `revision` flowing through would drop `expectedRevision` from the next
+  // declare — CAS silently degrades to unconditional. The guard makes that loud.
+  const { fetchImpl } = stub({ status: 202, body: { data: [], plan: { kept: [], queued: [], retired: [] } } });
+  await assert.rejects(
+    new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", { clips: [] }),
+    (err: unknown) => err instanceof RealtimeAvatarError && /did not match the contract/.test((err as Error).message),
+  );
+});
+
+test("setClipLibrary is mutating, so the PUT carries an idempotency key", async () => {
+  const { attempts, fetchImpl } = scripted([{ status: 202, body: {
+    data: [], avatarId: "ava_1", revision: 1, anchorVersion: 1, anchor: null,
+    clipLibraryEligible: true, plan: { kept: [], queued: [], retired: [] },
+  } }]);
+  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", { clips: [] });
+  assert.match(attempts[0]?.headers.get("idempotency-key") ?? "", /.{16,}/);
+});
 
 test("SDK_VERSION tracks package.json, so the User-Agent cannot go stale", async () => {
   const pkg = JSON.parse(

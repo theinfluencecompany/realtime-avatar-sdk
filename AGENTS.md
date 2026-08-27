@@ -248,16 +248,35 @@ and `page.to` rather than assuming you got what you asked for.
 Every slot busy → `{ queued: true, position, retryAfterMs }`. Render the position and retry.
 Showing a failure here is the most common bad first impression.
 
-### 10. Sync clips after you change them
+### 10. Declare the clip library; never edit it piecemeal
 
-Clips are prepared once and cached by URL hash; the serve path only *loads* that cache. A
-clip that was never prepared silently does nothing on the first call after you add it.
+An avatar's clip library is **declared**, not patched: `setClipLibrary` takes the full
+desired set, and the platform reconciles it — unchanged clips are `kept` (still serving),
+new or changed ones are `queued` to render, dropped ones are `retired`. The 202 is
+acceptance, not readiness: poll `listClips` until no row is `queued` or `generating` — a
+rejected upload settles `failed`, which is terminal, so waiting for all-`ready` waits
+forever. While a re-render is in flight the previous take keeps serving, so a declaration
+never blanks a live avatar.
 
 ```ts
-await rta.syncClips(avatarId, Object.values(states).map((s) => s.url));
+const update = await rta.setClipLibrary(avatarId, {
+  expectedRevision: library.revision,   // CAS — a concurrent writer 409s instead of losing
+  clips: [
+    { clipId: "idle_soft", role: "idle",    source: { motionPrompt: "breathing gently, a slow blink" } },
+    { clipId: "nod_along", role: "listen",  source: { motionPrompt: "nodding along, attentive" } },
+    { clipId: "wave_hi",   role: "gesture", whenHint: "when greeting", source: { assetId: "ast_…" } },
+  ],
+});
+// update.plan → { kept, queued, retired }
 ```
 
-Idempotent, so call it on every write.
+An uploaded clip (`assetId`) must start AND end on the avatar's rest pose. Pose validation
+rejects one that does not — `status: "failed"` on that row with the structured verdict in
+`poseCheck`, extracted first/last frames included so the rejection is shown, not described.
+The rest of the library is untouched.
+
+`syncClips` is the deprecated external tier — clips on YOUR storage, cache-by-URL-hash —
+and it sunsets once observed traffic reaches zero. Do not build on it.
 
 ### 11. Verify transcripts over the RAW bytes
 
@@ -468,6 +487,7 @@ try {
 | 401 | Bad/missing/revoked key | Check the bearer and the environment tag |
 | 402 | Out of credits or over the key's spend limit | Paywall, not an error screen |
 | 403 | Key lacks the scope | Mint a key with it; do not widen to `*` |
+| 409 | `expectedRevision` is behind — someone else declared the clip library first | Re-read `listClips`, re-decide, re-declare |
 | 422 | Schema rejection | An unknown or mis-cased field — the wire is strict |
 | 429 | Capacity full **or** rate limited | For a call, that is the queue: retry. Not auto-retried |
 | 503 | Transient upstream | Retried for you, up to `maxRetries` |

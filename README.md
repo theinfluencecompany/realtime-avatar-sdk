@@ -194,7 +194,11 @@ rta.listAvatars()
 rta.getAvatar(avatarId)
 rta.updateAvatar(avatarId, patch)       // re-point displayName / defaultVoiceId
 rta.deleteAvatar(avatarId)
-rta.syncClips(avatarId, clipUrls)       // after ANY clip change
+
+// clip library
+rta.setClipLibrary(avatarId, { clips, expectedRevision? })  // declare the FULL set; CAS via expectedRevision
+rta.listClips(avatarId)                 // rows + revision, anchor, eligibility
+rta.syncClips(avatarId, clipUrls)       // DEPRECATED — external-URL tier; use setClipLibrary
 
 // assets
 rta.createRemoteAsset({ kind, remoteUrl })
