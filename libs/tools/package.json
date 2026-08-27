@@ -1,7 +1,7 @@
 {
   "name": "@realtime-avatar/internal-tools",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Browser tool plane for Realtime Avatar — your page's functions, callable by the avatar. No React required.",
   "license": "MIT",
   "author": "The Influence Company",

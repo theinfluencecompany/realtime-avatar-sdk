@@ -26,7 +26,7 @@ import type {
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.4.0";
+export const SDK_VERSION = "0.4.1";
 
 
 
@@ -87,7 +87,11 @@ export class RealtimeAvatar {
     if (!options.apiKey) throw new RealtimeAvatarError("apiKey is required");
     this.#apiKey = options.apiKey;
     this.#baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
-    this.#fetch = options.fetch ?? globalThis.fetch;
+    // workerd's fetch validates its `this`: stored bare and invoked as `this.#fetch(...)`
+    // it throws "Illegal invocation" on EVERY request — in exactly the runtime our
+    // `workerd` export condition advertises. Wrap rather than bind so a fetch installed
+    // after construction (RN registerGlobals, instrumentation) is still honored.
+    this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.#timeoutMs = options.timeoutMs ?? 60_000;
     this.#maxRetries = Math.max(0, options.maxRetries ?? 2);
     this.#userAgent = [`realtime-avatar-sdk/${SDK_VERSION}`, runtimeTag(), options.userAgent]

@@ -526,3 +526,27 @@ test("createAvatar forwards settings and metadata only when given", async () => 
   assert.deepEqual(extras.seen.body?.settings, { persona: "warm, specific" });
   assert.deepEqual(extras.seen.body?.metadata, { characterId: "c1" });
 });
+
+test("the default fetch survives a this-sensitive global (workerd)", async (t) => {
+  // workerd's fetch throws "Illegal invocation" when called with any `this` other than
+  // the global — which is exactly what a stored bare reference invoked as
+  // `this.#fetch(...)` does. Replay that contract here so the default path can never
+  // regress into it.
+  const original = globalThis.fetch;
+  globalThis.fetch = function (this: unknown, ...args: Parameters<typeof fetch>) {
+    if (this !== globalThis && this !== undefined) {
+      throw new TypeError("Illegal invocation: function called with incorrect `this` reference");
+    }
+    void args;
+    return Promise.resolve(
+      new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  } as typeof fetch;
+  t.after(() => { globalThis.fetch = original; });
+
+  const rta = new RealtimeAvatar({ apiKey: "k", maxRetries: 0 });
+  assert.deepEqual(await rta.listAvatars(), []);
+});
