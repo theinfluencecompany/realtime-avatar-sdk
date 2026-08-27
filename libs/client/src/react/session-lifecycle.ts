@@ -120,11 +120,11 @@ export function isRecoverableConnectionError(error: unknown): boolean {
 }
 
 /**
- * NOT WIRED UP. Nothing calls this and no test covers it — checked 2026-08-26 by searching the
- * whole carry for `pendingTurn` and `replay`, which appear nowhere else. So a turn the user sends
- * while the session is reconnecting is NOT replayed today; this function is a specification of
- * behaviour that was never connected, kept because deleting it would delete the only record that
- * it was intended. Wire it or drop it deliberately — do not let it sit here unread.
+ * Wired up by CONSUMERS, not by this package. Nothing inside the carry calls it — checked
+ * 2026-08-26 by searching for `pendingTurn` and `replay`, which appear nowhere else here. The
+ * upstream studio imports it to gate its own turn replay on reconnect, which is why it is on the
+ * public `/react` surface (exported 2026-08-27): the hooks own the reconnect, but the pending
+ * turn lives in the app, so the app is the one that has to ask.
  *
  * Whether a re-queued turn should replay onto a freshly-(re)connected room. Pure
  * so the "replay exactly once, keyed on the NEW session_id" guard is testable.

@@ -46,6 +46,7 @@ export {
   MAX_RECONNECT_ATTEMPTS,
   RECONNECT_BACKOFF_MS,
   SessionLifecycleRoomBridge,
+  shouldReplayPendingTurn,
   useSessionLifecycle,
   type ReconnectPolicy,
   type RecoveryState,
