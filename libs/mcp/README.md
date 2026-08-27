@@ -1,26 +1,25 @@
 # realtime-avatar-mcp
 
-**Not published yet** — the package is marked `private: true`, so `npm publish` skips it rather than relying on nobody running the command. Build it and point your agent at the local path.
+Published on npm as [`realtime-avatar-mcp`](https://www.npmjs.com/package/realtime-avatar-mcp) — run it with `npx`, never installed into an app.
 
 An MCP server for Realtime Avatar. [`AGENTS.md`](../../AGENTS.md) tells a coding agent what
 the API is; this lets it *look* — at your avatars, your balance, your bill — instead of
 guessing ids and inventing shapes.
 
-```bash
-npm run build
-```
-
 ```jsonc
 {
   "mcpServers": {
     "realtime-avatar": {
-      "command": "node",
-      "args": ["/abs/path/to/realtime-avatar-sdk/libs/mcp/dist/bin.js"],
+      "command": "npx",
+      "args": ["-y", "realtime-avatar-mcp"],
       "env": { "REALTIME_AVATAR_API_KEY": "tic_test_…" }
     }
   }
 }
 ```
+
+Working on it in this repo? `npm run build`, then point `command` at `node` with
+`args: ["/abs/path/to/realtime-avatar-sdk/libs/mcp/dist/bin.js"]`.
 
 ## Tools
 
