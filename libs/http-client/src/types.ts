@@ -320,6 +320,13 @@ export type Avatar = Pick<
   "id" | "displayName" | "sourceKind" | "status" | "defaultVoiceId"
 >;
 
+/**
+ * The patch `updateAvatar` sends — the two fields an integrator re-points after creation.
+ * The contract's `UpdateAvatarRequest` carries more (llm, persona, art direction…); that is
+ * dashboard machinery this surface deliberately does not model.
+ */
+export type AvatarUpdate = Pick<Wire["UpdateAvatarRequest"], "displayName" | "defaultVoiceId">;
+
 type UsageSessionsResponse = Wire["ListUsageSessionsResponse"];
 
 /**

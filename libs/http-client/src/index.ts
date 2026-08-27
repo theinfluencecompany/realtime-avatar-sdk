@@ -6,6 +6,7 @@ export type {
   Asset,
   AssetKind,
   Avatar,
+  AvatarUpdate,
   CallConnection,
   CallMode,
   CallPolicy,

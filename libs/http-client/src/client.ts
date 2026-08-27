@@ -14,6 +14,7 @@ import type {
   UsageSessionPage,
   AssetKind,
   Avatar,
+  AvatarUpdate,
   CallMode,
   CallPolicy,
   ClipSyncResult,
@@ -207,6 +208,8 @@ export class RealtimeAvatar {
     displayName: string;
     videoUrl: string;
     voice?: unknown;
+    settings?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
   }): Promise<Avatar> {
     const asset = await this.createRemoteAsset({ kind: "video", remoteUrl: input.videoUrl });
     return this.createAvatar({
@@ -214,6 +217,8 @@ export class RealtimeAvatar {
       sourceKind: "video",
       sourceAssetId: asset.id,
       voice: input.voice,
+      settings: input.settings,
+      metadata: input.metadata,
     });
   }
 
@@ -222,6 +227,8 @@ export class RealtimeAvatar {
     sourceKind: "image" | "video";
     sourceAssetId: string;
     voice?: unknown;
+    settings?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
   }): Promise<Avatar> {
     const body: Record<string, unknown> = {
       displayName: input.displayName,
@@ -229,6 +236,8 @@ export class RealtimeAvatar {
       sourceAssetId: input.sourceAssetId,
     };
     if (input.voice !== undefined) body.voice = input.voice;
+    if (input.settings !== undefined) body.settings = input.settings;
+    if (input.metadata !== undefined) body.metadata = input.metadata;
     return toAvatar(await this.#json(await this.#request("POST", "/avatars", { json: body })));
   }
 
@@ -239,6 +248,17 @@ export class RealtimeAvatar {
 
   async getAvatar(avatarId: string): Promise<Avatar> {
     return toAvatar(await this.#json(await this.#request("GET", `/avatars/${avatarId}`)));
+  }
+
+  /** Re-point what an avatar already is. `defaultVoiceId: null` clears the default voice. */
+  async updateAvatar(avatarId: string, patch: AvatarUpdate): Promise<Avatar> {
+    return toAvatar(
+      await this.#json(await this.#request("PATCH", `/avatars/${avatarId}`, { json: patch })),
+    );
+  }
+
+  async deleteAvatar(avatarId: string): Promise<void> {
+    await this.#json(await this.#request("DELETE", `/avatars/${avatarId}`));
   }
 
   /**

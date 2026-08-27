@@ -40,6 +40,8 @@ export {
 // The shared pure/reactive pieces the surface is built on, for apps composing
 // their own surface UI on native.
 export {
+  isNativeLiveTrackSubscribed,
+  useLiveTrackProducing,
   type AvatarVideoFit,
   type SurfaceLayers,
 } from "../react/avatar-video-surface";
@@ -130,6 +132,7 @@ export {
   type UseRealtimeSessionInput,
 } from "../react/use-realtime-session";
 export {
+  mapTurnState,
   type ApproachingEndReason,
   type EndReason,
   type GraceWindowState,
@@ -158,6 +161,8 @@ export {
   type SessionBehavior,
   type SessionClip,
 } from "../wire";
+// The mint's cap on `instructions`, so an app can budget prompt assembly without probing.
+export { MAX_SESSION_INSTRUCTIONS_CHARS } from "../wire";
 
 // Mic single-flight lease — the cross-room getUserMedia guard. Both halves are
 // RN-safe but were not re-exported on native before; an Android call path needs

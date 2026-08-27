@@ -92,9 +92,11 @@ export {
   useMicLease,
   type MicLease,
 } from "./mic-single-flight";
-// Re-export the director ack frame type so consumers can type their onAck handler without
-// reaching into the contracts package (the hook's onAck signature uses it).
+// The turn/grace-window vocabulary the session hooks speak. `mapTurnState` is a value on
+// purpose: transport is not re-exported, so an app reading `useVoiceAssistant().state` off
+// its own LiveKit peer needs the same 4-value mapping the hooks use.
 export {
+  mapTurnState,
   type ApproachingEndReason,
   type EndReason,
   type GraceWindowState,
@@ -126,6 +128,8 @@ export {
   type SessionBehavior,
   type SessionClip,
 } from "../wire";
+// The mint's cap on `instructions`, so an app can budget prompt assembly without probing.
+export { MAX_SESSION_INSTRUCTIONS_CHARS } from "../wire";
 
 // The contract `AvatarCall` and the hooks ask for. Exported so a consumer can implement it.
 export type {

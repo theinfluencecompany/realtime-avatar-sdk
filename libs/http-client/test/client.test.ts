@@ -6,9 +6,10 @@ import { isQueued } from "../src/types.ts";
 
 /** A fetch stub that records the request and replays a canned response. */
 function stub(response: { status?: number; body?: unknown }) {
-  const seen: { url?: string; body?: Record<string, unknown> } = {};
+  const seen: { url?: string; method?: string; body?: Record<string, unknown> } = {};
   const fetchImpl = (async (url: string, init: RequestInit) => {
     seen.url = String(url);
+    seen.method = init.method;
     if (typeof init.body === "string") seen.body = JSON.parse(init.body);
     return new Response(JSON.stringify(response.body ?? {}), {
       status: response.status ?? 200,
@@ -476,4 +477,52 @@ test("an untagged session still bills, it just has no user on it", async () => {
   assert.deepEqual(s.metadata, {});
   assert.equal(s.activeSeconds, 61.5);
   assert.equal(s.billedCreditMicros, 2500);
+});
+
+test("updateAvatar PATCHes the curated patch and returns the avatar", async () => {
+  const { seen, fetchImpl } = stub({
+    body: { id: "ava_1", displayName: "Rin", sourceKind: "video", status: "ready", defaultVoiceId: "v2" },
+  });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  const avatar = await rta.updateAvatar("ava_1", { defaultVoiceId: "v2" });
+  assert.equal(seen.method, "PATCH");
+  assert.ok(seen.url?.endsWith("/avatars/ava_1"));
+  assert.deepEqual(seen.body, { defaultVoiceId: "v2" });
+  assert.equal(avatar.defaultVoiceId, "v2");
+});
+
+test("deleteAvatar sends DELETE, and a refusal throws like any other", async () => {
+  const { seen, fetchImpl } = stub({ body: { ok: true } });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  await rta.deleteAvatar("ava_9");
+  assert.equal(seen.method, "DELETE");
+  assert.ok(seen.url?.endsWith("/avatars/ava_9"));
+
+  const denied = stub({ status: 403, body: { code: "missing_scope" } });
+  const rta2 = new RealtimeAvatar({ apiKey: "k", fetch: denied.fetchImpl, maxRetries: 0 });
+  await assert.rejects(rta2.deleteAvatar("ava_9"), (err: unknown) => {
+    assert.ok(err instanceof RealtimeAvatarHttpError);
+    assert.equal(err.status, 403);
+    return true;
+  });
+});
+
+test("createAvatar forwards settings and metadata only when given", async () => {
+  const bare = stub({ body: { id: "ava_1" } });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: bare.fetchImpl });
+  await rta.createAvatar({ displayName: "Rin", sourceKind: "video", sourceAssetId: "as_1" });
+  assert.ok(!("settings" in (bare.seen.body ?? {})));
+  assert.ok(!("metadata" in (bare.seen.body ?? {})));
+
+  const extras = stub({ body: { id: "ava_1" } });
+  const rta2 = new RealtimeAvatar({ apiKey: "k", fetch: extras.fetchImpl });
+  await rta2.createAvatar({
+    displayName: "Rin",
+    sourceKind: "video",
+    sourceAssetId: "as_1",
+    settings: { persona: "warm, specific" },
+    metadata: { characterId: "c1" },
+  });
+  assert.deepEqual(extras.seen.body?.settings, { persona: "warm, specific" });
+  assert.deepEqual(extras.seen.body?.metadata, { characterId: "c1" });
 });
