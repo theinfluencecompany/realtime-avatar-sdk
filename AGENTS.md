@@ -521,6 +521,16 @@ key-holding subpaths now carry `browser` and `react-native` conditions pointing 
 `src/server-only-guard.ts`, whose only statement is a `throw`. Measured on the real package: a
 browser bundle importing both halves contains **0** occurrences of `Bearer` or `apiKey`.
 
+**The guard must know who NOT to fire on.** Cloudflare Workers are key-holding server
+runtimes, and wrangler and `@cloudflare/vite-plugin` resolve with the conditions
+`workerd, worker, browser` — so a map with only `browser` sends a Worker build to the stub, and
+the build dies with `MISSING_EXPORT` (measured 2026-08-27, on a consumer Worker that had been
+green for weeks). Each guarded subpath therefore lists `workerd` → the real entry AHEAD of
+`browser`. Condition matching is order-sensitive and browsers never set `workerd` — web workers
+set `worker`, which deliberately has no key, so they still hit the stub.
+`libs/sdk-server/test/exports-conditions.test.ts` replays the resolution for every consumer
+class and fails on a reorder.
+
 **Two traps, both of which silently disarm this.** `"browser": null` looks like the obvious
 spelling and is worse than nothing — webpack errors, but Vite 8/rolldown ignores it and bundles the
 server file WITH the secret. And `"sideEffects": false` lets a bundler treeshake a throw-only
