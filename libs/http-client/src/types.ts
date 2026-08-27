@@ -371,8 +371,45 @@ export type CreditBalance = Pick<
   "balanceCreditMicros" | "reservedCreditMicros"
 >;
 
-/** Result of reconciling an avatar's clip set to the cache tier. */
+/**
+ * Result of reconciling an avatar's clip set to the cache tier.
+ * @deprecated The externally-hosted clip tier is sunsetting. Declare the library with
+ * `setClipLibrary` instead — the platform renders and hosts the clips for you.
+ */
 export type ClipSyncResult = Wire["SyncAvatarClipsResponse"];
+
+/**
+ * One desired clip in a library declaration: a `clipId` you choose, a role, and exactly ONE
+ * source — a `motionPrompt` the platform renders from the avatar's rest-pose anchor, or the
+ * `assetId` of a video you uploaded. `durationSeconds` (4–8, default 5) applies to generated
+ * clips only; `reroll` is a write-only re-render nudge and is never echoed back by a read.
+ */
+export type ClipDeclaration = Wire["PutAvatarClipsRequest"]["clips"][number];
+
+/** The two ways a declared clip gets its pixels. Exactly one — an object carrying both is rejected. */
+export type ClipSource = Wire["PutAvatarClipsRequest"]["clips"][number]["source"];
+
+/**
+ * One clip row as the platform reports it. `status` is JOB state, not serveability: `url` is
+ * the SERVING asset and may stay non-null while a re-render is `generating` or has `failed` —
+ * the previous take keeps serving. An uploaded clip that fails pose validation carries the
+ * structured verdict in `poseCheck` and the reason in `error`.
+ */
+export type AvatarClip = Wire["ListAvatarClipsResponse"]["data"][number];
+
+/**
+ * The library as `listClips` reports it: every non-retired clip plus the avatar-level facts —
+ * the declaration `revision` (0 = still creation-owned), the anchor generation, and the
+ * rest-pose `anchor` the clips splice against (null only while a video-sourced avatar's
+ * anchor frame has not been derived yet).
+ */
+export type ClipLibrary = Wire["ListAvatarClipsResponse"];
+
+/** How a declaration reconciled against the previous library — by `clipId`. */
+export type ClipLibraryPlan = Wire["PutAvatarClipsResponse"]["plan"];
+
+/** The accepted declaration's answer: the post-apply library plus how it reconciled. */
+export type ClipLibraryUpdate = Wire["PutAvatarClipsResponse"];
 
 /**
  * DERIVATION: hand-written, because the contract does not describe it.
