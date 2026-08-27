@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Set designer</title>
+    <style>
+      :root { color-scheme: dark }
+      * { box-sizing: border-box }
+      body { margin: 0; min-height: 100svh; background: #0b0b0d; color: #e8e8ee;
+        font: 15px/1.5 -apple-system, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 16px; padding: 24px 14px }
+      h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -.2px }
+      .sub { margin: 0; color: #8d8d99; font-size: 12.5px; max-width: 420px; text-align: center; line-height: 1.6 }
+
+      .stage { position: relative; width: min(390px, 92vw); aspect-ratio: 3/4; background: #000;
+        border-radius: 18px; overflow: hidden; box-shadow: 0 24px 70px #000b, 0 0 0 1px #ffffff12 }
+      video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+        opacity: 0; transition: opacity .5s }
+      video.on { opacity: 1 }
+      .idle { position: absolute; inset: 0; display: grid; place-items: center; color: #55555f;
+        font-size: 13px; text-align: center; padding: 0 40px; line-height: 1.6 }
+
+      .sets { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 430px }
+      .pill { font: inherit; font-size: 13.5px; color: #c9c9d4; background: #ffffff10;
+        border: 1px solid #ffffff1c; border-radius: 999px; padding: 7px 14px; cursor: pointer;
+        transition: background .15s, color .15s }
+      .pill.sel { background: #e8e8ee; color: #131316; border-color: transparent; font-weight: 600 }
+
+      .live { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #a9a9b4;
+        cursor: pointer; user-select: none }
+      .live input { accent-color: #e8e8ee }
+
+      .controls { display: flex; gap: 10px }
+      .btn { font: inherit; font-size: 14px; font-weight: 600; color: #131316; background: #e8e8ee;
+        border: none; border-radius: 10px; padding: 10px 22px; cursor: pointer }
+      .btn.ghost { background: #ffffff14; color: #e8e8ee }
+      .btn:disabled { opacity: .4; cursor: default }
+
+      .status { min-height: 1.4em; font-size: 12.5px; color: #8d8d99; text-align: center; max-width: 420px }
+    </style>
+  </head>
+  <body>
+    <h1>Set designer</h1>
+    <p class="sub">
+      Pick a world before you call — the id is all the browser sends; the sentence it maps to
+      lives on the server, next to the key. Tick <b>Live</b> and the conversation redresses the
+      room itself: tell her where you'd rather be.
+    </p>
+
+    <div class="stage">
+      <video id="v" autoplay playsinline></video>
+      <div class="idle" id="idle">no call yet — pick a set and press Call</div>
+    </div>
+
+    <div class="sets" id="sets"></div>
+    <label class="live"><input type="checkbox" id="live" /> Live — let the conversation re-edit the set (30s cooldown)</label>
+
+    <div class="controls">
+      <button class="btn" id="call">Call</button>
+      <button class="btn ghost" id="hang" disabled>Hang up</button>
+      <button class="btn ghost" id="mic" disabled>Mute mic</button>
+    </div>
+    <div class="status" id="status"></div>
+
+    <p class="sub">
+      The set is chosen at mint — hang up and call again to open in a different world. This is a
+      real call and spends credits; your mic is live.
+    </p>
+
+    <script type="module">
+      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+
+      const $ = (id) => document.getElementById(id);
+      const say = (t) => ($("status").textContent = t);
+
+      // ── Why the microphone did not start. Published as realtime-avatar/browser; inlined so
+      // this example stays standalone. It returns a reason instead of throwing because "the mic
+      // won't start" is one sentence covering six causes with six different fixes — and one of
+      // them is not in the browser at all.
+      async function startMic(room) {
+        if (!navigator.mediaDevices) return { ok: false, why: "This page is not a secure context. Use https, or http://localhost — a LAN address will not do." };
+        try {
+          // Per spec getUserMedia may neither resolve nor reject if the prompt is ignored.
+          const noAnswer = new Promise((r) => setTimeout(() => r("no-answer"), 15000));
+          const started = room.localParticipant.setMicrophoneEnabled(true).then(() => "ok");
+          if (await Promise.race([started, noAnswer]) === "no-answer") return { ok: false, why: "The microphone prompt was not answered — look for it in the address bar." };
+          return { ok: true };
+        } catch (err) {
+          const message = err?.message ?? String(err);
+          if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+            // Chromium reports a macOS system denial as NotAllowedError too, and THAT one the
+            // address bar cannot fix — so the two must never share a message.
+            return /by system|system permission/i.test(message)
+              ? { ok: false, why: "macOS is blocking the browser itself: System Settings > Privacy & Security > Microphone, then RESTART the browser." }
+              : { ok: false, why: "This site is blocked from the microphone — allow it from the address-bar icon and reload." };
+          }
+          if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") return { ok: false, why: "No microphone is available." };
+          if (err?.name === "NotReadableError" || err?.name === "TrackStartError") return { ok: false, why: "Another app or tab is holding the microphone." };
+          return { ok: false, why: message };
+        }
+      }
+
+      let room = null;
+      let sessionId = null;
+      let muted = false;
+      let set = "none";
+      let setLabel = "As built";
+
+      // The slot is held from the moment the grant lands — BEFORE the room exists. `pagehide` +
+      // sendBeacon is the one goodbye that outlives a closing page; ending is idempotent, so a
+      // beacon after a clean hang-up costs nothing.
+      addEventListener("pagehide", () => {
+        if (sessionId) navigator.sendBeacon("/api/end", JSON.stringify({ session_id: sessionId }));
+      });
+
+      // Ids and labels come from the server; the prose they map to never reaches this page.
+      const cfg = await fetch("/config").then((r) => r.json());
+      for (const s of cfg.sets) {
+        const b = document.createElement("button");
+        b.className = "pill" + (s.id === set ? " sel" : "");
+        b.textContent = s.label;
+        b.onclick = () => {
+          set = s.id;
+          setLabel = s.label;
+          for (const p of $("sets").children) p.classList.toggle("sel", p === b);
+          if (room) say(`"${s.label}" applies to the NEXT call — hang up and redial, or use Live and just tell her`);
+        };
+        $("sets").append(b);
+      }
+
+      $("call").onclick = async () => {
+        $("call").disabled = true;
+        say("minting…");
+        try {
+          // The id, and only the id. The server owns what it means.
+          const res = await fetch("/api/call", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ set, live: $("live").checked }),
+          });
+          if (res.status === 429) {
+            // Capacity, not a rate limit: `isQueued` on the server turned this into a position.
+            const q = await res.json();
+            say(`all slots busy — position ${q.position ?? "?"}, retrying…`);
+            setTimeout(() => { $("call").disabled = false; $("call").click(); }, q.retryAfterMs ?? 3000);
+            return;
+          }
+          if (res.status === 402) { say("out of credits — top up to call"); $("call").disabled = false; return; }
+          if (!res.ok) throw new Error(`mint failed (${res.status}): ${await res.text()}`);
+          const { grant } = await res.json();
+          sessionId = grant.session_id; // held from HERE — the pagehide beacon needs it now
+
+          room = new Room({ adaptiveStream: true });
+          room.on(RoomEvent.TrackSubscribed, (track) => {
+            if (track.kind === Track.Kind.Video) {
+              track.attach($("v"));
+              $("v").classList.add("on");
+              $("idle").style.display = "none";
+              say(set === "none" ? "live — as built" : `live — repainting: ${setLabel.toLowerCase()}`);
+            } else if (track.kind === Track.Kind.Audio) {
+              document.body.append(track.attach());
+            }
+          });
+          room.on(RoomEvent.Disconnected, () => teardown("call ended"));
+
+          say("connecting…");
+          await room.connect(grant.livekit_url, grant.participant_token);
+          const mic = await startMic(room);
+          if (!mic.ok) say(`connected, but the microphone did not start. ${mic.why}`);
+          $("hang").disabled = false;
+          $("mic").disabled = false;
+        } catch (error) {
+          say(String(error?.message ?? error));
+          $("call").disabled = false;
+        }
+      };
+
+      $("hang").onclick = () => room?.disconnect();
+      $("mic").onclick = async () => {
+        muted = !muted;
+        await room?.localParticipant.setMicrophoneEnabled(!muted);
+        $("mic").textContent = muted ? "Unmute mic" : "Mute mic";
+      };
+
+      function teardown(message) {
+        room = null;
+        $("v").classList.remove("on");
+        $("idle").style.display = "";
+        $("call").disabled = false;
+        $("hang").disabled = true;
+        $("mic").disabled = true;
+        $("mic").textContent = "Mute mic";
+        muted = false;
+        say(message);
+      }
+    </script>
+  </body>
+</html>
