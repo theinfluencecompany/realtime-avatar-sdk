@@ -31,6 +31,7 @@ LiveKitSessionRequest
 LiveKitSessionRequestInput
 LiveKitSessionWireRequestInput
 LiveKitSttMode
+MAX_SESSION_INSTRUCTIONS_CHARS
 RTA_CLOSING_TURN_ATTR
 RTA_LIFECYCLE_TOPIC
 RTA_TURN_ID_ATTR

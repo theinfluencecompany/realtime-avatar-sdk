@@ -274,6 +274,12 @@ const clientMetadataSchema = z
   });
 export type ClientMetadata = z.infer<typeof clientMetadataSchema>;
 
+/**
+ * The cap the mint enforces on `instructions`. Exported so an app can budget its prompt
+ * assembly against the real number instead of probing for it with a binary search.
+ */
+export const MAX_SESSION_INSTRUCTIONS_CHARS = 4_000;
+
 export const liveKitSessionWireRequestSchema = z
   .object({
     avatar_id: z.string().min(1).max(160).default(DEFAULT_AVATAR_ID),
@@ -282,7 +288,7 @@ export const liveKitSessionWireRequestSchema = z
     mode: sessionModeSchema.default(DEFAULT_SESSION_MODE),
     create_room: z.boolean().default(true),
     dispatch_agent: z.boolean().default(true),
-    instructions: z.string().min(1).max(4_000).optional(),
+    instructions: z.string().min(1).max(MAX_SESSION_INSTRUCTIONS_CHARS).optional(),
     initial_context: z.array(liveKitInitialContextMessageSchema).max(32).default([]),
     initial_say: z.string().min(1).max(1_000).optional(),
     llm: llmConfigSchema.nullable().optional(),
@@ -370,7 +376,7 @@ export const liveKitSessionRequestSchema = z
     mode: sessionModeSchema.default(DEFAULT_SESSION_MODE),
     createRoom: z.boolean().default(true),
     dispatchAgent: z.boolean().default(true),
-    instructions: z.string().min(1).max(4_000).optional(),
+    instructions: z.string().min(1).max(MAX_SESSION_INSTRUCTIONS_CHARS).optional(),
     initialContext: z.array(liveKitInitialContextMessageSchema).max(32).default([]),
     initialSay: z.string().min(1).max(1_000).optional(),
     llm: llmSelectionSchema.nullable().optional(),
