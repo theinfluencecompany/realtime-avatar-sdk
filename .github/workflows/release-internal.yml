@@ -10,18 +10,30 @@ name: Publish to GitHub Packages
 # hours, so the public registry is simply not an option until that window opens — and after it
 # opens, a first-party build still should not wait for a human to cut a version.
 #
-# NAME. The committed name is the bare `realtime-avatar`, which is the public identity and what
-# every doc and example says to install. GitHub Packages cannot host it: its registry requires
-# the name be scoped to the owning org and rejects an unscoped publish outright. So the publish
-# step rewrites the name IN THE RUNNER ONLY. Nothing is committed, and a consumer keeps writing
-# `import ... from "realtime-avatar"` by installing under an npm alias:
+# NAME. The committed name is the bare `realtime-avatar` — the public identity, and what every
+# doc and example says to install. GitHub Packages cannot host it: its registry requires the name
+# be scoped to the owning org and rejects an unscoped publish outright. So the publish step
+# rewrites the name IN THE RUNNER ONLY, and nothing is committed.
 #
-#   "realtime-avatar": "npm:@theinfluencecompany/realtime-avatar@sdk"
+# The scope is `@theinfluencecompany/realtime-avatar-sdk`, NOT `.../realtime-avatar`. The shorter
+# one already exists on GitHub Packages, owned by the archived `theinfluencecompany/realtime-avatar`
+# repository, and this repo cannot write to it: the first attempt returned
 #
-# DIST-TAG is `sdk` — not `latest`, and not `platform`. The platform repo publishes the same
-# scoped name under `platform` during the migration; two publishers claiming one tag would fight
-# over it and whichever ran last would reach every consumer of that tag. Separate tags make each
-# side opt-in. Flip to `latest` only when one publisher remains.
+#   403 Forbidden - PUT .../@theinfluencecompany%2frealtime-avatar - permission_denied: write_package
+#
+# That is not a misconfigured permission. A GitHub package belongs to the repository that first
+# published it, and granting another repository write access is refused here for a structural
+# reason: the package is PRIVATE and this repository is PUBLIC, so the org settings page does not
+# even list it as a candidate ("No repositories found"). Letting a public repo's Actions push a
+# private artifact is not something GitHub will allow, and it should not.
+#
+# A consumer keeps writing `import ... from "realtime-avatar"` regardless, by installing under an
+# npm alias:
+#
+#   "realtime-avatar": "npm:@theinfluencecompany/realtime-avatar-sdk@sdk"
+#
+# DIST-TAG is `sdk`. The platform repo publishes its own package under `platform` during the
+# migration; separate names AND separate tags mean neither can reach the other's consumers.
 
 on:
   push:
@@ -75,7 +87,7 @@ jobs:
         run: |
           # CI-only, never committed. Set BEFORE the dry-run too, or the dry-run validates a
           # publish that could not actually happen.
-          npm pkg set name="@theinfluencecompany/realtime-avatar"
+          npm pkg set name="@theinfluencecompany/realtime-avatar-sdk"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
             npm publish --dry-run
