@@ -72,6 +72,14 @@ export type CallMode = NonNullable<Wire["LiveKitSessionRequest"]["mode"]>;
   */
 export type ContextMessage = NonNullable<Wire["LiveKitSessionRequest"]["initial_context"]>[number];
 
+/**
+ * DERIVATION: hand-written, and deliberately NOT one-to-one with the wire.
+ *
+ * The contract carries `clip_library`, `support_edits` and `render_backend` as three separate
+ * concerns. `video` is one product decision layered over all three, so deriving it would leak
+ * the transport's shape into the ergonomics and make this API hostage to how those three
+ * happen to be spelled upstream.
+ */
 /** One named state the character can rest in, and when she should be in it. */
 export interface VideoState {
   /**
@@ -85,6 +93,7 @@ export interface VideoState {
   weight?: number;
 }
 
+/** DERIVATION: hand-written. Part of the `video` surface — see {@link VideoState}. */
 /**
  * Rewrite the clip instead of replaying it as shot: her loop, streamed through a video
  * editing model under a prose instruction, then lip-synced by the same path as an unedited
@@ -137,6 +146,7 @@ export interface VideoEdits {
   };
 }
 
+/** DERIVATION: hand-written. The `video` surface itself — see {@link VideoState}. */
 /**
  * How the character is rendered.
  *
@@ -247,6 +257,10 @@ export interface CallQueued {
   queueTicketId: NonNullable<Wire["CapacityBusyResponse"]["queue_ticket_id"]> | null;
 }
 
+/**
+ * DERIVATION: transitive. A union of {@link CallConnection} and {@link CallQueued}, both of
+ * which index the contract — so this follows it without naming it.
+ */
 export type StartCallResult = CallConnection | CallQueued;
 
 export function isQueued(result: StartCallResult): result is CallQueued {
@@ -329,7 +343,7 @@ export interface UsageSessionPage {
 }
 
 /**
- * NOT derived, because the published contract declares no query parameters on
+ * DERIVATION: hand-written, because the published contract declares no query parameters on
  * `GET /v1/usage/sessions` — the route reads them, the spec does not describe them. This is
  * the one place in this file where a shape is asserted rather than taken from the contract,
  * and the fix belongs upstream in the spec export, not here.
@@ -353,6 +367,14 @@ export type CreditBalance = Pick<
 /** Result of reconciling an avatar's clip set to the cache tier. */
 export type ClipSyncResult = Wire["SyncAvatarClipsResponse"];
 
+/**
+ * DERIVATION: hand-written, because the contract does not describe it.
+ *
+ * The transcript webhook body is absent from the published document entirely — not narrowed,
+ * not redacted, absent. So there is nothing to derive from, and this is the only shape here
+ * whose source is a GAP rather than a decision. Fixing it means describing the webhook body
+ * upstream.
+ */
 /** The signed payload delivered to `CallPolicy.transcript.url` after a call ends. */
 export interface TranscriptPayload {
   type: "session.transcript";
