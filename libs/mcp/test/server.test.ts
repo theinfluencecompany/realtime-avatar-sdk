@@ -39,7 +39,7 @@ const say = (result: unknown): string => {
 test("the default surface is read-only — an agent cannot spend credits", async () => {
   const { client } = await connect({});
   const tools = await names(client);
-  assert.deepEqual(tools, ["credit_balance", "get_avatar", "list_avatars", "list_sessions"]);
+  assert.deepEqual(tools, ["credit_balance", "get_avatar", "list_avatars", "list_clips", "list_sessions"]);
   // Every one of them says so, so a host can gate on the annotation rather than the name.
   for (const tool of (await client.listTools()).tools) {
     assert.equal(tool.annotations?.readOnlyHint, true, `${tool.name} must be read-only`);
@@ -105,7 +105,8 @@ test("the write surface is exactly the tools that mutate", async () => {
   const { client } = await connect({ allowWrites: true });
   assert.deepEqual(await names(client), [
     "create_avatar_from_video", "create_remote_asset", "credit_balance", "get_avatar",
-    "list_avatars", "list_sessions", "start_call", "sync_clips", "upload_asset",
+    "list_avatars", "list_clips", "list_sessions", "set_clip_library", "start_call",
+    "sync_clips", "upload_asset",
   ]);
 });
 

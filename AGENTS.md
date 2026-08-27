@@ -253,8 +253,10 @@ Showing a failure here is the most common bad first impression.
 An avatar's clip library is **declared**, not patched: `setClipLibrary` takes the full
 desired set, and the platform reconciles it — unchanged clips are `kept` (still serving),
 new or changed ones are `queued` to render, dropped ones are `retired`. The 202 is
-acceptance, not readiness: poll `listClips` until every row is `ready`. While a re-render
-is in flight the previous take keeps serving, so a declaration never blanks a live avatar.
+acceptance, not readiness: poll `listClips` until no row is `queued` or `generating` — a
+rejected upload settles `failed`, which is terminal, so waiting for all-`ready` waits
+forever. While a re-render is in flight the previous take keeps serving, so a declaration
+never blanks a live avatar.
 
 ```ts
 const update = await rta.setClipLibrary(avatarId, {
@@ -485,6 +487,7 @@ try {
 | 401 | Bad/missing/revoked key | Check the bearer and the environment tag |
 | 402 | Out of credits or over the key's spend limit | Paywall, not an error screen |
 | 403 | Key lacks the scope | Mint a key with it; do not widen to `*` |
+| 409 | `expectedRevision` is behind — someone else declared the clip library first | Re-read `listClips`, re-decide, re-declare |
 | 422 | Schema rejection | An unknown or mis-cased field — the wire is strict |
 | 429 | Capacity full **or** rate limited | For a call, that is the queue: retry. Not auto-retried |
 | 503 | Transient upstream | Retried for you, up to `maxRetries` |

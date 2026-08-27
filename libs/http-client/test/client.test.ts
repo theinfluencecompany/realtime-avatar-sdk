@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { RealtimeAvatar, SDK_VERSION } from "../src/client.ts";
-import { RealtimeAvatarHttpError } from "../src/errors.ts";
+import { RealtimeAvatarError, RealtimeAvatarHttpError } from "../src/errors.ts";
 import { isQueued } from "../src/types.ts";
 
 /** A fetch stub that records the request and replays a canned response. */
@@ -396,6 +396,25 @@ test("listClips hands back the envelope: rows plus revision, anchor and eligibil
   assert.equal(library.revision, 3);
   assert.equal(library.anchor?.timeMs, 1200);
   assert.equal(library.data[0]?.clipId, "wave");
+});
+
+test("a clip envelope without a revision throws instead of disarming CAS", async () => {
+  // A missing `revision` flowing through would drop `expectedRevision` from the next
+  // declare — CAS silently degrades to unconditional. The guard makes that loud.
+  const { fetchImpl } = stub({ status: 202, body: { data: [], plan: { kept: [], queued: [], retired: [] } } });
+  await assert.rejects(
+    new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", { clips: [] }),
+    (err: unknown) => err instanceof RealtimeAvatarError && /did not match the contract/.test((err as Error).message),
+  );
+});
+
+test("setClipLibrary is mutating, so the PUT carries an idempotency key", async () => {
+  const { attempts, fetchImpl } = scripted([{ status: 202, body: {
+    data: [], avatarId: "ava_1", revision: 1, anchorVersion: 1, anchor: null,
+    clipLibraryEligible: true, plan: { kept: [], queued: [], retired: [] },
+  } }]);
+  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", { clips: [] });
+  assert.match(attempts[0]?.headers.get("idempotency-key") ?? "", /.{16,}/);
 });
 
 test("SDK_VERSION tracks package.json, so the User-Agent cannot go stale", async () => {
