@@ -67,7 +67,7 @@ That's the whole integration. Two halves, one payload between them.
 |  |  |
 | --- | --- |
 | 🎙️ **Full duplex, always** | They listen the entire time they speak. Interrupt and they stop. A cough doesn't derail them; a pause isn't the end of your turn. Video doesn't cost you this. |
-| 🎭 **Your character, not a stock presenter** | Built from your own footage and voice. Start from a single image or one looping video and the resting loop is generated for you; author a multi-clip state map when you want to direct it. ([the one rule](./AGENTS.md#the-one-rule-that-decides-whether-multi-clip-looks-good): every clip starts and ends on the same frame.) |
+| 🎭 **Your character, not a stock presenter** | Hand it one still image: the resting loop and a starter motion library are generated from it — no footage to shoot, no clips to host. Direct her further in JSON (`setClipLibrary`), or re-shoot her later with footage of your own. ([the one rule](./AGENTS.md#the-one-rule-that-decides-whether-multi-clip-looks-good) if you do: every clip starts and ends on the same frame.) |
 | 🛠️ **Tools run on your machine** | Your functions, your data, your secrets — never uploaded. They're called mid-conversation and have 2.5s to answer. |
 | 💸 **Priced to leave running** | Under $5 per hour of live conversation, billed by the second — not rounded up to the minute. |
 | 🧾 **An itemised bill** | `listSessions` returns every session: when it ran, how long, what it cost. Tag calls with your own user id to attribute them. |
@@ -189,7 +189,8 @@ rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, t
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 
 // avatars
-rta.createAvatarFromVideo({ displayName, videoUrl, voice? })
+rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // the only lane
+rta.createAvatarFromVideo({ displayName, videoUrl, voice? })                 // DEPRECATED — closed, 422
 rta.listAvatars()
 rta.getAvatar(avatarId)
 rta.updateAvatar(avatarId, patch)       // re-point displayName / defaultVoiceId

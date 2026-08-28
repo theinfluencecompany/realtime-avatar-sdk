@@ -207,10 +207,15 @@ export class RealtimeAvatar {
   /**
    * Register a character from a looping clip you host.
    *
-   * Use a VIDEO source for anything that will be called live. An avatar built from a still
-   * image reaches `ready`, mints calls, and publishes a BLACK track — the status and the
-   * track dimensions both look fine, only the pixels are wrong. Image sources are for
-   * offline lipsync renders.
+   * @deprecated CLOSED to new callers — this answers `422` unless your tenant was already
+   * creating from video, in which case it keeps working and your existing avatars are
+   * untouched. Use {@link createAvatarFromImage}: one still, and the platform renders the
+   * resting loop and the motion library from it.
+   *
+   * The reason it closed is not arbitrary. Every clip has to start and end on ONE rest pose
+   * or a state switch reads as a jump, and the platform can only guarantee that when it
+   * rendered the loop and the clips from the same portrait. A supplied video cannot honour
+   * it, so the lane could never be made to look right.
    */
   async createAvatarFromVideo(input: {
     displayName: string;
@@ -230,10 +235,49 @@ export class RealtimeAvatar {
     });
   }
 
+  /**
+   * Register a character from ONE still image. The platform generates everything moving:
+   * the resting loop she idles in, then a starter motion library rendered against her rest
+   * pose. No footage, no clip URLs, nothing to shoot.
+   *
+   * `motionPrompt` directs the RESTING LOOP — the video she plays when nothing else is
+   * happening — and it is the only chance to direct it, because there is no API today that
+   * re-generates a loop after creation (see {@link updateAvatar} for the one thing that can
+   * be re-pointed). Describe a small closed arc that returns to where it started: "settles
+   * into frame, breathes gently, a slow blink". Omit it and the house default is used.
+   *
+   * Creation returns while the avatar is still `preprocessing`; poll {@link getAvatar} until
+   * it leaves that state. The loop is load-bearing, so a failure there settles `failed` with
+   * a readable error — the motion library is not, and a library failure degrades to
+   * loop-only rather than demoting the character.
+   */
+  async createAvatarFromImage(input: {
+    displayName: string;
+    imageUrl: string;
+    motionPrompt?: string;
+    voice?: unknown;
+    settings?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  }): Promise<Avatar> {
+    const asset = await this.createRemoteAsset({ kind: "image", remoteUrl: input.imageUrl });
+    return this.createAvatar({
+      displayName: input.displayName,
+      sourceKind: "image",
+      sourceAssetId: asset.id,
+      motionPrompt: input.motionPrompt,
+      voice: input.voice,
+      settings: input.settings,
+      metadata: input.metadata,
+    });
+  }
+
   async createAvatar(input: {
     displayName: string;
     sourceKind: "image" | "video";
     sourceAssetId: string;
+    /** Art direction for the generated resting loop. Image sources only — a video source
+     *  already IS the loop, and the platform ignores it there. */
+    motionPrompt?: string;
     voice?: unknown;
     settings?: Record<string, unknown>;
     metadata?: Record<string, unknown>;
@@ -243,6 +287,7 @@ export class RealtimeAvatar {
       sourceKind: input.sourceKind,
       sourceAssetId: input.sourceAssetId,
     };
+    if (input.motionPrompt !== undefined) body.motionPrompt = input.motionPrompt;
     if (input.voice !== undefined) body.voice = input.voice;
     if (input.settings !== undefined) body.settings = input.settings;
     if (input.metadata !== undefined) body.metadata = input.metadata;
@@ -258,7 +303,14 @@ export class RealtimeAvatar {
     return toAvatar(await this.#json(await this.#request("GET", `/avatars/${avatarId}`)));
   }
 
-  /** Re-point what an avatar already is. `defaultVoiceId: null` clears the default voice. */
+  /**
+   * Re-point what an avatar already is. `defaultVoiceId: null` clears the default voice.
+   *
+   * Cheap metadata only. The three things that cost a render have their own methods, because
+   * putting them in a patch alongside a rename would hide minutes of GPU work behind a field:
+   * {@link retimeAnchor} moves the rest frame, {@link swapSource} replaces the footage, and
+   * the resting loop is re-directed by description at `PUT /v1/avatars/{id}/loop`.
+   */
   async updateAvatar(avatarId: string, patch: AvatarUpdate): Promise<Avatar> {
     return toAvatar(
       await this.#json(await this.#request("PATCH", `/avatars/${avatarId}`, { json: patch })),

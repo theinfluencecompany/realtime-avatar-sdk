@@ -84,26 +84,34 @@ The browser SDK validates strictly and throws
 need to send your own data alongside, put it in a sibling field the client unwraps *before*
 handing the payload to the SDK.
 
-### 3. Use a video source for any avatar that will be called live
-
-An avatar built from a still image reaches `ready`, starts calls, and publishes a **black
-video track**. Nothing in the API tells you — the status is `ready` and the track has
-plausible dimensions. Only the pixels are wrong.
+### 3. One still image is the whole source — and now the only one
 
 ```ts
-await rta.createAvatarFromVideo({ displayName: "Rin", videoUrl: "https://…/idle.mp4" });
+await rta.createAvatarFromImage({
+  displayName: "Rin",
+  imageUrl: "https://…/portrait.png",
+  motionPrompt: "settles into frame, breathes gently, a slow blink",  // optional
+});
 ```
 
-If you are checking this yourself: read a frame onto a canvas and look at the mean. Track
-size proves nothing.
+The platform renders the resting loop and a starter motion library from that one frame.
+Creation returns while she is still `preprocessing`; poll `getAvatar` until she leaves it.
 
-**Frame the source tight on the face.** A video-sourced avatar shot as a medium — a presenter
-standing in a dressed set, face a sixth of the frame — preprocesses, reports `ready`, and mints
-calls; then **the render worker never joins the room**. There is no error and no failed status,
-just a call that connects to nobody, so the tools never register and the page can only report a
-timeout. The same footage re-cropped to head-and-shoulders works first time. Aspect ratio is not
-the variable — 1:1 and 9:16 both work — and the renderer crops to the face regardless, so frame
-for a close-up rather than for a set.
+**`createAvatarFromVideo` is closed** — it answers `422` unless your tenant was already using
+it, and existing video-sourced avatars keep working untouched. The reason is the splice rule:
+every clip has to start and end on ONE rest pose, and the platform can only guarantee that
+when it rendered the loop and the clips from the same portrait.
+
+**This reverses older guidance, twice over.** These docs used to say the opposite — use a
+video source, because an image-sourced avatar reaches `ready` and publishes a *black track*.
+That was true, and was fixed when image-only creation shipped. If you find that warning in an
+editor tooltip or a cached copy of the docs, it is stale.
+
+**Frame the portrait tight on the face.** Head-and-shoulders, not a presenter in a dressed
+set. This was learned on video sources — a medium shot preprocessed, reported `ready`, minted
+calls, and then **the render worker never joined the room**: no error, no failed status, just
+a call connected to nobody. The renderer crops to the face either way, so aspect ratio is not
+the variable (1:1 and 9:16 both work); framing is.
 
 ### 4. Every call is full duplex; `mode` only picks the renderer
 
@@ -288,6 +296,21 @@ is *accepted* — not when it is live.
 const asset = await rta.createRemoteAsset({ kind: "video", remoteUrl: "https://…/reshoot.mp4" });
 await rta.swapSource(avatarId, { sourceAssetId: asset.id, anchorTimeMs: 1200 });
 ```
+
+**Both of those take footage. There is a third lane that takes a sentence** — re-direct the
+resting loop by description, which is the one that applies to an image-sourced avatar (it has
+no footage to swap, and its rest pose is the portrait rather than a frame of the loop):
+
+```http
+PUT /v1/avatars/{avatarId}/loop
+{ "motionPrompt": "leans in, listening, a slow blink" }
+```
+
+No SDK method yet — plain authenticated `fetch` until `setLoop` lands. It differs from a
+re-shoot in the way that matters most: **the clip library is untouched**, because clips render
+against the portrait, not against the loop, so nothing re-queues. `422 loop_not_generatable`
+means a grandfathered video-sourced avatar with no portrait to re-animate — terminal, not a
+retry; `409 loop_pending` means one is already in flight.
 
 Three things follow, and each one bites a different assumption:
 

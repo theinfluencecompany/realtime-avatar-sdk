@@ -100,22 +100,23 @@ export function createServer(options: CreateServerOptions): McpServer {
       title: "List avatars",
       description:
         "Every avatar on this account, with the id you pass to startCall. Call this before " +
-        "writing code — avatar ids cannot be guessed. `sourceKind: 'image'` avatars publish " +
-        "a BLACK video track on a live call; prefer 'video'.",
+        "writing code — avatar ids cannot be guessed. An avatar reads `sourceKind: 'video'` " +
+        "once its loop is attached, including the ones built from a single image — that is " +
+        "the normal end state, not a warning.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async () => {
       const avatars = await rta.listAvatars();
       if (avatars.length === 0) {
-        return text("No avatars yet. Create one from a video URL before starting a call.");
+        return text("No avatars yet. Create one from a single portrait image before starting a call.");
       }
       const rows = avatars.map(
         (a) => `${a.id}  ${a.status.padEnd(13)} ${a.sourceKind.padEnd(5)} ${a.displayName}`,
       );
       const usable = avatars.filter((a) => a.status === "ready" && a.sourceKind === "video");
       return text(
-        `${avatars.length} avatar(s). ${usable.length} ready + video-sourced (usable for a live call).\n\n` +
+        `${avatars.length} avatar(s). ${usable.length} ready with a loop attached (usable for a live call).\n\n` +
           `id                                    status        kind  name\n${rows.join("\n")}`,
       );
     },
@@ -394,12 +395,43 @@ export function createServer(options: CreateServerOptions): McpServer {
   );
 
   server.registerTool(
+    "create_avatar_from_image",
+    {
+      title: "Create an avatar from one still image",
+      description:
+        "Build an avatar from a SINGLE still image — the shortest path, and the one to reach " +
+        "for by default. The platform generates the resting loop she idles in and a starter " +
+        "motion library rendered against her rest pose; no footage and no clip URLs are " +
+        "involved. 'motionPrompt' directs the resting loop and is the ONLY chance to direct " +
+        "it — no endpoint re-generates a loop after creation. Returns while she is still " +
+        "'preprocessing'; poll get_avatar.",
+      inputSchema: {
+        displayName: z.string(),
+        imageUrl: z.string().url().describe("Publicly reachable still of the character, face in frame"),
+        motionPrompt: z.string().max(1200).optional()
+          .describe(
+            "Art direction for the generated resting loop. Describe a CLOSED arc that ends " +
+            "where it began, or the loop snaps every time it wraps — e.g. 'settles into " +
+            "frame, breathes gently, a slow blink'. Omit for the house default.",
+          ),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ displayName, imageUrl, motionPrompt }) => {
+      const avatar = await rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt });
+      return text(`Created ${avatar.id} (${avatar.status}). Poll get_avatar until it is ready.`);
+    },
+  );
+
+  server.registerTool(
     "create_avatar_from_video",
     {
-      title: "Create an avatar from a video",
+      title: "Create an avatar from a video (deprecated)",
       description:
-        "Build an avatar from a looping video URL. Use a VIDEO source: an avatar built from " +
-        "a still image reaches 'ready' and then publishes a black track on every call.",
+        "DEPRECATED AND CLOSED — this answers 422 unless the tenant was already creating " +
+        "from video. Use create_avatar_from_image instead: one still, and the platform " +
+        "renders the loop and the motion library from it. Do not reach for this tool " +
+        "because an image is inconvenient to obtain; it will simply fail.",
       inputSchema: {
         displayName: z.string(),
         videoUrl: z.string().url().describe("Publicly reachable mp4, opening and closing on the same rest pose"),
