@@ -320,19 +320,33 @@ time it wraps — the same rule the clips obey, applied to the thing they splice
 There is no second way in. Bringing your own looping video is closed (§3), so the loop is
 always generated and always directed by this one field.
 
-After creation the loop itself is fixed. There is no endpoint that re-generates it, and
-that is a real limit, not an omission you can work around with `setClipLibrary`. The one
-thing that *can* move is which frame of it counts as her rest pose — and only on the
-grandfathered video-sourced avatars, because an image-sourced avatar's rest pose is the
-portrait itself, not a frame of the loop:
+The loop can be re-directed after creation — send a new description and it re-renders:
+
+```http
+PUT /v1/avatars/{avatarId}/loop
+{ "motionPrompt": "leans in, listening, a slow blink" }
+```
+
+`202`, because the render takes minutes. She stays `ready` and **keeps serving her previous
+loop** for the whole of it (the response returns that URL as `servingUrl`), then the swap
+publishes at once. Your clip library is untouched — clips render against the portrait, not
+against the loop, so re-directing the loop re-queues nothing. Billed as one generation.
+
+There is no SDK method for it yet; call it with a plain authenticated `fetch` until
+`setLoop` lands. `422 loop_not_generatable` means a grandfathered video-sourced avatar with
+no portrait to re-animate — terminal, not a retry; `409 loop_pending` means one is already
+in flight.
+
+The other thing that can move is which frame counts as her rest pose — and only on those
+same grandfathered video-sourced avatars, because an image-sourced avatar's rest pose is
+the portrait itself, not a frame of the loop:
 
 ```ts
 await rta.updateAvatar(avatarId, { anchorTimeMs: 1200 });  // video-sourced avatars only
 ```
 
 That re-renders the entire clip library against the new pose, so send it when the pose is
-actually wrong — a frame mid-blink, mid-gesture — not to nudge. To change the loop for real,
-create a new avatar.
+actually wrong — a frame mid-blink, mid-gesture — not to nudge.
 
 With video-source creation closed, no NEW avatar can ever be video-sourced, so this knob is
 legacy surface: it serves the grandfathered ones and nothing you create from here on.
