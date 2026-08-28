@@ -337,6 +337,65 @@ function scripted(script: Array<{ status?: number; body?: unknown } | "network">
   return { attempts, fetchImpl };
 }
 
+/** `stub` replays one canned response; image creation makes two calls (asset, then avatar). */
+function stubSequence(responses: Array<{ status?: number; body?: unknown }>) {
+  const calls: Array<{ url: string; method?: string; body?: Record<string, unknown> }> = [];
+  const fetchImpl = (async (url: string, init: RequestInit) => {
+    const call: { url: string; method?: string; body?: Record<string, unknown> } = {
+      url: String(url),
+      method: init.method,
+    };
+    if (typeof init.body === "string") call.body = JSON.parse(init.body);
+    calls.push(call);
+    const response = responses[calls.length - 1] ?? {};
+    return new Response(JSON.stringify(response.body ?? {}), {
+      status: response.status ?? 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as unknown as typeof fetch;
+  return { calls, fetchImpl };
+}
+
+test("createAvatarFromImage stages the still, then creates an IMAGE source", async () => {
+  const { calls, fetchImpl } = stubSequence([
+    { body: { id: "ast_1", kind: "image", status: "ready", url: "https://cdn.example/staged.png" } },
+    { body: { id: "ava_1", displayName: "Mira", sourceKind: "image", status: "preprocessing" } },
+  ]);
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+
+  const avatar = await rta.createAvatarFromImage({
+    displayName: "Mira",
+    imageUrl: "https://cdn.example/portrait.png",
+    motionPrompt: "breathes gently, a slow blink",
+  });
+
+  assert.ok(calls[0]?.url.endsWith("/assets/remote"));
+  assert.deepEqual(calls[0]?.body, { kind: "image", remoteUrl: "https://cdn.example/portrait.png" });
+  assert.ok(calls[1]?.url.endsWith("/avatars"));
+  assert.equal(calls[1]?.body?.sourceKind, "image");
+  assert.equal(calls[1]?.body?.sourceAssetId, "ast_1");
+  // The one knob that directs the GENERATED resting loop. Dropping it silently would leave
+  // the caller no way to direct the loop at all — there is no re-generate endpoint.
+  assert.equal(calls[1]?.body?.motionPrompt, "breathes gently, a slow blink");
+  assert.equal(avatar.id, "ava_1");
+});
+
+test("createAvatar omits motionPrompt when unset, rather than sending an empty one", async () => {
+  const { seen, fetchImpl } = stub({ body: { id: "ava_1", displayName: "M", sourceKind: "video", status: "preprocessing" } });
+  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).createAvatar({
+    displayName: "M", sourceKind: "video", sourceAssetId: "ast_1",
+  });
+  assert.ok(seen.body);
+  assert.ok(!("motionPrompt" in seen.body));
+});
+
+test("updateAvatar carries anchorTimeMs — the rest frame is re-pointable, the loop is not", async () => {
+  const { seen, fetchImpl } = stub({ body: { id: "ava_1", displayName: "M", sourceKind: "video", status: "ready" } });
+  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).updateAvatar("ava_1", { anchorTimeMs: 1200 });
+  assert.equal(seen.method, "PATCH");
+  assert.equal(seen.body?.anchorTimeMs, 1200);
+});
+
 test("setClipLibrary declares the full library and hands back the plan", async () => {
   const { seen, fetchImpl } = stub({ status: 202, body: {
     data: [{

@@ -270,47 +270,60 @@ const update = await rta.setClipLibrary(avatarId, {
 // update.plan → { kept, queued, retired }
 ```
 
-An uploaded clip (`assetId`) must start AND end on the avatar's rest pose. Pose validation
+Nothing here is a URL. A clip is either a `motionPrompt` the platform renders against the
+avatar's rest pose, or an `assetId` you uploaded through the assets lane — never a link to
+your own storage. An uploaded clip must start AND end on that rest pose; pose validation
 rejects one that does not — `status: "failed"` on that row with the structured verdict in
 `poseCheck`, extracted first/last frames included so the rejection is shown, not described.
 The rest of the library is untouched.
 
+Two refusals worth recognising before you debug the wrong thing. `403
+clip_library_not_enabled` means the declare lane is not switched on for your tenant yet — it
+is a per-tenant rollout, not a malformed request, and no amount of fixing the body will help.
+`409 anchor_pending` means her rest pose is being re-derived right now; declaring against an
+anchor that is about to be replaced is never what you meant, so retry once it settles.
+
 `syncClips` is the deprecated external tier — clips on YOUR storage, cache-by-URL-hash —
 and it sunsets once observed traffic reaches zero. Do not build on it.
 
-### 11. Re-shooting her is asynchronous, and a failed re-shoot leaves her `ready`
+### 10a. The looping video is not in the clip library
 
-`swapSource` replaces the footage she rests in; `retimeAnchor` keeps the footage and moves
-the rest frame. Both re-render the whole clip library, and both return the moment the change
-is *accepted* — not when it is live.
+The single most common wrong mental model. Her **resting loop** — the video that plays when
+nothing else is happening — is the avatar's *source*, not a library entry. `role: "idle"` is
+a non-resting idle *variant*: a clip she may play while idle, spliced over the loop. Declaring
+an `idle` clip does not change what she rests in, and clearing the library does not leave her
+without motion — she falls back to the loop.
+
+So the loop is directed at **creation**, in JSON, and there are two ways in:
 
 ```ts
-const asset = await rta.createRemoteAsset({ kind: "video", remoteUrl: "https://…/reshoot.mp4" });
-await rta.swapSource(avatarId, { sourceAssetId: asset.id, anchorTimeMs: 1200 });
+// one still image — the platform generates the loop, and motionPrompt directs it
+await rta.createAvatarFromImage({
+  displayName: "Mira",
+  imageUrl: "https://…/portrait.png",
+  motionPrompt: "settles into frame, breathes gently, a slow blink",  // a closed arc
+});
+
+// or bring footage that already loops — its last frame must match its first
+await rta.createAvatarFromVideo({ displayName: "Mira", videoUrl: "https://…/idle.mp4" });
 ```
 
-Three things follow, and each one bites a different assumption:
+Describe a closed arc in `motionPrompt`: it has to end where it began or the loop snaps every
+time it wraps — the same rule the clips obey, applied to the thing they splice against.
 
-- **She keeps serving the OLD loop until the new one is prepared.** A call minted right after
-  this returns is a normal call on the previous footage. There is no window where she is
-  unavailable, and no status to wait on that means "swapped".
-- **The library empties and refills.** Old takes are footage of the old source and cannot
-  splice against the new loop, so they are dropped and re-rendered. In between she rests on
-  the new loop with less variety — plainer, never broken. Do not gate your UI on a full library.
-- **A refused swap does not fail the avatar.** She stays `ready` and keeps serving; the reason
-  lands on `error`. So polling for `status === "failed"` will never see it:
+After creation the loop itself is fixed. There is no endpoint that re-generates it, and
+that is a real limit, not an omission you can work around with `setClipLibrary`. The one
+thing that *can* move is which frame of it counts as her rest pose:
 
-  ```ts
-  const avatar = await rta.getAvatar(avatarId);
-  if (avatar.error) show(avatar.error);        // ← a ready avatar CAN carry one
-  ```
+```ts
+await rta.updateAvatar(avatarId, { anchorTimeMs: 1200 });  // video-sourced avatars only
+```
 
-`anchorTimeMs` picks the frame she rests on (frame 0 of a real take is sometimes mid-blink)
-and is clamped server-side, so read the avatar back rather than assuming your number stuck.
-Video-sourced avatars only — a portrait-anchored one is a 422, and its re-shoot is the
-motion-attach action instead.
+That re-renders the entire clip library against the new pose, so send it when the pose is
+actually wrong — a frame mid-blink, mid-gesture — not to nudge. To change the loop for real,
+create a new avatar.
 
-### 12. Verify transcripts over the RAW bytes
+### 11. Verify transcripts over the RAW bytes
 
 Parsing and re-serializing changes the whitespace and the signature will never match.
 
@@ -319,7 +332,7 @@ const raw = Buffer.from(await request.arrayBuffer());
 const transcript = await verifyTranscript(raw, request.headers, secret);
 ```
 
-### 13. End a call the moment your user abandons it
+### 12. End a call the moment your user abandons it
 
 The slot is held from the moment `startCall` returns — **including the window before the
 client has joined the room**. A user who closes the tab right there leaves the call running
@@ -356,7 +369,7 @@ backstop. Every app in `apps/demo/` carries the full pattern end to end.
 ```ts
 video: {}                                     // rest in the avatar's stored source (default)
 video: { mode: "generative" }                 // no clips at all; synthesized
-video: {                                      // a state map we switch between — see below
+video: {                                      // a state map we switch between
   states: {
     happy:    { when: "when the user is happy",                    url: "…/happy.mp4" },
     thinking: { when: "when she is considering something",         url: "…/thinking.mp4" },
@@ -367,13 +380,6 @@ video: {                                      // her stored clip, in a different
   edits: { instruction: "turn the room into a snowy cabin at night" },
 }
 ```
-
-**`states` is the per-call override on the DEPRECATED external tier** — your URLs, prepared
-by `syncClips`, resolved per call. The durable path is the declared library (rule 10):
-`setClipLibrary` is a property OF THE CHARACTER, so every call gets it without being told,
-the platform renders and hosts the takes, and each one is pose-checked against her anchor
-before it can serve. Reach for `states` only when a single call genuinely needs a look the
-character does not own; it sunsets once the last consumer is off it.
 
 The clip she **rests** in is deliberately not a call option. A call identifies the character,
 and the character's stored source video is what she rests in — upload it once at creation,

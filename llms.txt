@@ -99,10 +99,19 @@ connection payload back; your client joins and renders her.
 ## Non-obvious rules (each observed, not theorised)
 - The API key is server-only; the constructor throws in a browser runtime.
 - Relay `call.raw` byte-for-byte. Wrapping or adding a key makes the browser client reject it.
-- An avatar built from a still IMAGE renders a black video track while reporting `ready`.
-  Use `createAvatarFromVideo`.
+- A still IMAGE is a complete source: `createAvatarFromImage` generates the resting loop and
+  a starter clip library from it. (This reverses older guidance — image sources once reached
+  `ready` with a black track. They no longer do.)
 - `{ queued: true }` means all slots are busy. It is a queue, not an error.
-- Call `syncClips()` after ANY clip change, or a new clip silently does nothing.
+- Clips are DECLARED as JSON, never as URLs: `setClipLibrary(avatarId, { clips })` sends the
+  full desired set — `{ motionPrompt }` for one the platform renders, `{ assetId }` for one
+  you uploaded — and the platform reconciles. `syncClips(clipUrls)` is the deprecated
+  external-URL tier; do not build on it.
+- The resting loop is NOT a clip. `role: "idle"` is an idle variant spliced over it; the loop
+  itself is the avatar's source, directed once at creation via `motionPrompt` (image sources)
+  and not re-generatable afterwards. `updateAvatar({ anchorTimeMs })` moves only which frame
+  of it is the rest pose, and re-renders the library against it.
+- `403 clip_library_not_enabled` is a per-tenant rollout gate, not a bad request.
 - Verify transcript webhooks over the RAW bytes; re-serializing breaks the signature.
 - Call policy (instructions, context, maxSeconds, video, voice) is decided by YOUR server.
   Never populate it from a request body.

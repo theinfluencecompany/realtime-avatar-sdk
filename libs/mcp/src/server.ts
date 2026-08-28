@@ -394,12 +394,43 @@ export function createServer(options: CreateServerOptions): McpServer {
   );
 
   server.registerTool(
+    "create_avatar_from_image",
+    {
+      title: "Create an avatar from one still image",
+      description:
+        "Build an avatar from a SINGLE still image — the shortest path, and the one to reach " +
+        "for by default. The platform generates the resting loop she idles in and a starter " +
+        "motion library rendered against her rest pose; no footage and no clip URLs are " +
+        "involved. 'motionPrompt' directs the resting loop and is the ONLY chance to direct " +
+        "it — no endpoint re-generates a loop after creation. Returns while she is still " +
+        "'preprocessing'; poll get_avatar.",
+      inputSchema: {
+        displayName: z.string(),
+        imageUrl: z.string().url().describe("Publicly reachable still of the character, face in frame"),
+        motionPrompt: z.string().max(1200).optional()
+          .describe(
+            "Art direction for the generated resting loop. Describe a CLOSED arc that ends " +
+            "where it began, or the loop snaps every time it wraps — e.g. 'settles into " +
+            "frame, breathes gently, a slow blink'. Omit for the house default.",
+          ),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ displayName, imageUrl, motionPrompt }) => {
+      const avatar = await rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt });
+      return text(`Created ${avatar.id} (${avatar.status}). Poll get_avatar until it is ready.`);
+    },
+  );
+
+  server.registerTool(
     "create_avatar_from_video",
     {
       title: "Create an avatar from a video",
       description:
-        "Build an avatar from a looping video URL. Use a VIDEO source: an avatar built from " +
-        "a still image reaches 'ready' and then publishes a black track on every call.",
+        "Build an avatar from a looping video URL. Only for footage whose exact performance " +
+        "you want kept — otherwise prefer create_avatar_from_image, which needs no footage. " +
+        "The video MUST loop: its last frame has to match its first, or she visibly snaps " +
+        "every few seconds while resting.",
       inputSchema: {
         displayName: z.string(),
         videoUrl: z.string().url().describe("Publicly reachable mp4, opening and closing on the same rest pose"),

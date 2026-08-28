@@ -51,6 +51,8 @@ test("allowWrites is what exposes the tools that cost money", async () => {
   const tools = await names(client);
   assert.ok(tools.includes("start_call"));
   assert.ok(tools.includes("create_avatar_from_video"));
+  // The no-footage path. An agent that cannot reach it will invent a video URL instead.
+  assert.ok(tools.includes("create_avatar_from_image"));
 });
 
 test("start_call REFUSES a live key even when writes are allowed", async () => {
@@ -104,9 +106,9 @@ test("the server tells the agent the rules it cannot infer from a schema", async
 test("the write surface is exactly the tools that mutate", async () => {
   const { client } = await connect({ allowWrites: true });
   assert.deepEqual(await names(client), [
-    "create_avatar_from_video", "create_remote_asset", "credit_balance", "get_avatar",
-    "list_avatars", "list_clips", "list_sessions", "set_clip_library", "start_call",
-    "sync_clips", "upload_asset",
+    "create_avatar_from_image", "create_avatar_from_video", "create_remote_asset",
+    "credit_balance", "get_avatar", "list_avatars", "list_clips", "list_sessions",
+    "set_clip_library", "start_call", "sync_clips", "upload_asset",
   ]);
 });
 

@@ -73,10 +73,15 @@ rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, t
 rta.endCall(sessionId, { reason? })    // free an abandoned call's slot now; idempotent, never throws
 
 // avatars
-rta.createAvatarFromVideo({ displayName, videoUrl, voice? })
+rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // loop is GENERATED
+rta.createAvatarFromVideo({ displayName, videoUrl, voice? })                 // you bring the loop
 rta.listAvatars()
 rta.getAvatar(avatarId)
-rta.syncClips(avatarId, clipUrls)      // after ANY clip change
+
+// clip library — declared as JSON, never as URLs
+rta.setClipLibrary(avatarId, { clips, expectedRevision? })
+rta.listClips(avatarId)
+rta.syncClips(avatarId, clipUrls)      // DEPRECATED — external-URL tier
 
 // assets
 rta.createRemoteAsset({ kind, remoteUrl })
