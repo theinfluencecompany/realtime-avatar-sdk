@@ -107,6 +107,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/avatars/{avatarId}/loop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Re-direct the avatar's RESTING LOOP — the video she plays when nothing else is happening — from a new one-sentence description. Not a clip: a clip with role "idle" is a variant spliced OVER the loop, and declaring one never changes what she rests in. 202; the render takes minutes, during which she stays ready and keeps serving her previous loop (returned as servingUrl), and the swap publishes atomically once the new loop is usable. The clip library is untouched. Billed as one generation at the rendering model's rate. Image-sourced avatars only. */
+        put: operations["putAvatarLoop"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/api-keys": {
         parameters: {
             query?: never;
@@ -720,6 +737,16 @@ export interface components {
                 retired: string[];
             };
         };
+        PutAvatarLoopRequest: {
+            motionPrompt: string;
+        };
+        PutAvatarLoopResponse: {
+            avatarId: string;
+            /** @enum {string} */
+            loopStatus: "generating" | "ready" | "failed";
+            motionPrompt: string;
+            servingUrl: string | null;
+        };
         SyncAvatarClipsRequest: {
             clipUrls: string[];
         };
@@ -1001,6 +1028,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncAvatarClipsResponse"];
+                };
+            };
+        };
+    };
+    putAvatarLoop: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                avatarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PutAvatarLoopRequest"];
+            };
+        };
+        responses: {
+            /** @description Re-direct accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PutAvatarLoopResponse"];
                 };
             };
         };

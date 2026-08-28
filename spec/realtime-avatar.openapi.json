@@ -2641,6 +2641,59 @@
         ],
         "additionalProperties": false
       },
+      "PutAvatarLoopRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "motionPrompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200
+          }
+        },
+        "required": [
+          "motionPrompt"
+        ],
+        "additionalProperties": false
+      },
+      "PutAvatarLoopResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "avatarId": {
+            "type": "string"
+          },
+          "loopStatus": {
+            "type": "string",
+            "enum": [
+              "generating",
+              "ready",
+              "failed"
+            ]
+          },
+          "motionPrompt": {
+            "type": "string"
+          },
+          "servingUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "avatarId",
+          "loopStatus",
+          "motionPrompt",
+          "servingUrl"
+        ],
+        "additionalProperties": false
+      },
       "SyncAvatarClipsRequest": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -3014,6 +3067,44 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SyncAvatarClipsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/avatars/{avatarId}/loop": {
+      "put": {
+        "operationId": "putAvatarLoop",
+        "description": "Re-direct the avatar's RESTING LOOP — the video she plays when nothing else is happening — from a new one-sentence description. Not a clip: a clip with role \"idle\" is a variant spliced OVER the loop, and declaring one never changes what she rests in. 202; the render takes minutes, during which she stays ready and keeps serving her previous loop (returned as servingUrl), and the swap publishes atomically once the new loop is usable. The clip library is untouched. Billed as one generation at the rendering model's rate. Image-sourced avatars only.",
+        "parameters": [
+          {
+            "name": "avatarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutAvatarLoopRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Re-direct accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutAvatarLoopResponse"
                 }
               }
             }
