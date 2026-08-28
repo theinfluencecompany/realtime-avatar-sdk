@@ -30,7 +30,7 @@ import type {
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.4.1";
+export const SDK_VERSION = "0.5.0";
 
 
 
