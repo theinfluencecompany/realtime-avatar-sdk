@@ -31,6 +31,18 @@ export {
   type RealtimeAvatarLiveKitRoomProps,
   type UseLiveKitAvatarGrantInput,
 } from "./livekit";
+// The adaptive de-jitter loop (opt-in; `<AvatarVideoSurface adaptivePlayout>` is the
+// ordinary way in — these are for a consumer driving its own surface).
+export { useAvatarAdaptivePlayoutDelay } from "./use-adaptive-playout";
+export {
+  AdaptivePlayoutController,
+  readInboundRtp,
+  type AdaptivePlayoutDecision,
+  type AdaptivePlayoutOptions,
+  type AdaptivePlayoutSample,
+  type InboundRtpCursor,
+  type InboundRtpReading,
+} from "./adaptive-playout";
 export {
   AvatarVideoSurface,
   type AvatarVideoFit,

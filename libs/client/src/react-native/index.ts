@@ -76,6 +76,18 @@ export {
   type SendTextOptions,
   type UseLiveKitAvatarGrantInput,
 } from "../react/livekit";
+// The adaptive de-jitter loop — shared verbatim with web (stats-driven, no DOM),
+// so the two platforms cannot drift on the buffer law.
+export { useAvatarAdaptivePlayoutDelay } from "../react/use-adaptive-playout";
+export {
+  AdaptivePlayoutController,
+  readInboundRtp,
+  type AdaptivePlayoutDecision,
+  type AdaptivePlayoutOptions,
+  type AdaptivePlayoutSample,
+  type InboundRtpCursor,
+  type InboundRtpReading,
+} from "../react/adaptive-playout";
 
 // LiveKit's own React hooks, re-exported for room-context consumers — the same
 // hooks the RN LiveKit SDK itself builds on (they are DOM-free React over

@@ -30,6 +30,7 @@ import {
 // the browser's shallow default jitter buffer → stutter + a/v drift on packet
 // loss. Keeping the delay equal on both tracks is what holds lip-sync.
 import { useAvatarPlayoutDelay } from "./livekit";
+import { useAvatarAdaptivePlayoutDelay } from "./use-adaptive-playout";
 import { useAvatarQualityGovernor, type FreezeReadingFn } from "./use-quality-governor";
 import { DEFAULT_GOVERNOR_CONFIG, type QualityCap } from "./quality-governor";
 
@@ -130,6 +131,16 @@ export type AvatarVideoSurfaceProps = {
   children?: ReactNode;
   /** Surface a small "live · WxH" badge when the live layer is shown. Default true. */
   showLiveBadge?: boolean;
+  /**
+   * Reclaim the flat 0.5s de-jitter cushion on clean networks: a 1Hz closed loop
+   * over `getStats()` that descends toward a 150ms floor while jitter and loss stay
+   * low, and snaps back to 0.5s within a couple of ticks when either appears.
+   * Default **false** — the flat
+   * cushion is the shipped behavior and this is the opt-in that trades loss margin
+   * for up to ~350ms of felt reply latency. The loop always OPENS at the ceiling, so
+   * enabling it can never make the first frame later than it is today.
+   */
+  adaptivePlayout?: boolean;
   /** Test id for the box. */
   "data-testid"?: string;
 };
@@ -177,6 +188,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     style,
     children,
     showLiveBadge = true,
+    adaptivePlayout = false,
   } = props;
   // `pinNativeAspect` is a no-op (the consumer owns the aspect box now); it is
   // intentionally not destructured.
@@ -187,6 +199,11 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   // them lip-locked). This is the only runtime call site — it re-applies
   // whenever either track appears/changes (the hook keys on the MediaStreamTrack).
   useAvatarPlayoutDelay(videoTrack, audioTrack);
+  // ...and, opt-in, let the network decide how much of that cushion to keep. The
+  // loop opens AT the flat value above, so this composes as a pure descent: with
+  // `adaptivePlayout` off it never runs, and with it on the first frame is never
+  // later than the flat cushion's.
+  useAvatarAdaptivePlayoutDelay(videoTrack, audioTrack, adaptivePlayout);
   const connectionState = useConnectionState();
   const connected = connectionState === ConnectionState.Connected;
 
