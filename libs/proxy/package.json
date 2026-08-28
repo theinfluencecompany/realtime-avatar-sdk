@@ -1,7 +1,7 @@
 {
   "name": "@realtime-avatar/internal-proxy",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Framework adapters that keep your Realtime Avatar API key on the server.",
   "license": "MIT",
   "author": "The Influence Company",
@@ -34,6 +34,6 @@
   },
   "sideEffects": false,
   "dependencies": {
-    "realtime-avatar": "0.5.1"
+    "realtime-avatar": "0.5.2"
   }
 }
