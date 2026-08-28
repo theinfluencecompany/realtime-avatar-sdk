@@ -317,15 +317,29 @@ export type Asset = Pick<Wire["Asset"], "id" | "kind"> & {
 
 export type Avatar = Pick<
   Wire["Avatar"],
-  "id" | "displayName" | "sourceKind" | "status" | "defaultVoiceId"
+  "id" | "displayName" | "sourceKind" | "status" | "defaultVoiceId" | "sourceAssetId" | "error"
 >;
 
 /**
  * The patch `updateAvatar` sends — the two fields an integrator re-points after creation.
  * The contract's `UpdateAvatarRequest` carries more (llm, persona, art direction…); that is
  * dashboard machinery this surface deliberately does not model.
+ *
+ * `sourceAssetId` and `anchorTimeMs` are deliberately NOT here: the platform refuses them
+ * alongside any other field, so folding them in would let this type spell a request that can
+ * only ever 422. They get their own methods — `swapSource` and `retimeAnchor`.
  */
 export type AvatarUpdate = Pick<Wire["UpdateAvatarRequest"], "displayName" | "defaultVoiceId">;
+
+/**
+ * Re-shoot the character: `sourceAssetId` becomes the avatar's new resting loop, and the
+ * whole clip library re-renders against an anchor re-derived from that footage.
+ *
+ * `anchorTimeMs` picks the anchor frame OF THE NEW SOURCE (default 0) — frame 0 of a real
+ * take is sometimes mid-blink. It is the only field that may accompany a source swap.
+ */
+export type AvatarSourceSwap = Required<Pick<Wire["UpdateAvatarRequest"], "sourceAssetId">> &
+  Pick<Wire["UpdateAvatarRequest"], "anchorTimeMs">;
 
 type UsageSessionsResponse = Wire["ListUsageSessionsResponse"];
 

@@ -14,6 +14,7 @@ import type {
   UsageSessionPage,
   AssetKind,
   Avatar,
+  AvatarSourceSwap,
   AvatarUpdate,
   CallMode,
   CallPolicy,
@@ -261,6 +262,47 @@ export class RealtimeAvatar {
   async updateAvatar(avatarId: string, patch: AvatarUpdate): Promise<Avatar> {
     return toAvatar(
       await this.#json(await this.#request("PATCH", `/avatars/${avatarId}`, { json: patch })),
+    );
+  }
+
+  /**
+   * Re-shoot the character — swap in new footage as her resting loop.
+   *
+   * ASYNCHRONOUS, and that is the whole design. This returns as soon as the swap is
+   * accepted; the avatar keeps serving its CURRENT loop, cache and clips the entire time,
+   * and cuts over to the new generation in one step once the replacement is prepared.
+   * A call minted a second after this returns is a normal call on the old footage.
+   *
+   * Two consequences worth designing for:
+   *
+   * - **The clip library empties and refills.** Old takes are footage of the old source and
+   *   cannot splice against the new loop, so they are dropped and re-rendered. Between the
+   *   cutover and the last re-render she rests on the new loop with less variety — never
+   *   broken, just plainer. Do not gate your UI on the library being full.
+   * - **A failed swap does not fail the avatar.** She keeps serving, `status` stays `ready`,
+   *   and the reason lands on `error`. So poll `getAvatar` and read `error` — a non-null
+   *   `error` on a `ready` avatar is the swap that did not take, not an unhealthy character.
+   *
+   * The frame this rests on comes from the new footage: pass `anchorTimeMs` when frame 0 of
+   * the take is mid-blink. Video-sourced avatars only — a portrait-anchored one is a 422.
+   */
+  async swapSource(avatarId: string, input: AvatarSourceSwap): Promise<Avatar> {
+    const json: Record<string, unknown> = { sourceAssetId: input.sourceAssetId };
+    if (input.anchorTimeMs !== undefined) json.anchorTimeMs = input.anchorTimeMs;
+    return toAvatar(await this.#json(await this.#request("PATCH", `/avatars/${avatarId}`, { json })));
+  }
+
+  /**
+   * Re-point the anchor at a different frame of the loop she ALREADY has — same footage,
+   * different rest pose. `swapSource` replaces the footage; this only moves the frame.
+   *
+   * Re-renders the clip library the same way, with the same degradation window, and is
+   * clamped server-side to the loop's last extractable frame (read the avatar back to see
+   * what was actually cut). Video-sourced avatars only.
+   */
+  async retimeAnchor(avatarId: string, anchorTimeMs: number): Promise<Avatar> {
+    return toAvatar(
+      await this.#json(await this.#request("PATCH", `/avatars/${avatarId}`, { json: { anchorTimeMs } })),
     );
   }
 
@@ -546,6 +588,10 @@ function toAvatar(raw: unknown): Avatar {
     sourceKind: a.sourceKind === "video" ? "video" : "image",
     status: (a.status as Avatar["status"]) ?? "draft",
     defaultVoiceId: a.defaultVoiceId ? String(a.defaultVoiceId) : null,
+    sourceAssetId: a.sourceAssetId ? String(a.sourceAssetId) : null,
+    // Carried because it is the ONLY channel a failed source swap has: she stays `ready`
+    // and serving, and this says why the re-shoot did not take.
+    error: a.error ? String(a.error) : null,
   };
 }
 

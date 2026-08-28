@@ -586,6 +586,13 @@
                       "editor",
                       "generative"
                     ]
+                  },
+                  "objects": {
+                    "type": "string",
+                    "enum": [
+                      "editor",
+                      "generative"
+                    ]
                   }
                 },
                 "required": [
@@ -630,6 +637,9 @@
               "type": "string",
               "maxLength": 200
             }
+          },
+          "fast_endpointing": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -1408,8 +1418,189 @@
           "portraitUrl": {
             "type": "string",
             "format": "uri"
+          },
+          "sourceAssetId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "anchorTimeMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
+        "additionalProperties": false
+      },
+      "CreateApiKeyRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "environment": {
+            "default": "test",
+            "type": "string",
+            "enum": [
+              "live",
+              "test"
+            ]
+          },
+          "scopes": {
+            "default": [
+              "realtime:write",
+              "credits:read",
+              "avatars:read"
+            ],
+            "minItems": 1,
+            "maxItems": 16,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "*",
+                "api_keys:write",
+                "credits:read",
+                "avatars:read",
+                "avatars:write",
+                "realtime:write",
+                "usage:read",
+                "usage:write"
+              ]
+            }
+          },
+          "spendLimitCreditMicros": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "CreateApiKeyResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 80
+          },
+          "keyId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64
+          },
+          "tenantId": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 80
+          },
+          "name": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "live",
+              "test"
+            ]
+          },
+          "redactedKey": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "*",
+                "api_keys:write",
+                "credits:read",
+                "avatars:read",
+                "avatars:write",
+                "realtime:write",
+                "usage:read",
+                "usage:write"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "revoked",
+              "expired"
+            ]
+          },
+          "spendLimitCreditMicros": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "apiKey": {
+            "type": "string",
+            "pattern": "^tic_.*"
+          }
+        },
+        "required": [
+          "id",
+          "keyId",
+          "tenantId",
+          "name",
+          "environment",
+          "redactedKey",
+          "scopes",
+          "status",
+          "spendLimitCreditMicros",
+          "createdAt",
+          "expiresAt",
+          "apiKey"
+        ],
         "additionalProperties": false
       },
       "Asset": {
@@ -1492,6 +1683,21 @@
           "publicUrl",
           "createdAt",
           "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "AssetList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            }
+          }
+        },
+        "required": [
+          "data"
         ],
         "additionalProperties": false
       },
@@ -2494,21 +2700,6 @@
           "ok"
         ],
         "additionalProperties": false
-      },
-      "HealthResponse": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "healthy"
-            ]
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "additionalProperties": false
       }
     }
   },
@@ -2518,27 +2709,10 @@
     }
   ],
   "paths": {
-    "/health": {
-      "get": {
-        "operationId": "health",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Healthy",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/capacity": {
+    "/v1/realtime/livekit/capacity": {
       "get": {
         "operationId": "getLiveKitCapacity",
+        "description": "Free/busy snapshot of the render fleet, for deciding whether to offer a call before minting one.",
         "responses": {
           "200": {
             "description": "Capacity snapshot",
@@ -2847,7 +3021,51 @@
         }
       }
     },
+    "/v1/api-keys": {
+      "post": {
+        "operationId": "createApiKey",
+        "description": "Mint a developer API key for the caller's own tenant. The plaintext key is returned ONCE, in this response, and is not retrievable afterwards.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiKeyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateApiKeyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/assets": {
+      "get": {
+        "operationId": "listAssets",
+        "description": "The tenant's most recent assets, newest first.",
+        "responses": {
+          "200": {
+            "description": "Assets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetList"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "operationId": "uploadAsset",
         "requestBody": {
