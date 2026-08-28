@@ -84,26 +84,34 @@ The browser SDK validates strictly and throws
 need to send your own data alongside, put it in a sibling field the client unwraps *before*
 handing the payload to the SDK.
 
-### 3. Use a video source for any avatar that will be called live
-
-An avatar built from a still image reaches `ready`, starts calls, and publishes a **black
-video track**. Nothing in the API tells you — the status is `ready` and the track has
-plausible dimensions. Only the pixels are wrong.
+### 3. One still image is the whole source — and now the only one
 
 ```ts
-await rta.createAvatarFromVideo({ displayName: "Rin", videoUrl: "https://…/idle.mp4" });
+await rta.createAvatarFromImage({
+  displayName: "Rin",
+  imageUrl: "https://…/portrait.png",
+  motionPrompt: "settles into frame, breathes gently, a slow blink",  // optional
+});
 ```
 
-If you are checking this yourself: read a frame onto a canvas and look at the mean. Track
-size proves nothing.
+The platform renders the resting loop and a starter motion library from that one frame.
+Creation returns while she is still `preprocessing`; poll `getAvatar` until she leaves it.
 
-**Frame the source tight on the face.** A video-sourced avatar shot as a medium — a presenter
-standing in a dressed set, face a sixth of the frame — preprocesses, reports `ready`, and mints
-calls; then **the render worker never joins the room**. There is no error and no failed status,
-just a call that connects to nobody, so the tools never register and the page can only report a
-timeout. The same footage re-cropped to head-and-shoulders works first time. Aspect ratio is not
-the variable — 1:1 and 9:16 both work — and the renderer crops to the face regardless, so frame
-for a close-up rather than for a set.
+**`createAvatarFromVideo` is closed** — it answers `422` unless your tenant was already
+using it, and existing video-sourced avatars keep working untouched. The reason is the
+splice rule: every clip has to start and end on ONE rest pose, and the platform can only
+guarantee that when it rendered the loop and the clips from the same portrait.
+
+**This reverses older guidance, twice over.** These docs used to say the opposite — use a
+video source, because an image-sourced avatar reaches `ready` and publishes a *black track*.
+That was true, and was fixed when image-only creation shipped. If you find that warning in an
+editor tooltip or a cached copy of the docs, it is stale.
+
+**Frame the portrait tight on the face.** Head-and-shoulders, not a presenter in a dressed
+set. This was learned on video sources — a medium shot preprocessed, reported `ready`, minted
+calls, and then **the render worker never joined the room**: no error, no failed status, just
+a call connected to nobody. The renderer crops to the face either way, so aspect ratio is not
+the variable (1:1 and 9:16 both work); framing is.
 
 ### 4. Every call is full duplex; `mode` only picks the renderer
 
@@ -304,16 +312,19 @@ await rta.createAvatarFromImage({
   motionPrompt: "settles into frame, breathes gently, a slow blink",  // a closed arc
 });
 
-// or bring footage that already loops — its last frame must match its first
-await rta.createAvatarFromVideo({ displayName: "Mira", videoUrl: "https://…/idle.mp4" });
 ```
 
 Describe a closed arc in `motionPrompt`: it has to end where it began or the loop snaps every
 time it wraps — the same rule the clips obey, applied to the thing they splice against.
 
+There is no second way in. Bringing your own looping video is closed (§3), so the loop is
+always generated and always directed by this one field.
+
 After creation the loop itself is fixed. There is no endpoint that re-generates it, and
 that is a real limit, not an omission you can work around with `setClipLibrary`. The one
-thing that *can* move is which frame of it counts as her rest pose:
+thing that *can* move is which frame of it counts as her rest pose — and only on the
+grandfathered video-sourced avatars, because an image-sourced avatar's rest pose is the
+portrait itself, not a frame of the loop:
 
 ```ts
 await rta.updateAvatar(avatarId, { anchorTimeMs: 1200 });  // video-sourced avatars only
@@ -322,6 +333,9 @@ await rta.updateAvatar(avatarId, { anchorTimeMs: 1200 });  // video-sourced avat
 That re-renders the entire clip library against the new pose, so send it when the pose is
 actually wrong — a frame mid-blink, mid-gesture — not to nudge. To change the loop for real,
 create a new avatar.
+
+With video-source creation closed, no NEW avatar can ever be video-sourced, so this knob is
+legacy surface: it serves the grandfathered ones and nothing you create from here on.
 
 ### 11. Verify transcripts over the RAW bytes
 

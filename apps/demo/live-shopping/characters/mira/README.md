@@ -15,3 +15,7 @@ medium shot placed the face at roughly one sixth of the frame and failed silentl
 
 Generation pipeline: `openai/gpt-image-2` → `bytedance/seedance-2.0/image-to-video` →
 `createAvatarFromVideo`.
+
+That last hop is now **closed** (422 for any tenant not already on it), and the middle one is
+redundant: `createAvatarFromImage` takes the generated portrait straight, and the platform
+renders the loop. The framing lesson above still holds — it is about the portrait now.

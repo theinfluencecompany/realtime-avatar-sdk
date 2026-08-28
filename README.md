@@ -190,7 +190,7 @@ rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempo
 
 // avatars
 rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // loop is GENERATED
-rta.createAvatarFromVideo({ displayName, videoUrl, voice? })                 // you bring the loop
+rta.createAvatarFromVideo({ displayName, videoUrl, voice? })                 // DEPRECATED — closed, 422
 rta.listAvatars()
 rta.getAvatar(avatarId)
 rta.updateAvatar(avatarId, patch)       // displayName / defaultVoiceId / anchorTimeMs

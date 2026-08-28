@@ -40,7 +40,7 @@ With `REALTIME_AVATAR_ALLOW_WRITES=1`:
 | `upload_asset` | Upload a file **from this machine's disk**, get a public URL | no |
 | `create_remote_asset` | Register a file already on the internet — no local copy | no |
 | `create_avatar_from_image` | Build an avatar from ONE still — the loop is generated | no |
-| `create_avatar_from_video` | Build an avatar from a looping video URL you host | no |
+| `create_avatar_from_video` | **Deprecated.** Closed to new callers (422). Use the image tool | no |
 | `start_call` | Mint a live session to verify an integration | **yes, per second** |
 
 ## Spending money is opt-in, and twice gated

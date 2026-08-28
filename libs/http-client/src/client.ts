@@ -207,12 +207,15 @@ export class RealtimeAvatar {
   /**
    * Register a character from a looping clip you host.
    *
-   * You do not need one. {@link createAvatarFromImage} takes a single still and the platform
-   * generates the resting loop — that is the shorter path, and the one the product is built
-   * around. Bring a video when you have footage whose exact performance you want kept.
+   * @deprecated CLOSED to new callers — this answers `422` unless your tenant was already
+   * creating from video, in which case it keeps working and your existing avatars are
+   * untouched. Use {@link createAvatarFromImage}: one still, and the platform renders the
+   * resting loop and the motion library from it.
    *
-   * Whichever you bring, it must LOOP: the last frame has to match the first, or the character
-   * visibly snaps every few seconds while she rests.
+   * The reason it closed is not arbitrary. Every clip has to start and end on ONE rest pose
+   * or a state switch reads as a jump, and the platform can only guarantee that when it
+   * rendered the loop and the clips from the same portrait. A supplied video cannot honour
+   * it, so the lane could never be made to look right.
    */
   async createAvatarFromVideo(input: {
     displayName: string;

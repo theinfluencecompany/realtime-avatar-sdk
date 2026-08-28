@@ -42,6 +42,10 @@ is the one piece the example does itself, and it leans on the SDK for the rest:
    `end_image_url` pinned to the first frame, so the clip closes on itself (first ≈ last ⇒ a
    seamless idle loop). `FAL_KEY` never leaves the server. ~1 minute.
 3. **`createAvatarFromVideo({ videoUrl })`** — registers a **video**-sourced avatar from that loop.
+   ⚠️ **This lane is now closed** (422 for any tenant not already on it), so this demo runs only
+   on a grandfathered key. Steps 2 and 3 have also become redundant: `createAvatarFromImage`
+   takes the uploaded photo directly and the platform renders the loop itself — the same
+   image-to-video step this server does by hand, minus the fal key and a minute of wall clock.
 4. **poll `getAvatar(id)` until `status === "ready"`** — the realtime cache builds off the loop. ~1
    more minute.
 5. **`startCall({ avatarId })`** — a live, full-duplex date with the face you uploaded.

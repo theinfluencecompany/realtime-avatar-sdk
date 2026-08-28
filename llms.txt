@@ -99,9 +99,11 @@ connection payload back; your client joins and renders her.
 ## Non-obvious rules (each observed, not theorised)
 - The API key is server-only; the constructor throws in a browser runtime.
 - Relay `call.raw` byte-for-byte. Wrapping or adding a key makes the browser client reject it.
-- A still IMAGE is a complete source: `createAvatarFromImage` generates the resting loop and
-  a starter clip library from it. (This reverses older guidance — image sources once reached
+- A still IMAGE is the ONLY source: `createAvatarFromImage` generates the resting loop and a
+  starter clip library from it. (This reverses older guidance — image sources once reached
   `ready` with a black track. They no longer do.)
+- `createAvatarFromVideo` is CLOSED and answers 422 unless the tenant was already using it.
+  Do not reach for it because an image is inconvenient to obtain; it will just fail.
 - `{ queued: true }` means all slots are busy. It is a queue, not an error.
 - Clips are DECLARED as JSON, never as URLs: `setClipLibrary(avatarId, { clips })` sends the
   full desired set — `{ motionPrompt }` for one the platform renders, `{ assetId }` for one

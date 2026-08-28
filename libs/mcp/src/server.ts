@@ -425,12 +425,12 @@ export function createServer(options: CreateServerOptions): McpServer {
   server.registerTool(
     "create_avatar_from_video",
     {
-      title: "Create an avatar from a video",
+      title: "Create an avatar from a video (deprecated)",
       description:
-        "Build an avatar from a looping video URL. Only for footage whose exact performance " +
-        "you want kept — otherwise prefer create_avatar_from_image, which needs no footage. " +
-        "The video MUST loop: its last frame has to match its first, or she visibly snaps " +
-        "every few seconds while resting.",
+        "DEPRECATED AND CLOSED — this answers 422 unless the tenant was already creating " +
+        "from video. Use create_avatar_from_image instead: one still, and the platform " +
+        "renders the loop and the motion library from it. Do not reach for this tool " +
+        "because an image is inconvenient to obtain; it will simply fail.",
       inputSchema: {
         displayName: z.string(),
         videoUrl: z.string().url().describe("Publicly reachable mp4, opening and closing on the same rest pose"),
