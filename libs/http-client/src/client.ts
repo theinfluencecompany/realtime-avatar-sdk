@@ -430,6 +430,79 @@ export class RealtimeAvatar {
     )) as LoopRedirect;
   }
 
+  /**
+   * Block until a loop re-direct settles, and throw if it did not take.
+   *
+   * `setLoop` returns on ACCEPTANCE; the render runs for minutes afterwards. Every caller
+   * therefore writes the same polling loop, and the obvious version of it never terminates
+   * on failure — a failed re-direct leaves her `ready` (she is still serving the old loop)
+   * and writes nothing to `error`. `idleVideoStatus` is the only field that moves, which is
+   * why this exists rather than a doc line telling you to poll.
+   *
+   * Race-free without a baseline: the platform commits `queued` before `setLoop` returns, so
+   * by the time you can call this the status has already left `ready`.
+   *
+   * Resolves with the settled avatar — `sourceAssetId` is now the new loop. Throws on a
+   * failed render and on timeout; a timeout is not a failure, so re-poll or call again.
+   */
+  async waitForLoop(
+    avatarId: string,
+    options: { timeoutMs?: number; pollMs?: number } = {},
+  ): Promise<Avatar> {
+    const timeoutMs = options.timeoutMs ?? 20 * 60_000;
+    const pollMs = Math.max(1_000, options.pollMs ?? 10_000);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const avatar = await this.getAvatar(avatarId);
+      if (avatar.idleVideoStatus === "failed") {
+        throw new RealtimeAvatarError(
+          `Loop re-direct failed for ${avatarId}. She is still serving her previous loop — ` +
+            "nothing was lost, and you can send another description.",
+        );
+      }
+      if (avatar.idleVideoStatus === "ready" || avatar.idleVideoStatus === "none") return avatar;
+      if (Date.now() >= deadline) {
+        throw new RealtimeAvatarError(
+          `Loop re-direct for ${avatarId} was still ${avatar.idleVideoStatus} after ${Math.round(timeoutMs / 1000)}s. ` +
+            "This is a timeout, not a failure — the render may still land.",
+        );
+      }
+      await sleep(pollMs);
+    }
+  }
+
+  /**
+   * Block until every clip in the library has stopped moving.
+   *
+   * Settled means no row is `queued` or `generating` — NOT that every row is `ready`.
+   * Waiting for all-`ready` is the intuitive version and it hangs forever: a clip rejected
+   * by pose validation settles `failed`, which is terminal. So this returns the library
+   * with the failures in it and lets you decide; a partial library is a legitimate outcome
+   * and the rest of it is already serving.
+   *
+   * Throws only on timeout.
+   */
+  async waitForClips(
+    avatarId: string,
+    options: { timeoutMs?: number; pollMs?: number } = {},
+  ): Promise<ClipLibrary> {
+    const timeoutMs = options.timeoutMs ?? 20 * 60_000;
+    const pollMs = Math.max(1_000, options.pollMs ?? 10_000);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const library = await this.listClips(avatarId);
+      const moving = library.data.filter((c) => c.status === "queued" || c.status === "generating");
+      if (moving.length === 0) return library;
+      if (Date.now() >= deadline) {
+        throw new RealtimeAvatarError(
+          `${moving.length} clip(s) on ${avatarId} were still rendering after ${Math.round(timeoutMs / 1000)}s: ` +
+            `${moving.map((c) => c.clipId).join(", ")}. This is a timeout, not a failure.`,
+        );
+      }
+      await sleep(pollMs);
+    }
+  }
+
   /** The avatar's clip library: every non-retired clip, plus revision, anchor and eligibility. */
   async listClips(avatarId: string): Promise<ClipLibrary> {
     return this.#clipEnvelope(
@@ -672,6 +745,12 @@ function toAvatar(raw: unknown): Avatar {
     // Carried because it is the ONLY channel a failed source swap has: she stays `ready`
     // and serving, and this says why the re-shoot did not take.
     error: a.error ? String(a.error) : null,
+    // The loop lane's terminal signal, and the reason it is here: a re-direct that fails
+    // leaves `status` on `ready` (she is still serving the old loop, which is the whole
+    // design) and writes nothing to `error`. Without this field a caller polling after
+    // `setLoop` has NO way to distinguish "still rendering" from "gave up", and waits
+    // forever. queued → generating → ready | failed.
+    idleVideoStatus: (a.idleVideoStatus as Avatar["idleVideoStatus"]) ?? "none",
   };
 }
 

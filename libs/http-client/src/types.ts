@@ -317,7 +317,14 @@ export type Asset = Pick<Wire["Asset"], "id" | "kind"> & {
 
 export type Avatar = Pick<
   Wire["Avatar"],
-  "id" | "displayName" | "sourceKind" | "status" | "defaultVoiceId" | "sourceAssetId" | "error"
+  | "id"
+  | "displayName"
+  | "sourceKind"
+  | "status"
+  | "defaultVoiceId"
+  | "sourceAssetId"
+  | "error"
+  | "idleVideoStatus"
 >;
 
 /**

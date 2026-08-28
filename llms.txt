@@ -114,6 +114,11 @@ connection payload back; your client joins and renders her.
   afterwards with `setLoop(avatarId, { motionPrompt })` (202; she keeps serving the previous
   loop until the new one is ready, and the clip library is untouched — measured, not assumed).
 - `403 clip_library_not_enabled` is a per-tenant rollout gate, not a bad request.
+- setLoop/setClipLibrary/swapSource return on ACCEPTANCE (202), not completion. Use
+  `waitForLoop()` / `waitForClips()`; hand-rolled polling gets both terminations wrong — a
+  failed loop re-direct leaves the avatar `ready` with a null `error` (only
+  `idleVideoStatus` moves), and waiting for all clips to reach `ready` hangs forever
+  because a pose-rejected upload settles `failed`, which is terminal.
 - Verify transcript webhooks over the RAW bytes; re-serializing breaks the signature.
 - Call policy (instructions, context, maxSeconds, video, voice) is decided by YOUR server.
   Never populate it from a request body.

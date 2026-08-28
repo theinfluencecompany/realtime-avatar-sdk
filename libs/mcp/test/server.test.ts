@@ -6,8 +6,11 @@ import { createServer, MCP_VERSION, type CreateServerOptions } from "../src/serv
 
 const AVATARS = {
   data: [
-    { id: "ava_video", displayName: "Rin", status: "ready", sourceKind: "video", createdAt: "x" },
-    { id: "ava_image", displayName: "Still", status: "ready", sourceKind: "image", createdAt: "x" },
+    // Callable: ready WITH a loop attached. The second one is the shape that used to be
+    // read as "image source, therefore broken" and is now simply an avatar whose loop is
+    // still rendering — ready, but not yet callable.
+    { id: "ava_video", displayName: "Rin", status: "ready", sourceKind: "video", idleVideoStatus: "ready", createdAt: "x" },
+    { id: "ava_image", displayName: "Still", status: "ready", sourceKind: "image", idleVideoStatus: "generating", createdAt: "x" },
   ],
 };
 
@@ -75,6 +78,7 @@ test("list_avatars counts the ones that can actually take a call", async () => {
   const out = say(await client.callTool({ name: "list_avatars", arguments: {} }));
   assert.match(out, /ava_video/);
   assert.match(out, /1 ready with a loop attached/);
+  assert.match(out, /generating/); // the un-callable one says WHY, not just that it is missing
 });
 
 test("list_sessions reports seconds and never rounds up to a minute", async () => {
