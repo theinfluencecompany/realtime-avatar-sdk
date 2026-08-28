@@ -356,7 +356,7 @@ backstop. Every app in `apps/demo/` carries the full pattern end to end.
 ```ts
 video: {}                                     // rest in the avatar's stored source (default)
 video: { mode: "generative" }                 // no clips at all; synthesized
-video: {                                      // a state map we switch between
+video: {                                      // a state map we switch between — see below
   states: {
     happy:    { when: "when the user is happy",                    url: "…/happy.mp4" },
     thinking: { when: "when she is considering something",         url: "…/thinking.mp4" },
@@ -367,6 +367,13 @@ video: {                                      // her stored clip, in a different
   edits: { instruction: "turn the room into a snowy cabin at night" },
 }
 ```
+
+**`states` is the per-call override on the DEPRECATED external tier** — your URLs, prepared
+by `syncClips`, resolved per call. The durable path is the declared library (rule 10):
+`setClipLibrary` is a property OF THE CHARACTER, so every call gets it without being told,
+the platform renders and hosts the takes, and each one is pose-checked against her anchor
+before it can serve. Reach for `states` only when a single call genuinely needs a look the
+character does not own; it sunsets once the last consumer is off it.
 
 The clip she **rests** in is deliberately not a call option. A call identifies the character,
 and the character's stored source video is what she rests in — upload it once at creation,
