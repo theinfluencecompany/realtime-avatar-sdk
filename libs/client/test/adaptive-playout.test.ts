@@ -125,10 +125,19 @@ test("the surfaces keep the loop opt-in (default false) on both platforms", asyn
       /adaptivePlayout = false/,
       `${path} must default adaptivePlayout to false — the flat cushion is the shipped behavior`,
     );
+    // Matched on the ARGUMENT ORDER across whitespace, not on a one-line call shape: the
+    // web surface now takes the hook's return value and spans several lines, and a
+    // formatting-literal regex failed on that reformat while the property it guards —
+    // the flag is threaded through, never hard-enabled — was still perfectly intact.
     assert.match(
       source,
-      /useAvatarAdaptivePlayoutDelay\(videoTrack, audioTrack, adaptivePlayout\)/,
+      /useAvatarAdaptivePlayoutDelay\(\s*videoTrack,\s*audioTrack,\s*adaptivePlayout\s*,?\s*\)/,
       `${path} must pass the flag through rather than hard-enabling the loop`,
+    );
+    assert.doesNotMatch(
+      source,
+      /useAvatarAdaptivePlayoutDelay\([^)]*,\s*true\s*[,)]/,
+      `${path} hard-enables the adaptive loop instead of honouring the prop`,
     );
   }
 });

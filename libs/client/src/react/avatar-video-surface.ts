@@ -141,6 +141,18 @@ export type AvatarVideoSurfaceProps = {
    * enabling it can never make the first frame later than it is today.
    */
   adaptivePlayout?: boolean;
+  /**
+   * Called with the receiver playout depth (SECONDS) whenever it changes — the flat
+   * {@link DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS} while `adaptivePlayout` is off, the live
+   * value while it is on.
+   *
+   * Read this if anything you render is timed against the avatar's VOICE: the media rides
+   * the receiver buffer and a side channel (captions, a transcript reveal, a lip-synced
+   * overlay) does not, so it has to be held by the same amount or it arrives early. While
+   * the cushion was a constant, consumers hard-coded it; once it moves, a hard-coded copy
+   * desyncs by up to the whole adaptive range. Fires on change only, not per frame.
+   */
+  onPlayoutDelayChange?: (seconds: number) => void;
   /** Test id for the box. */
   "data-testid"?: string;
 };
@@ -189,6 +201,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     children,
     showLiveBadge = true,
     adaptivePlayout = false,
+    onPlayoutDelayChange,
   } = props;
   // `pinNativeAspect` is a no-op (the consumer owns the aspect box now); it is
   // intentionally not destructured.
@@ -203,7 +216,20 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   // loop opens AT the flat value above, so this composes as a pure descent: with
   // `adaptivePlayout` off it never runs, and with it on the first frame is never
   // later than the flat cushion's.
-  useAvatarAdaptivePlayoutDelay(videoTrack, audioTrack, adaptivePlayout);
+  const playoutDelaySeconds = useAvatarAdaptivePlayoutDelay(
+    videoTrack,
+    audioTrack,
+    adaptivePlayout,
+  );
+  // Publish the depth so a consumer can hold anything timed against her VOICE by the SAME
+  // amount — a caption reveal is the real case. Fires on change only (the loop's hysteresis
+  // makes that rare), and reports the flat cushion while `adaptivePlayout` is off, so a
+  // consumer can read it unconditionally.
+  const onPlayoutDelayChangeRef = useRef(onPlayoutDelayChange);
+  onPlayoutDelayChangeRef.current = onPlayoutDelayChange;
+  useEffect(() => {
+    onPlayoutDelayChangeRef.current?.(playoutDelaySeconds);
+  }, [playoutDelaySeconds]);
   const connectionState = useConnectionState();
   const connected = connectionState === ConnectionState.Connected;
 

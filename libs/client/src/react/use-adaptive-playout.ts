@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { TrackReferenceOrPlaceholder } from "@livekit/components-react";
 import {
   AdaptivePlayoutController,
@@ -6,7 +6,7 @@ import {
   type AdaptivePlayoutOptions,
   type InboundRtpCursor,
 } from "./adaptive-playout";
-import { applyAvatarPlayoutDelay } from "./livekit";
+import { applyAvatarPlayoutDelay, DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS } from "./livekit";
 
 /**
  * The adaptive counterpart to `useAvatarPlayoutDelay` — OPT-IN via `enabled`
@@ -24,13 +24,24 @@ import { applyAvatarPlayoutDelay } from "./livekit";
  * without `getStats` on its receiver, a stats report with no `inbound-rtp` yet,
  * or a browser without the playout-delay hint all leave the flat cushion exactly
  * as `useAvatarPlayoutDelay` set it.
+ *
+ * RETURNS THE APPLIED DEPTH IN SECONDS, and that return value is load-bearing rather
+ * than a convenience. Anything a consumer times against the avatar's voice — a caption
+ * reveal being the real case — has to be held by the SAME cushion, because the media is
+ * buffered and a side channel is not. While the cushion was a flat constant a consumer
+ * could hard-code it; the moment it moves, a hard-coded copy desyncs by up to the whole
+ * adaptive range. So the value comes back out of the hook, and stays equal to
+ * {@link DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS} whenever the loop is disabled or inert —
+ * a consumer can read it unconditionally.
  */
 export function useAvatarAdaptivePlayoutDelay(
   videoTrack: TrackReferenceOrPlaceholder | undefined,
   audioTrack: TrackReferenceOrPlaceholder | undefined,
   enabled: boolean = false,
   options?: AdaptivePlayoutOptions,
-): void {
+): number {
+  const ceiling = options?.ceilingSeconds ?? DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS;
+  const [appliedSeconds, setAppliedSeconds] = useState(ceiling);
   const videoMediaTrack = videoTrack?.publication?.track;
   const audioMediaTrack = audioTrack?.publication?.track;
   useEffect(() => {
@@ -68,6 +79,11 @@ export function useAvatarAdaptivePlayoutDelay(
         const decision = controller.update(worst);
         if (decision.changed) {
           applyAvatarPlayoutDelay(videoMediaTrack, audioMediaTrack, decision.targetSeconds);
+          // Publish the new depth so anything timed against the buffered voice — a
+          // caption reveal, a lip-synced overlay — can hold by the SAME amount. Only on
+          // a real change, which hysteresis already makes rare, so this re-renders the
+          // consumer a handful of times per call rather than once a second.
+          setAppliedSeconds(decision.targetSeconds);
         }
       } catch {
         // A stats read failing must never break the call; the last applied depth stands.
@@ -80,6 +96,11 @@ export function useAvatarAdaptivePlayoutDelay(
     return () => {
       closed = true;
       clearInterval(interval);
+      // The flat cushion is what the surface re-applies on the next mount, so report the
+      // value that will actually be in force rather than the last adaptive one.
+      setAppliedSeconds(ceiling);
     };
-  }, [enabled, videoMediaTrack, audioMediaTrack, options]);
+  }, [enabled, videoMediaTrack, audioMediaTrack, options, ceiling]);
+
+  return appliedSeconds;
 }
