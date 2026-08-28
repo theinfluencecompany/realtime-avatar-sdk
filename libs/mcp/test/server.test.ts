@@ -111,7 +111,7 @@ test("the write surface is exactly the tools that mutate", async () => {
   assert.deepEqual(await names(client), [
     "create_avatar_from_image", "create_avatar_from_video", "create_remote_asset",
     "credit_balance", "get_avatar", "list_avatars", "list_clips", "list_sessions",
-    "set_clip_library", "start_call", "sync_clips", "upload_asset",
+    "set_clip_library", "set_loop", "start_call", "sync_clips", "upload_asset",
   ]);
 });
 

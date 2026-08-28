@@ -111,9 +111,8 @@ connection payload back; your client joins and renders her.
   external-URL tier; do not build on it.
 - The resting loop is NOT a clip. `role: "idle"` is an idle variant spliced over it; the loop
   itself is the avatar's source, directed by `motionPrompt` at creation and re-directable
-  afterwards with `PUT /v1/avatars/{id}/loop { motionPrompt }` (202; she keeps serving the
-  previous loop until the new one is ready, and the clip library is untouched). No SDK method
-  yet — plain fetch.
+  afterwards with `setLoop(avatarId, { motionPrompt })` (202; she keeps serving the previous
+  loop until the new one is ready, and the clip library is untouched — measured, not assumed).
 - `403 clip_library_not_enabled` is a per-tenant rollout gate, not a bad request.
 - Verify transcript webhooks over the RAW bytes; re-serializing breaks the signature.
 - Call policy (instructions, context, maxSeconds, video, voice) is decided by YOUR server.

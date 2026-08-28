@@ -21,6 +21,7 @@ import type {
   ClipDeclaration,
   ClipLibrary,
   ClipLibraryUpdate,
+  LoopRedirect,
   ClipSyncResult,
   CreditBalance,
   EndCallOptions,
@@ -400,6 +401,33 @@ export class RealtimeAvatar {
         await this.#request("PUT", `/avatars/${avatarId}/clips`, { json: body }),
       )) as ClipLibraryUpdate,
     );
+  }
+
+  /**
+   * Re-direct the RESTING LOOP — the video she plays when nothing else is happening — from
+   * a new one-sentence description.
+   *
+   * Not a clip, and this is the distinction integrations get wrong: a clip with
+   * `role: "idle"` is a variant spliced OVER the loop, and declaring one never changes what
+   * she rests in. This is the only thing that does.
+   *
+   * `202`, because the render takes minutes. Three properties, all measured against a real
+   * render rather than asserted:
+   *
+   * - **She never goes dark.** She stays `ready` and keeps serving her previous loop for the
+   *   entire render — returned as `servingUrl` — then the swap publishes in one step.
+   * - **Your clip library is untouched.** Clips render against the portrait, not against the
+   *   loop, so a re-direct re-queues nothing and does not move `revision`.
+   * - **It bills once**, at the rendering model's rate, per re-direct.
+   *
+   * Refusals worth telling apart: `409 loop_pending` (one is already in flight — wait) and
+   * `422 loop_not_generatable` (a grandfathered video-sourced avatar has no portrait to
+   * re-animate — terminal, do not retry).
+   */
+  async setLoop(avatarId: string, loop: { motionPrompt: string }): Promise<LoopRedirect> {
+    return (await this.#json(
+      await this.#request("PUT", `/avatars/${avatarId}/loop`, { json: { motionPrompt: loop.motionPrompt } }),
+    )) as LoopRedirect;
   }
 
   /** The avatar's clip library: every non-retired clip, plus revision, anchor and eligibility. */

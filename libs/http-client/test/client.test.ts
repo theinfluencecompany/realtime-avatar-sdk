@@ -397,6 +397,36 @@ test("the rest frame moves through retimeAnchor, never through an updateAvatar p
   assert.equal(seen.body?.anchorTimeMs, 1200);
 });
 
+test("setLoop re-directs the resting loop and reports what is still serving", async () => {
+  // The response field that matters is servingUrl: the PREVIOUS loop, which plays for the
+  // whole render. A caller that treated the new description as live on acceptance would be
+  // lying to its user for minutes.
+  const { seen, fetchImpl } = stub({ status: 202, body: {
+    avatarId: "ava_1", loopStatus: "generating",
+    motionPrompt: "leans in, listening",
+    servingUrl: "https://cdn.example/previous-loop.mp4",
+  } });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+
+  const out = await rta.setLoop("ava_1", { motionPrompt: "leans in, listening" });
+
+  assert.equal(seen.method, "PUT");
+  assert.ok(seen.url?.endsWith("/avatars/ava_1/loop"));
+  assert.deepEqual(seen.body, { motionPrompt: "leans in, listening" });
+  assert.equal(out.loopStatus, "generating");
+  assert.equal(out.servingUrl, "https://cdn.example/previous-loop.mp4");
+});
+
+test("setLoop is mutating, so the PUT carries an idempotency key", async () => {
+  // Worth more here than on most routes: without it a double-submit is two GPU renders and
+  // two charges for one intent.
+  const { attempts, fetchImpl } = scripted([{ status: 202, body: {
+    avatarId: "ava_1", loopStatus: "generating", motionPrompt: "x", servingUrl: null,
+  } }]);
+  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setLoop("ava_1", { motionPrompt: "x" });
+  assert.match(attempts[0]?.headers.get("idempotency-key") ?? "", /.{16,}/);
+});
+
 test("setClipLibrary declares the full library and hands back the plan", async () => {
   const { seen, fetchImpl } = stub({ status: 202, body: {
     data: [{

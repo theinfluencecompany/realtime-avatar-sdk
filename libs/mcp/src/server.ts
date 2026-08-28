@@ -300,6 +300,38 @@ export function createServer(options: CreateServerOptions): McpServer {
   );
 
   server.registerTool(
+    "set_loop",
+    {
+      title: "Re-direct the resting loop",
+      description:
+        "Re-generate the RESTING LOOP — the video she plays when nothing else is happening — " +
+        "from a new one-sentence description. NOT a clip: a clip with role 'idle' is a " +
+        "variant spliced over the loop, and declaring one never changes what she rests in. " +
+        "Accepted immediately (202) and rendered over minutes; she stays ready and keeps " +
+        "serving her previous loop the whole time, and the clip library is untouched. Bills " +
+        "one video generation per call, so do not send it speculatively.",
+      inputSchema: {
+        avatarId: z.string(),
+        motionPrompt: z.string().max(1200)
+          .describe(
+            "How she should idle. Describe a CLOSED arc that ends where it began, or the " +
+            "loop snaps every time it wraps — e.g. 'leans in, listening, a slow blink, " +
+            "settles back'.",
+          ),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ avatarId, motionPrompt }) => {
+      const result = await rta.setLoop(avatarId, { motionPrompt });
+      return text(
+        `Re-direct accepted (${result.loopStatus}).\n` +
+          `She is still playing the previous loop until the new one is ready:\n  ${result.servingUrl ?? "—"}\n\n` +
+          "Poll get_avatar; the swap publishes in one step. Her clips are unaffected.",
+      );
+    },
+  );
+
+  server.registerTool(
     "sync_clips",
     {
       title: "Sync an avatar's clips",
