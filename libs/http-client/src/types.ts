@@ -426,6 +426,14 @@ export type ClipLibraryPlan = Wire["PutAvatarClipsResponse"]["plan"];
 export type ClipLibraryUpdate = Wire["PutAvatarClipsResponse"];
 
 /**
+ * The accepted re-direct. `servingUrl` is the loop she is playing RIGHT NOW — the previous
+ * one, which keeps serving for the whole render. A caller that treated the new description
+ * as live on acceptance would be lying to its user for minutes; this is the field that lets
+ * it say "being re-directed" while still showing the real thing.
+ */
+export type LoopRedirect = Wire["PutAvatarLoopResponse"];
+
+/**
  * DERIVATION: hand-written, because the contract does not describe it.
  *
  * The transcript webhook body is absent from the published document entirely — not narrowed,

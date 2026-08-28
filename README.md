@@ -200,6 +200,7 @@ rta.deleteAvatar(avatarId)
 
 // clip library
 rta.setClipLibrary(avatarId, { clips, expectedRevision? })  // declare the FULL set; CAS via expectedRevision
+rta.setLoop(avatarId, { motionPrompt })     // re-direct the RESTING LOOP; clips untouched
 rta.listClips(avatarId)                 // rows + revision, anchor, eligibility
 rta.syncClips(avatarId, clipUrls)       // DEPRECATED — external-URL tier; use setClipLibrary
 

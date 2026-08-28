@@ -35,6 +35,7 @@ With `REALTIME_AVATAR_ALLOW_WRITES=1`:
 
 | Tool | | Bills? |
 | --- | --- | --- |
+| `set_loop` | Re-direct her resting loop from a new description | no |
 | `set_clip_library` | Declare an avatar's full clip set as JSON — the platform renders it | no |
 | `sync_clips` | **Deprecated.** The external-URL tier. Use `set_clip_library` | no |
 | `upload_asset` | Upload a file **from this machine's disk**, get a public URL | no |
@@ -49,7 +50,7 @@ The five tools above are **read-only**, and each carries `readOnlyHint` so a hos
 the annotation rather than on a name it has to recognise. Pointed at a production key, this
 server is no more dangerous than a dashboard you left open.
 
-`REALTIME_AVATAR_ALLOW_WRITES=1` adds the seven write tools. Only `start_call` costs credits,
+`REALTIME_AVATAR_ALLOW_WRITES=1` adds the eight write tools. Only `start_call` costs credits,
 and it **refuses a `tic_live_` key outright** — an operator who armed writes against a test
 key and later swapped in a production one should not discover it by being billed. Two
 independent gates, because one is a single mistake away from being none.

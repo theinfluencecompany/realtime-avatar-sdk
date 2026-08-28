@@ -301,13 +301,14 @@ await rta.swapSource(avatarId, { sourceAssetId: asset.id, anchorTimeMs: 1200 });
 resting loop by description, which is the one that applies to an image-sourced avatar (it has
 no footage to swap, and its rest pose is the portrait rather than a frame of the loop):
 
-```http
-PUT /v1/avatars/{avatarId}/loop
-{ "motionPrompt": "leans in, listening, a slow blink" }
+```ts
+const { servingUrl } = await rta.setLoop(avatarId, {
+  motionPrompt: "leans in, listening, a slow blink, settles back",
+});
+// servingUrl = the loop she is playing RIGHT NOW, for the whole render
 ```
 
-No SDK method yet — plain authenticated `fetch` until `setLoop` lands. It differs from a
-re-shoot in the way that matters most: **the clip library is untouched**, because clips render
+It differs from a re-shoot in the way that matters most: **the clip library is untouched**, because clips render
 against the portrait, not against the loop, so nothing re-queues. `422 loop_not_generatable`
 means a grandfathered video-sourced avatar with no portrait to re-animate — terminal, not a
 retry; `409 loop_pending` means one is already in flight.

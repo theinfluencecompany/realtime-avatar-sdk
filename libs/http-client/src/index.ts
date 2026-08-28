@@ -17,6 +17,7 @@ export type {
   ClipLibrary,
   ClipLibraryPlan,
   ClipLibraryUpdate,
+  LoopRedirect,
   ClipSource,
   ClipSyncResult,
   ContextMessage,
