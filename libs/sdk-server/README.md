@@ -70,25 +70,32 @@ all), and the `video` policy types are deliberately not one-to-one with the wire
 ```ts
 // calls
 rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, transcript?, metadata? })
-rta.endCall(sessionId, { reason? })    // free an abandoned call's slot now; idempotent, never throws
+rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 
 // avatars
-rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // loop is GENERATED
+rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // the only lane
 rta.createAvatarFromVideo({ displayName, videoUrl, voice? })                 // DEPRECATED — closed, 422
 rta.listAvatars()
 rta.getAvatar(avatarId)
+rta.updateAvatar(avatarId, patch)       // re-point displayName / defaultVoiceId
+rta.swapSource(avatarId, { sourceAssetId, anchorTimeMs? })  // re-shoot her: new loop, library re-renders
+rta.retimeAnchor(avatarId, anchorTimeMs)                    // same loop, different rest frame
+rta.deleteAvatar(avatarId)
 
 // clip library — declared as JSON, never as URLs
-rta.setClipLibrary(avatarId, { clips, expectedRevision? })
-rta.listClips(avatarId)
-rta.syncClips(avatarId, clipUrls)      // DEPRECATED — external-URL tier
+rta.setClipLibrary(avatarId, { clips, expectedRevision? })  // declare the FULL set; CAS via expectedRevision
+rta.setLoop(avatarId, { motionPrompt })     // re-direct the RESTING LOOP; clips untouched
+rta.listClips(avatarId)                 // rows + revision, anchor, eligibility
+rta.syncClips(avatarId, clipUrls)       // DEPRECATED — external-URL tier; use setClipLibrary
 
 // assets
 rta.createRemoteAsset({ kind, remoteUrl })
 rta.uploadAsset(file, { kind })
 
 // billing
-rta.creditBalance()
+rta.creditBalance()                                 // balance + reserved
+rta.listSessions({ from, to, endUserId })           // per-session: when, how long, what it cost
+rta.iterateSessions({ from, to })                   // the same, paging handled
 
 // webhooks
 verifyTranscript(rawBytes, headers, secret)
