@@ -306,9 +306,10 @@ export class RealtimeAvatar {
   /**
    * Re-point what an avatar already is. `defaultVoiceId: null` clears the default voice.
    *
-   * `anchorTimeMs` re-derives her rest pose from a different frame of the resting loop and
-   * re-renders the clip library against it — the library churns, so send it when the pose is
-   * actually wrong, not to nudge.
+   * Cheap metadata only. The three things that cost a render have their own methods, because
+   * putting them in a patch alongside a rename would hide minutes of GPU work behind a field:
+   * {@link retimeAnchor} moves the rest frame, {@link swapSource} replaces the footage, and
+   * the resting loop is re-directed by description at `PUT /v1/avatars/{id}/loop`.
    */
   async updateAvatar(avatarId: string, patch: AvatarUpdate): Promise<Avatar> {
     return toAvatar(

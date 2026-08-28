@@ -58,13 +58,10 @@ what a cast that is not this one will get.
   direction rather than as a rule an engine evaluates. Clips are prepared once and cached by URL
   hash and the serve path only loads that cache, so a map that was never synced is silently
   ignored on the first call after you add it. `syncClips` is idempotent, which is why it runs on
-  every boot and not behind a flag.
-
-  **Do not copy this part.** This demo predates the declare lane and still rides the deprecated
-  external-URL tier — clips on the author's own storage, cached by URL hash. New integrations
-  declare the library as JSON instead (`setClipLibrary`, [AGENTS.md §10](../../../AGENTS.md)),
-  where the platform renders and hosts the clips and no URL of yours is involved. The demo is
-  left on the old lane because its clips are real footage of the author's Ms. Lin, not prompts.
+  every boot and not behind a flag. **That tier is deprecated:** a new integration declares a
+  library with `setClipLibrary` — clips become a property of the character rather than of each
+  call, the platform renders and hosts them, and each one is pose-checked against her anchor
+  before it serves. This studio still shows the external tier because it is still live.
 - **All three voices are pinned, and each one was measured before it was.** With `voice` omitted
   the platform chooses, and it reads neither the face nor the persona — so a character's gender
   was a coin toss on every call, and it had been landing male on a brief that opens "a woman in

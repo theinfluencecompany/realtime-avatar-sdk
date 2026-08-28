@@ -67,11 +67,14 @@ test("start_call REFUSES a live key even when writes are allowed", async () => {
   assert.equal(seen.urls.length, 0, "it must not have called the API at all");
 });
 
-test("list_avatars flags image-sourced avatars, which render black", async () => {
+test("list_avatars counts the ones that can actually take a call", async () => {
+  // The count still excludes an avatar with no loop attached, but the REASON changed: an
+  // image source used to render a black track, and now it is simply one whose loop has not
+  // finished rendering. Same arithmetic, opposite story — so the wording had to move too.
   const { client } = await connect({});
   const out = say(await client.callTool({ name: "list_avatars", arguments: {} }));
   assert.match(out, /ava_video/);
-  assert.match(out, /1 ready \+ video-sourced/);   // the image one is excluded from the count
+  assert.match(out, /1 ready with a loop attached/);
 });
 
 test("list_sessions reports seconds and never rounds up to a minute", async () => {

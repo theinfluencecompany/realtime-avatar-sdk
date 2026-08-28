@@ -100,22 +100,23 @@ export function createServer(options: CreateServerOptions): McpServer {
       title: "List avatars",
       description:
         "Every avatar on this account, with the id you pass to startCall. Call this before " +
-        "writing code — avatar ids cannot be guessed. `sourceKind: 'image'` avatars publish " +
-        "a BLACK video track on a live call; prefer 'video'.",
+        "writing code — avatar ids cannot be guessed. An avatar reads `sourceKind: 'video'` " +
+        "once its loop is attached, including the ones built from a single image — that is " +
+        "the normal end state, not a warning.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async () => {
       const avatars = await rta.listAvatars();
       if (avatars.length === 0) {
-        return text("No avatars yet. Create one from a video URL before starting a call.");
+        return text("No avatars yet. Create one from a single portrait image before starting a call.");
       }
       const rows = avatars.map(
         (a) => `${a.id}  ${a.status.padEnd(13)} ${a.sourceKind.padEnd(5)} ${a.displayName}`,
       );
       const usable = avatars.filter((a) => a.status === "ready" && a.sourceKind === "video");
       return text(
-        `${avatars.length} avatar(s). ${usable.length} ready + video-sourced (usable for a live call).\n\n` +
+        `${avatars.length} avatar(s). ${usable.length} ready with a loop attached (usable for a live call).\n\n` +
           `id                                    status        kind  name\n${rows.join("\n")}`,
       );
     },

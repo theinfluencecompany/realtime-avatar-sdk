@@ -389,10 +389,11 @@ test("createAvatar omits motionPrompt when unset, rather than sending an empty o
   assert.ok(!("motionPrompt" in seen.body));
 });
 
-test("updateAvatar carries anchorTimeMs — the rest frame is re-pointable, the loop is not", async () => {
+test("the rest frame moves through retimeAnchor, never through an updateAvatar patch", async () => {
+  // Keeping it off the patch is the point: a field that quietly re-renders the whole clip
+  // library must not sit in the same object as a rename.
   const { seen, fetchImpl } = stub({ body: { id: "ava_1", displayName: "M", sourceKind: "video", status: "ready" } });
-  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).updateAvatar("ava_1", { anchorTimeMs: 1200 });
-  assert.equal(seen.method, "PATCH");
+  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).retimeAnchor("ava_1", 1200);
   assert.equal(seen.body?.anchorTimeMs, 1200);
 });
 
