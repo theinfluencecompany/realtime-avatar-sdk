@@ -427,6 +427,54 @@ test("setLoop is mutating, so the PUT carries an idempotency key", async () => {
   assert.match(attempts[0]?.headers.get("idempotency-key") ?? "", /.{16,}/);
 });
 
+test("waitForLoop returns when the loop settles", async () => {
+  const { fetchImpl } = scripted([
+    { body: { id: "ava_1", displayName: "M", sourceKind: "video", status: "ready", sourceAssetId: "ast_a", error: null, idleVideoStatus: "queued" } },
+    { body: { id: "ava_1", displayName: "M", sourceKind: "video", status: "ready", sourceAssetId: "ast_a", error: null, idleVideoStatus: "generating" } },
+    { body: { id: "ava_1", displayName: "M", sourceKind: "video", status: "ready", sourceAssetId: "ast_NEW", error: null, idleVideoStatus: "ready" } },
+  ]);
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  const settled = await rta.waitForLoop("ava_1", { pollMs: 1000, timeoutMs: 60_000 });
+  assert.equal(settled.idleVideoStatus, "ready");
+  assert.equal(settled.sourceAssetId, "ast_NEW");
+});
+
+test("waitForLoop THROWS on a failed re-direct instead of polling forever", async () => {
+  // The whole reason this helper exists. A failed re-direct leaves her `ready` and serving,
+  // and writes nothing to `error` — so a caller watching `status` or `error` waits for a
+  // change that never comes. idleVideoStatus is the only field that moves.
+  const { fetchImpl } = scripted([
+    { body: { id: "ava_1", displayName: "M", sourceKind: "video", status: "ready", sourceAssetId: "ast_a", error: null, idleVideoStatus: "generating" } },
+    { body: { id: "ava_1", displayName: "M", sourceKind: "video", status: "ready", sourceAssetId: "ast_a", error: null, idleVideoStatus: "failed" } },
+  ]);
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  await assert.rejects(
+    () => rta.waitForLoop("ava_1", { pollMs: 1000, timeoutMs: 60_000 }),
+    /still serving her previous loop/,
+  );
+});
+
+test("waitForClips settles on failed clips — it does not wait for all-ready", async () => {
+  // Waiting for all-`ready` is the intuitive version and it hangs forever: a pose-rejected
+  // upload settles `failed`, which is terminal. Settled means nothing is still MOVING.
+  const row = (clipId: string, status: string) => ({
+    clipId, role: "gesture", status, url: null, whenHint: null, source: "generated",
+    motionPrompt: null, durationSeconds: 5, anchorVersion: 1, poseCheck: null, error: null,
+    createdAt: "x", updatedAt: "x",
+  });
+  const envelope = (statuses: string[]) => ({
+    data: statuses.map((st, i) => row(`c${i}`, st)),
+    avatarId: "ava_1", revision: 1, anchorVersion: 1, anchor: null, clipLibraryEligible: true,
+  });
+  const { fetchImpl } = scripted([
+    { body: envelope(["generating", "ready"]) },
+    { body: envelope(["failed", "ready"]) },
+  ]);
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  const library = await rta.waitForClips("ava_1", { pollMs: 1000, timeoutMs: 60_000 });
+  assert.deepEqual(library.data.map((c) => c.status), ["failed", "ready"]);
+});
+
 test("setClipLibrary declares the full library and hands back the plan", async () => {
   const { seen, fetchImpl } = stub({ status: 202, body: {
     data: [{

@@ -306,7 +306,16 @@ const { servingUrl } = await rta.setLoop(avatarId, {
   motionPrompt: "leans in, listening, a slow blink, settles back",
 });
 // servingUrl = the loop she is playing RIGHT NOW, for the whole render
+await rta.waitForLoop(avatarId);   // throws if the render gave up
 ```
+
+**Do not hand-roll the poll.** A failed re-direct leaves her `status: "ready"` — she is
+still serving the old loop, which is the design — and writes nothing to `error`. The only
+field that moves is `idleVideoStatus` (`queued` → `generating` → `ready` | `failed`), so a
+loop watching `status` or `error` waits for a change that never arrives. Same trap one
+level over: `waitForClips` settles when nothing is still RENDERING, because waiting for
+every clip to reach `ready` hangs forever on a pose-rejected upload, which is terminal at
+`failed`.
 
 It differs from a re-shoot in the way that matters most: **the clip library is untouched**, because clips render
 against the portrait, not against the loop, so nothing re-queues. `422 loop_not_generatable`

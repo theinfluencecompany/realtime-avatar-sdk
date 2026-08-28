@@ -100,9 +100,10 @@ export function createServer(options: CreateServerOptions): McpServer {
       title: "List avatars",
       description:
         "Every avatar on this account, with the id you pass to startCall. Call this before " +
-        "writing code — avatar ids cannot be guessed. An avatar reads `sourceKind: 'video'` " +
-        "once its loop is attached, including the ones built from a single image — that is " +
-        "the normal end state, not a warning.",
+        "writing code — avatar ids cannot be guessed. Callable means status 'ready' AND " +
+        "idleVideoStatus 'ready': the loop is attached. An avatar reads sourceKind 'video' " +
+        "once that happens, including the ones built from a single image — that is the " +
+        "normal end state, not a warning.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
@@ -112,12 +113,18 @@ export function createServer(options: CreateServerOptions): McpServer {
         return text("No avatars yet. Create one from a single portrait image before starting a call.");
       }
       const rows = avatars.map(
-        (a) => `${a.id}  ${a.status.padEnd(13)} ${a.sourceKind.padEnd(5)} ${a.displayName}`,
+        (a) =>
+          `${a.id}  ${a.status.padEnd(13)} ${a.idleVideoStatus.padEnd(10)} ${a.displayName}`,
       );
-      const usable = avatars.filter((a) => a.status === "ready" && a.sourceKind === "video");
+      // Usable = ready WITH A LOOP ATTACHED. The old test was `sourceKind === "video"`,
+      // which happened to work only because an image-sourced avatar flips to `video` once
+      // its loop lands — it was reading the consequence, not the fact. `idleVideoStatus` is
+      // the fact, and it also distinguishes the three ways an avatar can be un-callable:
+      // still rendering (`queued`/`generating`), never had one (`none`), gave up (`failed`).
+      const usable = avatars.filter((a) => a.status === "ready" && a.idleVideoStatus === "ready");
       return text(
         `${avatars.length} avatar(s). ${usable.length} ready with a loop attached (usable for a live call).\n\n` +
-          `id                                    status        kind  name\n${rows.join("\n")}`,
+          `id                                    status        loop        name\n${rows.join("\n")}`,
       );
     },
   );
