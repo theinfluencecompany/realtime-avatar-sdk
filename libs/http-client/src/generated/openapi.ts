@@ -4,29 +4,14 @@
  */
 
 export interface paths {
-    "/health": {
+    "/v1/realtime/livekit/capacity": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["health"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/capacity": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
+        /** @description Free/busy snapshot of the render fleet, for deciding whether to offer a call before minting one. */
         get: operations["getLiveKitCapacity"];
         put?: never;
         post?: never;
@@ -122,7 +107,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/assets": {
+    "/v1/api-keys": {
         parameters: {
             query?: never;
             header?: never;
@@ -130,6 +115,24 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        put?: never;
+        /** @description Mint a developer API key for the caller's own tenant. The plaintext key is returned ONCE, in this response, and is not retrievable afterwards. */
+        post: operations["createApiKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The tenant's most recent assets, newest first. */
+        get: operations["listAssets"];
         put?: never;
         post: operations["uploadAsset"];
         delete?: never;
@@ -324,6 +327,8 @@ export interface components {
                     cooldown_seconds?: number;
                     /** @enum {string} */
                     renderer?: "editor" | "generative";
+                    /** @enum {string} */
+                    objects?: "editor" | "generative";
                 };
             };
             transcript_webhook?: {
@@ -334,6 +339,7 @@ export interface components {
             client_metadata?: {
                 [key: string]: string;
             };
+            fast_endpointing?: boolean;
         };
         LiveKitSessionGrant: {
             /**
@@ -503,6 +509,42 @@ export interface components {
             stylePreset?: "cinematic-founder" | "editorial-companion" | "warm-anime" | "luxury-realism" | "soft-3d" | "noir-avatar";
             /** Format: uri */
             portraitUrl?: string;
+            sourceAssetId?: string;
+            anchorTimeMs?: number;
+        };
+        CreateApiKeyRequest: {
+            name: string;
+            /**
+             * @default test
+             * @enum {string}
+             */
+            environment: "live" | "test";
+            /**
+             * @default [
+             *       "realtime:write",
+             *       "credits:read",
+             *       "avatars:read"
+             *     ]
+             */
+            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "usage:write")[];
+            spendLimitCreditMicros?: number | null;
+            expiresAt?: string | null;
+        };
+        CreateApiKeyResponse: {
+            id: string;
+            keyId: string;
+            tenantId: string;
+            name: string;
+            /** @enum {string} */
+            environment: "live" | "test";
+            redactedKey: string;
+            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "usage:write")[];
+            /** @enum {string} */
+            status: "active" | "revoked" | "expired";
+            spendLimitCreditMicros: number | null;
+            createdAt: string;
+            expiresAt: string | null;
+            apiKey: string;
         };
         Asset: {
             id: string;
@@ -517,6 +559,9 @@ export interface components {
             publicUrl: string | null;
             createdAt: string;
             updatedAt: string;
+        };
+        AssetList: {
+            data: components["schemas"]["Asset"][];
         };
         CreateRemoteAssetRequest: {
             /** @enum {string} */
@@ -686,10 +731,6 @@ export interface components {
         OkResponse: {
             ok: boolean;
         };
-        HealthResponse: {
-            /** @enum {string} */
-            status: "healthy";
-        };
     };
     responses: never;
     parameters: never;
@@ -699,26 +740,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    health: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Healthy */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-        };
-    };
     getLiveKitCapacity: {
         parameters: {
             query?: never;
@@ -980,6 +1001,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncAvatarClipsResponse"];
+                };
+            };
+        };
+    };
+    createApiKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateApiKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateApiKeyResponse"];
+                };
+            };
+        };
+    };
+    listAssets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetList"];
                 };
             };
         };

@@ -193,6 +193,8 @@ rta.createAvatarFromVideo({ displayName, videoUrl, voice? })
 rta.listAvatars()
 rta.getAvatar(avatarId)
 rta.updateAvatar(avatarId, patch)       // re-point displayName / defaultVoiceId
+rta.swapSource(avatarId, { sourceAssetId, anchorTimeMs? })  // re-shoot her: new loop, library re-renders
+rta.retimeAnchor(avatarId, anchorTimeMs)                    // same loop, different rest frame
 rta.deleteAvatar(avatarId)
 
 // clip library

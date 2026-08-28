@@ -571,6 +571,57 @@ test("updateAvatar PATCHes the curated patch and returns the avatar", async () =
   assert.equal(avatar.defaultVoiceId, "v2");
 });
 
+test("swapSource sends ONLY the swap fields — the platform refuses them beside any other", async () => {
+  const { seen, fetchImpl } = stub({
+    body: {
+      id: "ava_1", displayName: "Rin", sourceKind: "video", status: "ready",
+      defaultVoiceId: null, sourceAssetId: "ast_old", error: null,
+    },
+  });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  const avatar = await rta.swapSource("ava_1", { sourceAssetId: "ast_new", anchorTimeMs: 1200 });
+  assert.equal(seen.method, "PATCH");
+  assert.ok(seen.url?.endsWith("/avatars/ava_1"));
+  assert.deepEqual(seen.body, { sourceAssetId: "ast_new", anchorTimeMs: 1200 });
+  // Accepted, not applied: the avatar still reads as the generation it is SERVING.
+  assert.equal(avatar.sourceAssetId, "ast_old");
+  assert.equal(avatar.status, "ready");
+});
+
+test("swapSource omits anchorTimeMs entirely when it was not asked for", async () => {
+  const { seen, fetchImpl } = stub({
+    body: { id: "ava_1", displayName: "Rin", sourceKind: "video", status: "ready", defaultVoiceId: null },
+  });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  await rta.swapSource("ava_1", { sourceAssetId: "ast_new" });
+  assert.deepEqual(seen.body, { sourceAssetId: "ast_new" });
+});
+
+test("retimeAnchor moves the frame without naming a source", async () => {
+  const { seen, fetchImpl } = stub({
+    body: { id: "ava_1", displayName: "Rin", sourceKind: "video", status: "ready", defaultVoiceId: null },
+  });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  await rta.retimeAnchor("ava_1", 2000);
+  assert.equal(seen.method, "PATCH");
+  assert.deepEqual(seen.body, { anchorTimeMs: 2000 });
+});
+
+test("a failed swap reads as a READY avatar carrying the reason — the only channel it has", async () => {
+  const { fetchImpl } = stub({
+    body: {
+      id: "ava_1", displayName: "Rin", sourceKind: "video", status: "ready", defaultVoiceId: null,
+      sourceAssetId: "ast_old", error: "source swap rejected: never returns to rest",
+    },
+  });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  const avatar = await rta.getAvatar("ava_1");
+  // Polling for `status === "failed"` would MISS this — she is still serving.
+  assert.equal(avatar.status, "ready");
+  assert.match(avatar.error ?? "", /never returns to rest/);
+  assert.equal(avatar.sourceAssetId, "ast_old");
+});
+
 test("deleteAvatar sends DELETE, and a refusal throws like any other", async () => {
   const { seen, fetchImpl } = stub({ body: { ok: true } });
   const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });

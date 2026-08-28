@@ -278,7 +278,39 @@ The rest of the library is untouched.
 `syncClips` is the deprecated external tier — clips on YOUR storage, cache-by-URL-hash —
 and it sunsets once observed traffic reaches zero. Do not build on it.
 
-### 11. Verify transcripts over the RAW bytes
+### 11. Re-shooting her is asynchronous, and a failed re-shoot leaves her `ready`
+
+`swapSource` replaces the footage she rests in; `retimeAnchor` keeps the footage and moves
+the rest frame. Both re-render the whole clip library, and both return the moment the change
+is *accepted* — not when it is live.
+
+```ts
+const asset = await rta.createRemoteAsset({ kind: "video", remoteUrl: "https://…/reshoot.mp4" });
+await rta.swapSource(avatarId, { sourceAssetId: asset.id, anchorTimeMs: 1200 });
+```
+
+Three things follow, and each one bites a different assumption:
+
+- **She keeps serving the OLD loop until the new one is prepared.** A call minted right after
+  this returns is a normal call on the previous footage. There is no window where she is
+  unavailable, and no status to wait on that means "swapped".
+- **The library empties and refills.** Old takes are footage of the old source and cannot
+  splice against the new loop, so they are dropped and re-rendered. In between she rests on
+  the new loop with less variety — plainer, never broken. Do not gate your UI on a full library.
+- **A refused swap does not fail the avatar.** She stays `ready` and keeps serving; the reason
+  lands on `error`. So polling for `status === "failed"` will never see it:
+
+  ```ts
+  const avatar = await rta.getAvatar(avatarId);
+  if (avatar.error) show(avatar.error);        // ← a ready avatar CAN carry one
+  ```
+
+`anchorTimeMs` picks the frame she rests on (frame 0 of a real take is sometimes mid-blink)
+and is clamped server-side, so read the avatar back rather than assuming your number stuck.
+Video-sourced avatars only — a portrait-anchored one is a 422, and its re-shoot is the
+motion-attach action instead.
+
+### 12. Verify transcripts over the RAW bytes
 
 Parsing and re-serializing changes the whitespace and the signature will never match.
 
@@ -287,7 +319,7 @@ const raw = Buffer.from(await request.arrayBuffer());
 const transcript = await verifyTranscript(raw, request.headers, secret);
 ```
 
-### 12. End a call the moment your user abandons it
+### 13. End a call the moment your user abandons it
 
 The slot is held from the moment `startCall` returns — **including the window before the
 client has joined the room**. A user who closes the tab right there leaves the call running

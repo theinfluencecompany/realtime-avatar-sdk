@@ -7,6 +7,7 @@ export type {
   AssetKind,
   Avatar,
   AvatarClip,
+  AvatarSourceSwap,
   AvatarUpdate,
   CallConnection,
   CallMode,
