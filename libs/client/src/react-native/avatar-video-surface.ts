@@ -46,6 +46,7 @@ import {
   type AvatarVideoFit,
 } from "../react/avatar-video-surface";
 import { useAvatarPlayoutDelay } from "../react/livekit";
+import { useAvatarAdaptivePlayoutDelay } from "../react/use-adaptive-playout";
 import { useAvatarQualityGovernor } from "../react/use-quality-governor";
 
 // Android's <VideoTrack> renders an RTCView backed by a SurfaceView — a separate
@@ -126,6 +127,14 @@ export type AvatarVideoSurfaceProps = {
   children?: ReactNode;
   /** Surface a small "live · WxH" badge when the live layer is shown. Default true. */
   showLiveBadge?: boolean;
+  /**
+   * Reclaim the flat 0.5s de-jitter cushion on clean networks — the same opt-in
+   * closed loop the web surface takes, sharing the same implementation. Default
+   * **false**. The loop is stats-driven (no rVFC), so it behaves identically on
+   * iOS and Android; a receiver whose WebRTC shim exposes no `getStats` simply
+   * keeps the flat cushion.
+   */
+  adaptivePlayout?: boolean;
   /** Test id for the box. */
   testID?: string;
 };
@@ -150,6 +159,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     style,
     children,
     showLiveBadge = true,
+    adaptivePlayout = false,
     testID,
   } = props;
 
@@ -158,6 +168,9 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   // tracks keeps lips locked. Where the native receiver lacks the hint the SDK
   // warns and moves on — calling it is always safe.
   useAvatarPlayoutDelay(videoTrack, audioTrack);
+  // Opt-in descent from that cushion toward the 150ms floor on clean paths;
+  // shared with web, so the two surfaces can never drift on the buffer law.
+  useAvatarAdaptivePlayoutDelay(videoTrack, audioTrack, adaptivePlayout);
   const connectionState = useConnectionState();
   const connected = connectionState === ConnectionState.Connected;
   // Android needs the coarse subscribed-and-not-ended gate (see
