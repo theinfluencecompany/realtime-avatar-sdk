@@ -116,6 +116,17 @@ function pickTeacher(slug) {
 }
 
 /**
+ * This studio is on the EXTERNAL clip tier: the clips are files it hosts itself, handed over as
+ * URLs and resolved per call through `video.states`. That tier is deprecated — a new integration
+ * should declare a library instead (`setClipLibrary`), which makes the clips a property of the
+ * CHARACTER rather than of each call, has the platform render and host them, and pose-checks each
+ * one against her anchor before it can serve.
+ *
+ * It is kept here because the tier is still live and this is what an integration that predates the
+ * declare lane looks like; moving it over means uploading each clip as an asset first, and a clip
+ * that does not splice against her anchor is REFUSED rather than served, which is a judgment this
+ * demo's generated clips have never been put through.
+ *
  * Clips are prepared once and cached by URL hash; the serve path only ever LOADS that cache, so a
  * clip that was never prepared does nothing at all on the first call after you add it — no error,
  * just an avatar that ignores its state map. `syncClips` is idempotent, which is why it belongs at
