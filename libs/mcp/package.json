@@ -1,6 +1,6 @@
 {
   "name": "realtime-avatar-mcp",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "MCP server for Realtime Avatar — let a coding agent read your avatars, balance and bill directly.",
   "license": "MIT",
   "author": "The Influence Company",
@@ -55,7 +55,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "realtime-avatar": "0.5.2",
+    "realtime-avatar": "0.5.3",
     "zod": "^4.4.3"
   }
 }
