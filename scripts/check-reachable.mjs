@@ -41,8 +41,16 @@ async function entryFiles() {
       }
       continue;
     }
-    const block = config.slice(config.indexOf("entry: {"), config.indexOf("},", config.indexOf("entry: {")));
-    for (const m of block.matchAll(/"(src\/[^"]+)"/g)) out.push(join(pkg, m[1]));
+    // EVERY `entry: {` block, not just the first. sdk-server builds in two passes (server half
+    // split, client half not — see its tsup.config.ts for why), so a reader that stopped at the
+    // first block saw only the key-holding entries and declared the whole client subtree
+    // unreachable. The guard was right that those files must be walked; it just could not find
+    // the roots. Missing a root here is the failure mode that matters, because it reads as
+    // "delete this code".
+    for (let at = config.indexOf("entry: {"); at !== -1; at = config.indexOf("entry: {", at + 1)) {
+      const block = config.slice(at, config.indexOf("},", at));
+      for (const m of block.matchAll(/"(src\/[^"]+)"/g)) out.push(join(pkg, m[1]));
+    }
   }
   return out;
 }
