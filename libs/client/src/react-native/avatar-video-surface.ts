@@ -135,6 +135,18 @@ export type AvatarVideoSurfaceProps = {
    * keeps the flat cushion.
    */
   adaptivePlayout?: boolean;
+  /**
+   * Called with the receiver playout depth (SECONDS) whenever it changes — the flat
+   * default while `adaptivePlayout` is off, the live value while it is on.
+   *
+   * Read this if anything you render is timed against the avatar's VOICE. The media rides
+   * the receiver buffer and a side channel (captions, a transcript reveal) does not, so it
+   * has to be held by the same amount or it arrives early — and once the depth moves, a
+   * hard-coded copy is wrong by however far the loop has descended. Web got this in 0.5.2;
+   * shipping `adaptivePlayout` here without it hands a native consumer the latency knob and
+   * no way to keep anything in sync with the voice it just un-buffered.
+   */
+  onPlayoutDelayChange?: (seconds: number) => void;
   /** Test id for the box. */
   testID?: string;
 };
@@ -160,6 +172,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     children,
     showLiveBadge = true,
     adaptivePlayout = false,
+    onPlayoutDelayChange,
     testID,
   } = props;
 
@@ -170,7 +183,18 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   useAvatarPlayoutDelay(videoTrack, audioTrack);
   // Opt-in descent from that cushion toward the 150ms floor on clean paths;
   // shared with web, so the two surfaces can never drift on the buffer law.
-  useAvatarAdaptivePlayoutDelay(videoTrack, audioTrack, adaptivePlayout);
+  const playoutDelaySeconds = useAvatarAdaptivePlayoutDelay(
+    videoTrack,
+    audioTrack,
+    adaptivePlayout,
+  );
+  // Publish the depth, same contract as web: a native consumer timing a caption against her
+  // voice needs the live value, not the constant it used to be safe to assume.
+  const onPlayoutDelayChangeRef = useRef(onPlayoutDelayChange);
+  onPlayoutDelayChangeRef.current = onPlayoutDelayChange;
+  useEffect(() => {
+    onPlayoutDelayChangeRef.current?.(playoutDelaySeconds);
+  }, [playoutDelaySeconds]);
   const connectionState = useConnectionState();
   const connected = connectionState === ConnectionState.Connected;
   // Android needs the coarse subscribed-and-not-ended gate (see

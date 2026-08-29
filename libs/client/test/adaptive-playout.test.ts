@@ -139,5 +139,22 @@ test("the surfaces keep the loop opt-in (default false) on both platforms", asyn
       /useAvatarAdaptivePlayoutDelay\([^)]*,\s*true\s*[,)]/,
       `${path} hard-enables the adaptive loop instead of honouring the prop`,
     );
+    // THE KNOB AND THE READOUT SHIP TOGETHER, on every platform. 0.5.1 published the web
+    // surface with `adaptivePlayout` and no way to read the depth, and a consumer's typecheck
+    // is what found it; react-native then carried the same asymmetry a release longer. A
+    // surface that lets you un-buffer the voice without telling you by how much hands the
+    // consumer a caption that runs ahead of the mouth.
+    assert.match(
+      source,
+      /onPlayoutDelayChange\?: \(seconds: number\) => void/,
+      `${path} offers adaptivePlayout without declaring onPlayoutDelayChange — a consumer`
+        + ` timing anything against her voice cannot follow the depth`,
+    );
+    assert.match(
+      source,
+      /onPlayoutDelayChangeRef\.current\?\.\(playoutDelaySeconds\)/,
+      `${path} declares onPlayoutDelayChange but never calls it — a type-only prop`
+        + ` typechecks at every call site and does nothing (measured: it shipped that way)`,
+    );
   }
 });
