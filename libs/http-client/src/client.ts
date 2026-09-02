@@ -31,7 +31,7 @@ import type {
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.6.0";
+export const SDK_VERSION = "0.6.1";
 
 
 
@@ -666,6 +666,10 @@ function toUsageSessionPage(raw: unknown): UsageSessionPage {
     sessions: rows.filter(isRecord).map((row) => ({
       sessionId: String(row.sessionId ?? ""),
       avatarId: typeof row.avatarId === "string" ? row.avatarId : null,
+      // Added to the contract alongside avatarId so a usage row is readable without a
+      // second lookup. Defensive like its siblings: an older server that omits it
+      // yields null rather than the string "undefined".
+      avatarName: typeof row.avatarName === "string" ? row.avatarName : null,
       status: usageStatus(row.status),
       startedAt: typeof row.startedAt === "string" ? row.startedAt : null,
       endedAt: typeof row.endedAt === "string" ? row.endedAt : null,

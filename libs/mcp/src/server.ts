@@ -11,7 +11,7 @@ import { RealtimeAvatar, isQueued } from "realtime-avatar";
  * `test/server.test.ts` asserts the two stay equal; the equivalent constant in
  * `realtime-avatar` had that guard and this one did not, which is how it drifted.
  */
-export const MCP_VERSION = "0.6.0";
+export const MCP_VERSION = "0.6.1";
 
 /**
  * The Realtime Avatar MCP server.
