@@ -172,13 +172,27 @@ export type AvatarVideoSurfaceProps = {
    * Debounce (ms) before dropping BACK to the idle/poster floor once the live
    * layer stops, so back-to-back turns don't flash the floor between them.
    * Default 700. A disconnect bypasses this and reverts immediately.
+   *
+   * INERT UNDER THE DEFAULT PREDICATE ON REACT NATIVE (0.7.0). `RN_WEBRTC_IS_PRODUCING`
+   * reads producing BETWEEN turns as well as during them, so the live layer never stops
+   * and there is no return to debounce — this only does something again if you pass
+   * `isProducing={isLiveTrackProducing}`, which restores per-turn behaviour along with
+   * the frozen-frame bug it was chosen over. Still honoured on DISCONNECT, and still
+   * live on the web surface, which keeps the strict predicate.
    */
   idleReturnDelayMs?: number;
   /** Style for the box (the layers fill it). The CONSUMER owns the aspect box. */
   style?: StyleProp<ViewStyle>;
   /** Overlay content rendered above both media layers (badges, chrome, scrims). */
   children?: ReactNode;
-  /** Surface a small "live · WxH" badge when the live layer is shown. Default true. */
+  /**
+   * Surface a small "live · WxH" badge when the live layer is shown. Default true.
+   *
+   * ON REACT NATIVE THAT NOW MEANS THE WHOLE SESSION, not each turn (0.7.0): the badge
+   * renders with the live layer, and under the default predicate the live layer stays up
+   * between turns. Android has behaved this way since its own gate landed; iOS joins it.
+   * Pass `false` if a persistent badge is wrong for your surface.
+   */
   showLiveBadge?: boolean;
   /**
    * Reclaim the flat 0.5s de-jitter cushion on clean networks — the same opt-in
