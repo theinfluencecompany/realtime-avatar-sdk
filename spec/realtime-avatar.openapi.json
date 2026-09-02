@@ -5,6 +5,12 @@
     "version": "1.0.0",
     "description": "LiveKit-first realtime avatar session, capacity, and AgentWorker lifecycle API."
   },
+  "servers": [
+    {
+      "url": "https://realtimeavatar.ai/api",
+      "description": "Production"
+    }
+  ],
   "components": {
     "securitySchemes": {
       "bearerAuth": {
@@ -639,6 +645,10 @@
             }
           },
           "fast_endpointing": {
+            "description": "DEPRECATED, no-op. Accepted and ignored. The faster hesitation ceiling this requested is now the default for every session, so sending it changes nothing. Safe to stop sending; the field is retained only so existing callers do not break.",
+            "type": "boolean"
+          },
+          "require_ready_clip_library": {
             "type": "boolean"
           }
         },
@@ -978,7 +988,19 @@
             "maxLength": 80
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "session_id"
+            ]
+          },
+          {
+            "required": [
+              "queue_ticket_id"
+            ]
+          }
+        ]
       },
       "Avatar": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1233,7 +1255,19 @@
                 "additionalProperties": false
               }
             },
-            "additionalProperties": false
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "required": [
+                  "auto_description"
+                ]
+              },
+              {
+                "required": [
+                  "voice"
+                ]
+              }
+            ]
           },
           "llm": {
             "type": "object",
@@ -1429,7 +1463,8 @@
             "maximum": 9007199254740991
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "minProperties": 1
       },
       "CreateApiKeyRequest": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1917,6 +1952,161 @@
         ],
         "additionalProperties": false
       },
+      "ListAvatarsResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 8,
+                  "maxLength": 80
+                },
+                "tenantId": {
+                  "type": "string",
+                  "minLength": 8,
+                  "maxLength": 80
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "sourceKind": {
+                  "type": "string",
+                  "enum": [
+                    "image",
+                    "video"
+                  ]
+                },
+                "modelId": {
+                  "type": "string",
+                  "enum": [
+                    "realtime-avatar-live-v1",
+                    "realtime-avatar-video-v1"
+                  ]
+                },
+                "sourceAssetId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 8,
+                      "maxLength": 80
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "draft",
+                    "preprocessing",
+                    "ready",
+                    "failed",
+                    "disabled",
+                    "deleted"
+                  ]
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "idleVideoStatus": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "queued",
+                    "generating",
+                    "ready",
+                    "failed"
+                  ]
+                },
+                "defaultVoiceId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "llm": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "provider": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "gemini",
+                            "openai"
+                          ]
+                        },
+                        "model": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 200
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "provider"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "tenantId",
+                "displayName",
+                "sourceKind",
+                "modelId",
+                "sourceAssetId",
+                "status",
+                "error",
+                "idleVideoStatus",
+                "defaultVoiceId",
+                "llm",
+                "createdAt",
+                "updatedAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
       "ListAvatarClipsResponse": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1972,6 +2162,16 @@
                   "enum": [
                     "generated",
                     "uploaded"
+                  ]
+                },
+                "uploadAssetId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
                   ]
                 },
                 "motionPrompt": {
@@ -2141,6 +2341,7 @@
                 "url",
                 "whenHint",
                 "source",
+                "uploadAssetId",
                 "motionPrompt",
                 "durationSeconds",
                 "anchorVersion",
@@ -2365,6 +2566,16 @@
                     "uploaded"
                   ]
                 },
+                "uploadAssetId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "motionPrompt": {
                   "anyOf": [
                     {
@@ -2532,6 +2743,7 @@
                 "url",
                 "whenHint",
                 "source",
+                "uploadAssetId",
                 "motionPrompt",
                 "durationSeconds",
                 "anchorVersion",
@@ -2753,6 +2965,35 @@
           "ok"
         ],
         "additionalProperties": false
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Human-readable message. Not a stable contract — switch on `code` or `status`."
+          },
+          "status": {
+            "type": "integer",
+            "description": "Repeats the HTTP status in the body. Absent on unhandled 500s."
+          },
+          "code": {
+            "type": "string",
+            "description": "Machine-readable discriminator, present where the failure has one — billing, clip-library and loop refusals all carry it. Switch on this rather than on `error`, whose wording is not a contract. The set is open and grows with the API; the codes a given endpoint can return are documented with that endpoint at https://realtimeavatar.ai/docs/api-reference."
+          },
+          "retryable": {
+            "type": "boolean",
+            "description": "Set when the failure is worth retrying as-is."
+          },
+          "billingUrl": {
+            "type": "string",
+            "description": "Present on 402 — where to send the user to top up."
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": true
       }
     }
   },
@@ -2776,8 +3017,42 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Get a capacity snapshot",
+        "tags": [
+          "Realtime"
+        ]
       }
     },
     "/v1/realtime/livekit/session": {
@@ -2804,6 +3079,26 @@
               }
             }
           },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "No GPU slot available",
             "content": {
@@ -2813,8 +3108,22 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Mint a realtime session",
+        "tags": [
+          "Realtime"
+        ]
       }
     },
     "/v1/realtime/livekit/session/release": {
@@ -2841,8 +3150,42 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Release a session's capacity lease",
+        "tags": [
+          "Realtime"
+        ]
       }
     },
     "/v1/avatars": {
@@ -2854,12 +3197,46 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Avatar"
+                  "$ref": "#/components/schemas/ListAvatarsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           }
-        }
+        },
+        "summary": "List avatars",
+        "tags": [
+          "Avatars"
+        ]
       },
       "post": {
         "operationId": "createAvatar",
@@ -2874,7 +3251,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Created",
             "content": {
               "application/json": {
@@ -2883,8 +3260,42 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Create an avatar from a portrait",
+        "tags": [
+          "Avatars"
+        ]
       }
     },
     "/v1/avatars/{avatarId}": {
@@ -2910,8 +3321,42 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Get an avatar",
+        "tags": [
+          "Avatars"
+        ]
       },
       "patch": {
         "operationId": "updateAvatar",
@@ -2945,8 +3390,42 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Update an avatar",
+        "tags": [
+          "Avatars"
+        ]
       },
       "delete": {
         "operationId": "deleteAvatar",
@@ -2961,17 +3440,44 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Deleted",
+          "204": {
+            "description": "Deleted. No content."
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OkResponse"
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           }
-        }
+        },
+        "summary": "Delete an avatar",
+        "tags": [
+          "Avatars"
+        ]
       }
     },
     "/v1/avatars/{avatarId}/clips": {
@@ -2997,17 +3503,60 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "List an avatar's motion clips",
+        "tags": [
+          "Avatars"
+        ]
       },
       "put": {
         "operationId": "putAvatarClips",
-        "description": "Declare the avatar's full desired clip library (docs/CLIP_LIBRARY_UPDATE_API_DESIGN.md §6.1). The platform reconciles: unchanged clips are kept, changed or new ones re-render in the background against the avatar's pose anchor, absent ones soft-retire. 202 returns the post-apply library plus the reconcile plan. Supports Idempotency-Key replay and expectedRevision compare-and-set.",
+        "description": "Declare the avatar's full desired clip library; see https://realtimeavatar.ai/docs/editing. The platform reconciles: unchanged clips are kept, changed or new ones re-render in the background against the avatar's pose anchor, absent ones soft-retire. 202 returns the post-apply library plus the reconcile plan. Supports Idempotency-Key replay and expectedRevision compare-and-set.",
         "parameters": [
           {
             "name": "avatarId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Replays the original response byte-for-byte instead of performing the write again. Recommended on retries: a re-render is billed. Keys longer than 180 characters are IGNORED — the write proceeds without replay protection rather than failing — so keep it short.",
             "schema": {
               "type": "string"
             }
@@ -3033,13 +3582,47 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Declare an avatar's clip library",
+        "tags": [
+          "Avatars"
+        ]
       },
       "post": {
         "operationId": "syncAvatarClips",
         "deprecated": true,
-        "description": "DEPRECATED — do not build on this. Clips are generated by the platform from the avatar's portrait at creation time (`motion_prompt` art-directs them); list them with GET /v1/avatars/{avatarId}/clips. This route only reconciles an EXTERNALLY hosted clip library to the video cache by URL hash, for tenants that served their own clips before generated libraries existed. It cannot add a clip to a generated library.",
+        "description": "DEPRECATED — do not build on this. Declare the full library with PUT /v1/avatars/{avatarId}/clips, using either source.motionPrompt or the assetId of a registered uploaded video. This legacy route only reconciles EXTERNALLY hosted clip URLs to the cache tier for grandfathered tenants; it bypasses pose validation and cannot add a clip to the declared library. It remains functional until measured sunset evidence permits a 410 retirement.",
         "parameters": [
           {
             "name": "avatarId",
@@ -3061,7 +3644,7 @@
           }
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Synced",
             "content": {
               "application/json": {
@@ -3070,19 +3653,62 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Sync an externally hosted clip library",
+        "tags": [
+          "Avatars"
+        ]
       }
     },
     "/v1/avatars/{avatarId}/loop": {
       "put": {
         "operationId": "putAvatarLoop",
-        "description": "Re-direct the avatar's RESTING LOOP — the video she plays when nothing else is happening — from a new one-sentence description. Not a clip: a clip with role \"idle\" is a variant spliced OVER the loop, and declaring one never changes what she rests in. 202; the render takes minutes, during which she stays ready and keeps serving her previous loop (returned as servingUrl), and the swap publishes atomically once the new loop is usable. The clip library is untouched. Billed as one generation at the rendering model's rate. Image-sourced avatars only.",
+        "description": "Re-direct the avatar's RESTING LOOP — the video she plays when nothing else is happening — from a new one-sentence description. Not a clip: a clip with role \"idle\" is a variant spliced OVER the loop, and declaring one never changes what she rests in. 202; the render takes minutes, during which she stays ready and keeps serving her previous loop (returned as servingUrl), and the swap publishes atomically once the new loop is usable. The clip library is untouched. Billed as one generation at the rendering model's rate. Image-sourced avatars only. Supports Idempotency-Key replay — send one on retries, because a repeated re-direct is a second billed render.",
         "parameters": [
           {
             "name": "avatarId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Replays the original response byte-for-byte instead of performing the write again. Recommended on retries: a re-render is billed. Keys longer than 180 characters are IGNORED — the write proceeds without replay protection rather than failing — so keep it short.",
             "schema": {
               "type": "string"
             }
@@ -3108,8 +3734,42 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Re-direct an avatar's resting loop",
+        "tags": [
+          "Avatars"
+        ]
       }
     },
     "/v1/api-keys": {
@@ -3127,8 +3787,8 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Created",
+          "201": {
+            "description": "Created. The plaintext key is returned once and never again.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3136,8 +3796,42 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Mint an API key",
+        "tags": [
+          "API keys"
+        ]
       }
     },
     "/v1/assets": {
@@ -3154,24 +3848,77 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "List assets",
+        "tags": [
+          "Assets"
+        ]
       },
       "post": {
         "operationId": "uploadAsset",
         "requestBody": {
           "required": true,
           "content": {
-            "application/octet-stream": {
+            "multipart/form-data": {
               "schema": {
-                "type": "string",
-                "format": "binary"
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The asset bytes."
+                  },
+                  "kind": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "string",
+                    "enum": [
+                      "image",
+                      "video",
+                      "audio"
+                    ],
+                    "description": "Optional; inferred from the file when omitted. Image assets are portraits, audio assets are voice material, and video assets may be declared as uploaded motion clips with source.assetId. Video assets are not accepted as the source of a newly created Avatar."
+                  }
+                },
+                "required": [
+                  "file"
+                ]
               }
             }
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Uploaded",
             "content": {
               "application/json": {
@@ -3180,8 +3927,42 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Upload an asset",
+        "tags": [
+          "Assets"
+        ]
       }
     },
     "/v1/assets/remote": {
@@ -3198,7 +3979,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Created",
             "content": {
               "application/json": {
@@ -3207,8 +3988,42 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Create an asset from a URL",
+        "tags": [
+          "Assets"
+        ]
       }
     },
     "/v1/credits/balance": {
@@ -3225,14 +4040,97 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "Get the credit balance",
+        "tags": [
+          "Credits"
+        ]
       }
     },
     "/v1/usage/sessions": {
       "get": {
         "operationId": "listUsageSessions",
         "description": "Per-second billable detail. The window defaults to the trailing 30 days and is CLAMPED to 90 — a wider range is served narrowed, not refused, so read back the returned from/to.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Start of the window. Defaults to 30 days before `to`; clamped to no earlier than 90 days before it."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "End of the window. Defaults to now."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Rows per page. Defaults to 50, clamped to 1–200."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque cursor — pass the previous response's `nextCursor` verbatim. A null `nextCursor` means the last page."
+          },
+          {
+            "name": "endUserId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Narrow to one of YOUR users — matches the `client_metadata.user_id` the call was minted with. Untagged calls still return, with empty metadata."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Sessions",
@@ -3243,9 +4141,69 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 402 (insufficient credits or spend limit), 409 (no workspace), 422 (strict schema rejection), 429 (rate limited), 502 (upstream render failed), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "summary": "List billed realtime sessions",
+        "tags": [
+          "Usage"
+        ]
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "API keys",
+      "description": "Mint the keys that authenticate every other call."
+    },
+    {
+      "name": "Assets",
+      "description": "Upload the portraits and audio an avatar is built from."
+    },
+    {
+      "name": "Avatars",
+      "description": "Create a character, then change her clips and her resting loop by description."
+    },
+    {
+      "name": "Credits",
+      "description": "What the workspace has left, and what live calls are holding."
+    },
+    {
+      "name": "Realtime",
+      "description": "Mint, release and size the live calls themselves."
+    },
+    {
+      "name": "Usage",
+      "description": "Per-session billed detail, for reconciling against the invoice."
+    }
+  ]
 }

@@ -38,8 +38,12 @@ export {
   type IdleVideoRender,
 } from "./avatar-video-surface";
 // The shared pure/reactive pieces the surface is built on, for apps composing
-// their own surface UI on native.
+// their own surface UI on native — and the two producing predicates, so the
+// surface's `isProducing` prop has something to be passed. The RN default is
+// `isNativeLiveTrackSubscribed`; `isLiveTrackProducing` is the strict web gate,
+// available for an app that has measured it working on its own devices.
 export {
+  isLiveTrackProducing,
   isNativeLiveTrackSubscribed,
   useLiveTrackProducing,
   type AvatarVideoFit,

@@ -1,7 +1,7 @@
 {
   "name": "@realtime-avatar/internal-http-client",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Server-side client for Realtime Avatar — live voice and video characters you can interrupt.",
   "license": "MIT",
   "author": "The Influence Company",

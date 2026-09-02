@@ -497,30 +497,46 @@ export function isLiveTrackProducing(
 }
 
 /**
- * The COARSE producing gate the React Native (Android) surface twin passes to
+ * The COARSE producing gate the REACT NATIVE surface twin passes to
  * {@link useLiveTrackProducing} in place of {@link isLiveTrackProducing}.
  *
- * On Android #446 mounts the live `<VideoTrack>` (a below-window SurfaceView) ONLY
- * while it's producing, so this predicate is the upstream switch that decides
- * whether the video shows at all — and the strict {@link isLiveTrackProducing}
- * reads it false there. react-native-webrtc's REMOTE `MediaStreamTrack` does not
- * drive the browser-shaped micro-signals that predicate depends on: `enabled` is a
- * LOCAL playback toggle (not frame flow), and a remote track's `muted` can read
- * `true` for an entire producing turn (or never emit `unmute`). So on a real
- * Android device the strict test returned false while frames flowed and the avatar
- * froze on its poster ("voice only / static image").
+ * "Native" here means REACT NATIVE, not Android. This predicate is about the
+ * react-native-webrtc shim, and both platforms run the same one — see the
+ * correction below.
+ *
+ * react-native-webrtc's REMOTE `MediaStreamTrack` does not drive the browser-shaped
+ * micro-signals {@link isLiveTrackProducing} depends on: `enabled` is a LOCAL
+ * playback toggle (not frame flow), and a remote track's `muted` can read `true` for
+ * an entire producing turn (or never emit `unmute`). So the strict test returns
+ * false while frames flow, and the surface holds its live layer down while the
+ * avatar is talking — "voice only / static image".
  *
  * We therefore gate on the one fact react-native-webrtc reports reliably: a
  * subscribed remote track whose underlying `MediaStreamTrack` has not ENDED. The
- * trade-off is that a turn-end no longer crossfades back to the idle clip on
- * Android (the live layer stays up between turns) — an acceptable price for the
- * video actually appearing. The room's connection state still unmounts the layer on
- * disconnect, and the track's `ended` event (wired in {@link useLiveTrackProducing})
- * still tears it down. iOS keeps {@link isLiveTrackProducing}: its in-tree UIView
- * and DOM-shaped track behave like the web, where the strict signal works today.
+ * room's connection state still unmounts the layer on disconnect, and the track's
+ * `ended` event (wired in {@link useLiveTrackProducing}) still tears it down.
+ *
+ * THE TRADE-OFF, on every React Native platform: the live layer stays up BETWEEN
+ * turns, so a turn-end no longer falls back to the idle clip. That is the price of
+ * the video appearing at all, and it is paid on iOS as well as Android — pass your
+ * own predicate via the RN surface's `isProducing` prop if your app would rather
+ * have the idle-clip return than a reliable live layer.
+ *
+ * CORRECTION (0.7.0). Until 0.6.x this was documented as the "Android predicate",
+ * and the RN surface applied it only when `Platform.OS === "android"` on the theory
+ * that "iOS keeps {@link isLiveTrackProducing}: its in-tree UIView and DOM-shaped
+ * track behave like the web". That premise was false. The UIView-vs-SurfaceView
+ * split is a COMPOSITING fact and says nothing about track semantics: iOS and
+ * Android run the SAME react-native-webrtc shim, so the remote track is no more
+ * DOM-shaped on one than on the other. Measured on a physical iPhone, the
+ * publication was subscribed and H.264 frames were arriving while the strict
+ * predicate read false, so the surface held the live view at opacity 0 and the
+ * avatar froze on its poster — the identical symptom this predicate was written to
+ * fix on Android. Do not re-introduce a platform condition here.
  *
  * Pure + DOM-free (reads only `mediaStreamTrack.readyState`), so it lives here with
- * its web twin and is unit-tested in the shared suite rather than the RN module.
+ * its web twin and is pinned from the shared suite
+ * (libs/client/test/avatar-video-surface.test.ts) rather than the RN module.
  */
 export function isNativeLiveTrackSubscribed(
   videoTrack: TrackReferenceOrPlaceholder | undefined,
@@ -546,11 +562,17 @@ export function isNativeLiveTrackSubscribed(
  * Exported (not just the pure {@link isLiveTrackProducing}) because it is
  * DOM-free — publication events + MediaStreamTrack events exist on React Native's
  * WebRTC shim too — so the react-native surface twin reuses THIS hook (the event
- * wiring never drifts between platforms) but may pass its OWN `isProducing`
+ * wiring never drifts between platforms) but passes its OWN `isProducing`
  * predicate: react-native-webrtc's remote track does not drive the browser-shaped
- * `enabled`/`muted` flags {@link isLiveTrackProducing} reads, so Android supplies a
- * coarser subscribed-and-not-ended test (see the RN surface twin). Defaults to
- * {@link isLiveTrackProducing} so every web caller is unchanged.
+ * `enabled`/`muted` flags {@link isLiveTrackProducing} reads, so REACT NATIVE (both
+ * platforms) supplies the coarser subscribed-and-not-ended test
+ * {@link isNativeLiveTrackSubscribed}. Defaults to {@link isLiveTrackProducing} so
+ * every web caller is unchanged.
+ *
+ * `isProducing` is an effect DEPENDENCY, so pass a REFERENTIALLY STABLE function —
+ * a module-level one, or `useCallback`. An inline arrow re-subscribes the track
+ * listeners on every render. (It cannot loop: the recomputed value is a boolean and
+ * React bails out of a `setState` to the same one.)
  */
 export function useLiveTrackProducing(
   videoTrack: TrackReferenceOrPlaceholder | undefined,
