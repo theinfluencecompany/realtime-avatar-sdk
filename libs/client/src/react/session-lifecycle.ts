@@ -898,6 +898,15 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
       refreshBaselineCapacityRef.current = capacityRef.current;
       // Mark the request in flight BEFORE dispatching it. This removes the old
       // bug where the same state immediately armed another timer after refresh.
+      // GIVE THE SLOT BACK BEFORE ASKING FOR ANOTHER. A fresh grant supersedes the
+      // one we hold, and `useLiveKitAvatarGrant` already releases the old session —
+      // but only once the NEW grant has landed. On a plan whose ceiling is 1 (the
+      // free tier) that ordering cannot converge: the re-mint is refused BECAUSE we
+      // still hold the dead session, so the release that would have freed it never
+      // runs, and the ladder burns its whole budget against its own corpse. Release
+      // first; the session we are abandoning is by definition already broken, and
+      // the give-up branch above releases anyway.
+      releaseRef.current("superseded");
       setRecovery({ kind: "refreshing", attempt: step.attempt });
       refreshRef.current();
     }, step.delayMs);
@@ -919,6 +928,9 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     // grant/room failure transitions `refreshing` → `reconnecting` and schedules
     // the next bounded attempt.
     refreshBaselineCapacityRef.current = capacityRef.current;
+    // Same ordering as the auto ladder: free the dead slot before asking for a new
+    // one, or a 1-seat plan refuses the re-mint on the strength of what we still hold.
+    releaseRef.current("superseded");
     setRecovery({ kind: "refreshing", attempt: 0 });
     refreshRef.current();
   }, [active, clearTimer, recovery.kind]);

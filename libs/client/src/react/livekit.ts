@@ -611,7 +611,21 @@ export function useLiveKitAvatarGrant<
     void client
       .createLiveKitSessionOrBusy(request, requestOptions)
       .then((result) => {
-        if (cancelled) return;
+        // A GRANT THAT LANDS AFTER WE STOPPED CARING MUST STILL BE RELEASED.
+        // `cancelled` means the effect that asked for this grant is gone (unmount,
+        // avatar switch, or a version-bump retry), so nothing downstream will ever
+        // record it in `heldSessionRef` — and `releaseHeld` only frees what that ref
+        // holds. Returning here used to strand the session for the platform's whole
+        // join timeout: on a plan whose ceiling is 1 (the free tier) that is the
+        // caller's only slot, and their very next attempt is refused by a session
+        // they never even saw. Release it explicitly instead; the ref is not ours to
+        // write once the effect is dead, so this is deliberately a direct call.
+        if (cancelled) {
+          if (result.status !== "busy") {
+            void client.releaseLiveKitSession(result.grant.session_id, "superseded");
+          }
+          return;
+        }
         if (result.status === "busy") {
           queueTicketRef.current = result.busy.queue_ticket_id ?? queueTicketRef.current;
           // Commit the fresh busy snapshot so the auto-retry effect (keyed on
