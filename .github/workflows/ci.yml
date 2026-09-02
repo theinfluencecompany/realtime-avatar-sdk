@@ -92,6 +92,14 @@ jobs:
 
       - name: The generated types still match the vendored spec
         run: npm run spec:verify
+
+      # The Python examples are not typechecked by anything above, and a Python file that
+      # PARSES can still die at import (a name used before it is defined). Install what the
+      # examples declare, then import every one of them — see scripts/check-python-apps.py.
+      - name: Every Python example imports
+        run: |
+          python3 -m pip install --quiet -r apps/quickstart/python-fastapi/requirements.txt
+          npm run apps:python
       # Cheap, catches the obvious: no credential should ever reach a commit here.
       - name: Scan for leaked credentials
         run: |
