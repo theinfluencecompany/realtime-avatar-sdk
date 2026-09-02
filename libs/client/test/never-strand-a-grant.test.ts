@@ -54,3 +54,30 @@ test("the reconnect ladder releases the dead slot BEFORE asking for a fresh gran
   const refreshSites = source.match(/refreshRef\.current\(\);/g) ?? [];
   assert.equal(refreshSites.length, 2, "a new refreshRef call site appeared — does it release the held slot first?");
 });
+
+test("an unconnected grant is given back before the platform's join timeout", async () => {
+  const source = await readFile(new URL("../src/react/session-lifecycle.ts", import.meta.url), "utf-8");
+
+  // The default must stay well under the platform's 75s join timeout — the whole
+  // point is to free the slot BEFORE a retrying caller collides with it (clients were
+  // observed retrying every ~7.3s).
+  const declared = source.match(/export const DEFAULT_CONNECT_WATCHDOG_SECONDS = (\d+);/);
+  assert.ok(declared, "DEFAULT_CONNECT_WATCHDOG_SECONDS is gone — an unconnected grant would hold its slot for the platform's full join timeout");
+  const seconds = Number(declared[1]);
+  assert.ok(seconds > 0 && seconds <= 20, `connect watchdog is ${seconds}s; it must be well under the platform's 75s join timeout to be useful`);
+
+  // It must RELEASE, not merely re-render, and hand off to the bounded ladder so a
+  // room that never comes up ends in `failed` rather than retrying forever.
+  assert.match(
+    source,
+    /releaseRef\.current\("disconnected"\);[\s\S]{0,220}setRecovery\(\{ kind: "reconnecting", attempt: attemptRef\.current \}\)/,
+    "the watchdog no longer releases the slot and hands off to the bounded ladder carrying the current attempt (resetting the attempt would retry forever)",
+  );
+
+  // It must not fire on a queued request: a queue holds a ticket, not a session.
+  assert.match(
+    source,
+    /if \(grantState\.status !== "ready" \|\| !grantState\.grant\) return;/,
+    "the watchdog must only arm for a HELD grant — arming while queued would release a ticket the queue loop is waiting on",
+  );
+});

@@ -504,6 +504,20 @@ export type UseSessionLifecycleInput<T extends LLMProvider = LLMProvider> = {
   reconnectBackoffMs?: number[];
   /** Auto-reconnect give-up bound. Default {@link MAX_RECONNECT_ATTEMPTS}. */
   maxReconnectAttempts?: number;
+  /**
+   * How long a held grant may sit UNCONNECTED before we give the slot back
+   * (seconds). Default {@link DEFAULT_CONNECT_WATCHDOG_SECONDS}.
+   *
+   * A grant that never reaches a live room is invisible to every other timer here:
+   * the idle clock only runs once connected, and LiveKit reports no disconnect for
+   * a room that was never joined. Without this the slot is held until the PLATFORM's
+   * join timeout (75s at time of writing) — and on a plan whose ceiling is 1, that is
+   * the caller's only slot, so their retry is refused by a call they never saw.
+   * Measured in prod: 8 of 12 never-connected sessions held for 76-81s.
+   *
+   * Set 0 to disable (the platform timeout remains the backstop).
+   */
+  connectWatchdogSeconds?: number;
   /** Forwarded to {@link useLiveKitAvatarGrant}. Defaults true (queue auto-retry). */
   autoRetryBusy?: boolean;
   requestOptions?: UseLiveKitAvatarGrantInput<T>["requestOptions"];
@@ -607,6 +621,14 @@ export function resolveIdleTimeoutMs(args: {
 const DEFAULT_WARN_CAP_MS = 30_000;
 
 /**
+ * Give an unconnected grant back after this long. Chosen well under the platform's
+ * 75s join timeout so the slot frees BEFORE a retrying caller collides with it —
+ * clients were observed retrying every ~7.3s, so a 75s hold swallowed ten attempts.
+ * Long enough to clear a cold GPU boot's signalling on a slow network.
+ */
+export const DEFAULT_CONNECT_WATCHDOG_SECONDS = 12;
+
+/**
  * Resolve the warn window (ms) before the client-enforced idle end. Precedence:
  * a positive `idleWarnLeadSeconds` (the doc-aligned knob) → the legacy
  * `warnBeforeMs` (deprecated) → the default {@link DEFAULT_IDLE_WARN_LEAD_SECONDS}.
@@ -646,6 +668,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     reconnectBackoffMs,
     maxReconnectAttempts,
     autoRetryBusy = true,
+    connectWatchdogSeconds,
     requestOptions,
     onBehaviorChange,
   } = input;
@@ -659,6 +682,12 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
   );
   const reconnectPolicyRef = useRef(reconnectPolicy);
   reconnectPolicyRef.current = reconnectPolicy;
+  // Negative/NaN is treated as "use the default"; an explicit 0 disables the watchdog
+  // and leaves the platform join timeout as the only backstop.
+  const connectWatchdogMs =
+    typeof connectWatchdogSeconds === "number" && Number.isFinite(connectWatchdogSeconds)
+      ? Math.max(0, Math.floor(connectWatchdogSeconds)) * 1000
+      : DEFAULT_CONNECT_WATCHDOG_SECONDS * 1000;
 
   const grantState = useLiveKitAvatarGrant<T>({
     client,
@@ -877,6 +906,35 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     },
     [active, onConnected],
   );
+
+  // CONNECT WATCHDOG — give the slot back if the room never comes up.
+  //
+  // Every other timer in this hook assumes a connection: the idle clock only ticks
+  // once connected, and LiveKit reports no disconnect for a room that was never
+  // joined. So a grant that lands and then goes nowhere is invisible here and is
+  // held until the PLATFORM's join timeout. Measured in prod 2026-09-01/02: 8 of 12
+  // never-connected sessions held 76-81s, and on the 1-seat free tier that is a total
+  // lockout — 28 of 66 mint attempts were refused, every one by the caller's OWN hold.
+  //
+  // On expiry we release and hand off to the BOUNDED ladder below (`reconnecting`)
+  // rather than inventing a second retry path: that gives backoff, an attempt budget
+  // and a give-up for free, and each re-arm of this watchdog advances that budget, so
+  // a room that never comes up ends in `failed` instead of looping.
+  useEffect(() => {
+    if (!active || connected || connectWatchdogMs <= 0) return;
+    // Only a HELD grant can strand a slot. A queued request holds a ticket, not a
+    // session, and the queue has its own retry loop.
+    if (grantState.status !== "ready" || !grantState.grant) return;
+    // Terminal phases have already released; re-arming would fight them.
+    if (recovery.kind === "failed" || recovery.kind === "ended") return;
+    const timer = window.setTimeout(() => {
+      releaseRef.current("disconnected");
+      // Carry the CURRENT attempt so the ladder's budget advances from where it is —
+      // resetting to 0 here would let a room that never connects retry forever.
+      setRecovery({ kind: "reconnecting", attempt: attemptRef.current });
+    }, connectWatchdogMs);
+    return () => window.clearTimeout(timer);
+  }, [active, connected, connectWatchdogMs, grantState.status, grantState.grant, recovery.kind]);
 
   // Auto-reconnect for transient drops, with a capped backoff AND a bounded
   // give-up (both decided by the pure `retryStep`). Once the budget is spent we
