@@ -80,6 +80,14 @@ jobs:
       # anything shipped mentions a term we listed; this asks whether every name we export
       # is one we meant to export. A new internal export fails by default.
       - run: npm run surface
+      # The Python examples are not typechecked by anything above, and a Python file that
+      # PARSES can still die at import (a name used before it is defined). Install what the
+      # examples declare, then import every one of them — see scripts/check-python-apps.py.
+      - name: Every Python example imports
+        run: |
+          python3 -m pip install --quiet -r apps/quickstart/python-fastapi/requirements.txt
+          npm run apps:python
+
       # The vendored spec must still equal what the platform serves. Non-blocking when the
       # network is unreachable — a fork or an in-flight deploy must not redden someone's PR.
       - run: npm run spec:check
@@ -93,13 +101,6 @@ jobs:
       - name: The generated types still match the vendored spec
         run: npm run spec:verify
 
-      # The Python examples are not typechecked by anything above, and a Python file that
-      # PARSES can still die at import (a name used before it is defined). Install what the
-      # examples declare, then import every one of them — see scripts/check-python-apps.py.
-      - name: Every Python example imports
-        run: |
-          python3 -m pip install --quiet -r apps/quickstart/python-fastapi/requirements.txt
-          npm run apps:python
       # Cheap, catches the obvious: no credential should ever reach a commit here.
       - name: Scan for leaked credentials
         run: |
