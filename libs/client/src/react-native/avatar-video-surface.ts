@@ -12,25 +12,33 @@
 //   - useAvatarQualityGovernor (shared) — stats+events tiers only on native;
 //     the rVFC freeze reading is a browser API and intentionally absent here.
 //
-// Platform differences, by design:
+// iOS-vs-ANDROID differences, by design — and there is EXACTLY ONE, COMPOSITING:
 //   - The live layer is @livekit/react-native's <VideoTrack> (a native RTCView).
 //     On iOS that RTCView is a UIView, so it composites like any other layer:
 //     it crossfades with RN's Animated opacity (native driver) and sits in tree
 //     order above the poster/idle floor. ANDROID's RTCView is a SurfaceView on
 //     its OWN hardware layer, which breaks both of those assumptions — see
-//     `IS_ANDROID` below.
+//     `IS_ANDROID` below. That is the whole of it: `IS_ANDROID` gates HOW the
+//     live layer is painted, and nothing else. In particular it does NOT gate
+//     WHETHER the track counts as producing — see `RN_WEBRTC_IS_PRODUCING`.
+//
+// NATIVE-vs-WEB differences — these hold on BOTH platforms alike, and the last of
+// them is the one that was once mistaken for an iOS-vs-Android difference:
 //   - There is no <video> element on native, so the IDLE CLIP is app-injected
 //     via `renderIdleVideo` (bring expo-video / react-native-video — the SDK
 //     stays player-agnostic instead of hard-depending on one). Without it the
 //     poster is the resting floor, exactly like a web avatar with no idle clip.
 //   - No requestVideoFrameCallback on native → no frame-flow stall detection;
 //     liveness gates on connection state + the MediaStreamTrack producing
-//     signal (mute/unmute/ended fire on RN's WebRTC shim too).
+//     signal. Those track events fire on RN's WebRTC shim, but on a REMOTE
+//     track their mute state is not a frame-flow signal on either platform,
+//     which is why the producing predicate here is the coarse RN one.
 // ---------------------------------------------------------------------------
 import {
   isTrackReference,
   useConnectionState,
   useVoiceAssistant,
+  type TrackReferenceOrPlaceholder,
 } from "@livekit/components-react";
 import { VideoTrack } from "@livekit/react-native";
 import { ConnectionState } from "livekit-client";
@@ -49,10 +57,14 @@ import { useAvatarPlayoutDelay } from "../react/livekit";
 import { useAvatarAdaptivePlayoutDelay } from "../react/use-adaptive-playout";
 import { useAvatarQualityGovernor } from "../react/use-quality-governor";
 
+// COMPOSITING ONLY. `IS_ANDROID` answers "how is the live layer painted?" — never
+// "is the track producing?". Those two questions were once answered by this one
+// constant; see `RN_WEBRTC_IS_PRODUCING` below for what that cost.
+//
 // Android's <VideoTrack> renders an RTCView backed by a SurfaceView — a separate
 // hardware layer, NOT a normal view in the RN tree. Two SurfaceView facts break the
-// DOM-shaped layer model this surface inherits from the web twin, and together they
-// make the avatar show as "voice only" on Android while iOS is fine:
+// DOM-shaped layer model this surface inherits from the web twin, and each on its
+// own is enough to make the avatar show as "voice only" on Android:
 //   1. Z-ORDER: a remote-video SurfaceView draws in the BACKGROUND, BELOW the RN
 //      window (react-native-webrtc's RTCView doc: remote video is zOrder 0 = "the
 //      background"; the window's RN views sit above it). So the opaque poster/idle
@@ -71,6 +83,31 @@ import { useAvatarQualityGovernor } from "../react/use-quality-governor";
 const IS_ANDROID = Platform.OS === "android";
 // Documented value for a single remote video "in the background" (react-native-webrtc).
 const ANDROID_REMOTE_ZORDER = 0;
+
+// The default "is the avatar's live track producing frames?" predicate for THIS surface.
+//
+// IT IS NAMED AFTER THE SHIM, NOT THE PLATFORM, AND THAT IS THE POINT. Deciding whether a
+// remote track is producing is a react-native-webrtc question; painting the live layer is a
+// SurfaceView question. Do not fold this back into `IS_ANDROID` — the previous shape was
+// `IS_ANDROID ? isNativeLiveTrackSubscribed : undefined`, which let iOS fall through to the
+// strict web predicate, and the reasoning behind that ("iOS's in-tree UIView and DOM-shaped
+// track behave like the web") silently carried a COMPOSITING fact over into TRACK SEMANTICS.
+// It does not survive contact with a device: both platforms run the same
+// react-native-webrtc shim, so the remote track is no more DOM-shaped on one than the other.
+// Measured on a physical iPhone, the publication was subscribed and H.264 frames were
+// arriving while the strict predicate read false — the live view sat at opacity 0 and the
+// avatar froze on its poster. See `isNativeLiveTrackSubscribed` for the full account.
+//
+// THE PRICE, WHICH IS REAL AND WHICH iOS NOW PAYS TOO. A subscribed-and-not-ended track reads
+// producing BETWEEN turns as well as during them, so the live layer STAYS UP at turn end and
+// no longer crossfades back to the idle clip. Android has shipped that trade since #446 as
+// "an acceptable price for the video actually appearing"; from 0.7.0 it is the behaviour on
+// both platforms. If your idle-clip return stopped working, this constant is why — and the
+// `isProducing` prop is the way back: pass `isLiveTrackProducing` to restore the strict gate
+// on a platform/track combination where you have measured that it works.
+//
+// A disconnect and a track `ended` still tear the live layer down, on both platforms.
+const RN_WEBRTC_IS_PRODUCING = isNativeLiveTrackSubscribed;
 
 /** What the surface hands `renderIdleVideo` — enough to drop in any RN player. */
 export type IdleVideoRender = {
@@ -109,6 +146,22 @@ export type AvatarVideoSurfaceProps = {
    * can never leave a frozen/black live layer up. Default true.
    */
   live?: boolean;
+  /**
+   * Override "is the avatar's live video track producing frames?".
+   *
+   * Defaults to {@link isNativeLiveTrackSubscribed} — subscribed and not ended — which is
+   * correct on BOTH React Native platforms as of 0.7.0 (see `RN_WEBRTC_IS_PRODUCING`).
+   * The escape hatch exists because that default is a judgement about a shim this SDK does
+   * not own: it trades the idle-clip return at turn end for the live layer appearing at all,
+   * and an app that has MEASURED the strict signal working on its own devices can pass
+   * `isLiveTrackProducing` to take the finer gate back. Both predicates are exported from
+   * `realtime-avatar/react-native`.
+   *
+   * Must be REFERENTIALLY STABLE (module-level, or `useCallback`) — it is an effect
+   * dependency inside {@link useLiveTrackProducing}, so an inline arrow re-subscribes the
+   * track listeners every render.
+   */
+  isProducing?: (videoTrack: TrackReferenceOrPlaceholder | undefined) => boolean;
   /** Enable the subscriber-side quality governor (stats + SFU-pause tiers). Default true. */
   adaptiveQuality?: boolean;
   /** How media fits the box — mirrors CSS object-fit. Both layers share it. Default "contain". */
@@ -164,6 +217,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     renderIdleVideo,
     poster = null,
     live = true,
+    isProducing = RN_WEBRTC_IS_PRODUCING,
     adaptiveQuality = true,
     fit = "contain",
     crossfadeMs = 500,
@@ -197,12 +251,10 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   }, [playoutDelaySeconds]);
   const connectionState = useConnectionState();
   const connected = connectionState === ConnectionState.Connected;
-  // Android needs the coarse subscribed-and-not-ended gate (see
-  // isNativeLiveTrackSubscribed); iOS/default keeps the strict web predicate.
-  const trackProducing = useLiveTrackProducing(
-    videoTrack,
-    IS_ANDROID ? isNativeLiveTrackSubscribed : undefined,
-  );
+  // NO PLATFORM CONDITION HERE, deliberately: react-native-webrtc's remote track behaves
+  // the same on both, so both get the coarse gate (`RN_WEBRTC_IS_PRODUCING`, overridable
+  // via the `isProducing` prop). The web twin keeps the strict default untouched.
+  const trackProducing = useLiveTrackProducing(videoTrack, isProducing);
   useAvatarQualityGovernor({ enabled: adaptiveQuality });
 
   // No rVFC on native → no frame-flow stall gate; producing + connected is the
@@ -272,10 +324,12 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
       })
     : null;
 
-  // iOS: the live layer stays MOUNTED at opacity 0 between turns (same as web) so
-  // the next turn's first frame appears under a fade, not a mount hitch. Android:
-  // alpha does nothing on a SurfaceView, so we mount the live layer only while it
-  // should show — the idle/poster floor shows through when it's unmounted.
+  // iOS: the live layer stays MOUNTED and fades on opacity (same as web), so a
+  // first frame appears under a fade rather than a mount hitch. Android: alpha does
+  // nothing on a SurfaceView, so we mount the live layer only while it should show —
+  // the idle/poster floor shows through when it's unmounted. Note that under the
+  // default `isProducing` the layer is shown for the whole session rather than
+  // per-turn, so this fade runs at session start/end, not at every turn boundary.
   const frontLayer = IS_ANDROID
     ? createElement(
         View,
