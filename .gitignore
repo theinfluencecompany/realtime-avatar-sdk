@@ -13,3 +13,7 @@ libs/*/src/*.d.ts
 
 # The boundary denylist is materialised from a secret at CI time. Never commit it.
 scripts/boundary-terms*
+
+# Python examples are imported by scripts/check-python-apps.py; never commit their bytecode.
+__pycache__/
+*.pyc

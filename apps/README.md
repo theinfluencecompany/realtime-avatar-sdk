@@ -14,7 +14,7 @@ sibling. One can be copied out of this repo and still work.
 | Example | Stack | Shows |
 | --- | --- | --- |
 | [`nextjs-app-router`](./quickstart/nextjs-app-router) | Next.js App Router | The smallest real integration — a route handler and a call button |
-| [`python-fastapi`](./quickstart/python-fastapi) | FastAPI + httpx | The same split from Python, plus verifying the signed session history (transcript + tool calls) |
+| [`python-fastapi`](./quickstart/python-fastapi) | FastAPI + httpx (+ `livekit` for the terminal client) | The same split from Python, plus verifying the signed session history (transcript + tool calls); a client that joins the room from a terminal, types a turn and reads the history back; and the creation half — portrait in, avatar out, resting loop re-directed — all plain HTTP |
 | [`canvas-tools`](./quickstart/canvas-tools) | Node + browser | The client tool plane end to end: `clientTools: true` server-side, `attachAvatarTools` in the page, four tools closing over a live canvas — and the return-now pattern for a tool that takes six seconds when it has two and a half |
 
 ## `demo/`
