@@ -1,9 +1,19 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Realtime Avatar LiveKit API",
+    "title": "Realtime Avatar API",
     "version": "1.0.0",
-    "description": "LiveKit-first realtime avatar session, capacity, and AgentWorker lifecycle API."
+    "summary": "Put a live, talking AI character into your product on a voice or video call.",
+    "description": "Create an avatar from a single portrait, mint a session from your own server, and stream that character's voice and face in realtime while your own tools run inside the conversation. Full-duplex: the caller can interrupt, and end-of-turn is judged by what was said rather than by silence. Billed by the second — one credit is one second on air, with the language model, the voice and the rendering all included in that rate. Delivery is over LiveKit WebRTC; the browser and native halves are the `realtime-avatar` TypeScript SDK on npm. Agent-readable companions: https://realtimeavatar.ai/llms.txt (index), https://realtimeavatar.ai/llms-full.txt (every doc page inline), https://realtimeavatar.ai/pricing.md (rates).",
+    "termsOfService": "https://realtimeavatar.ai/terms",
+    "contact": {
+      "name": "Realtime Avatar support",
+      "url": "https://realtimeavatar.ai/docs"
+    },
+    "license": {
+      "name": "Proprietary — see terms of service",
+      "url": "https://realtimeavatar.ai/terms"
+    }
   },
   "servers": [
     {
@@ -24,7 +34,6 @@
         "type": "object",
         "properties": {
           "avatar_id": {
-            "default": "maria",
             "type": "string",
             "minLength": 1,
             "maxLength": 160
@@ -653,6 +662,9 @@
             "type": "boolean"
           }
         },
+        "required": [
+          "avatar_id"
+        ],
         "additionalProperties": false
       },
       "LiveKitSessionGrant": {
@@ -1169,7 +1181,8 @@
             "enum": [
               "realtime-avatar-live-v1",
               "realtime-avatar-video-v1"
-            ]
+            ],
+            "description": "Omit it. This is not a choice between renderers — the model is DERIVED from `sourceKind` (`image` → `realtime-avatar-live-v1`, `video` → `realtime-avatar-video-v1`), and sending one that disagrees with your `sourceKind` is `422 Avatar model is not compatible with its source kind`. So an explicit value can only ever restate what the source already decided, or fail. It follows that `realtime-avatar-video-v1` is unreachable on the `image` lane everyone uses: it needs `sourceKind: \"video\"`, which is closed."
           },
           "sourceAssetId": {
             "type": "string",
