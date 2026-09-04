@@ -67,7 +67,7 @@ Demos — larger showcases:
   a model correctly quoting one that has since expired
 - [apps/demo/math-studio](./apps/demo/math-studio): the tool plane held at a fixed six verbs
   however far the app grows. A tool per thing on screen dies on arithmetic — `MAX_TOOLS` is 32
-  and `instructions` caps at 4,000 chars — so the manipulatives register with a curriculum in
+  and `instructions` caps at 8,000 chars — so the manipulatives register with a curriculum in
   the page and what she is looking at reaches her through the tool RESULT, not the tool name
 - [apps/demo/terminal-tutor](./apps/demo/terminal-tutor): she draws on the screen — boxes,
   circles and arrows over the line or key she is naming — while teaching vim and tmux from

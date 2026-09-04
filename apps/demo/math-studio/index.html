@@ -2053,7 +2053,7 @@
       }]));
 
       /* ══ RAIL PANES ══════════════════════════════════════════════════════════ */
-      let regInfo = { accepted: [], rejected: [], briefChars:null };
+      let regInfo = { accepted: [], rejected: [], briefChars:null, briefLimit:8000 };
       function renderTools() {
         const acc = new Set(regInfo.accepted);
         const rows = TOOL_NAMES.map((n) => {
@@ -2074,7 +2074,7 @@
           <b>${CURRICULUM.length}</b> curriculum levels<br>
           The first number does not move when the other two do. That is the whole design.
           </div><div class="thead">deadline <b>${TOOL_DEADLINE_MS}ms</b>${
-          regInfo.briefChars ? ` · brief <b>${regInfo.briefChars}</b>/4000` : ""}
+          regInfo.briefChars ? ` · brief <b>${regInfo.briefChars}</b>/${regInfo.briefLimit}` : ""}
           ${regInfo.accepted.length ? "" : "<br><span style=\"color:#c98a3a\">not connected yet — local definition</span>"}
           </div>${rows}${rej}`;
       }
@@ -2527,7 +2527,7 @@
             throw new Error(r.status === 402 ? "Out of credits" : (e.error ?? `mint failed ${r.status}`)); }
           const g = await r.json();
           Trace.http("POST /api/call", body,
-            `voice ${g.voice} · brief ${g.briefChars}/4000 · ${String(g.grant.session_id).slice(0,8)}…`, ms);
+            `voice ${g.voice} · brief ${g.briefChars}/${g.briefLimit} · ${String(g.grant.session_id).slice(0,8)}…`, ms);
           return g;
         }
         throw new Error("still queued after 12 tries");
@@ -2665,7 +2665,7 @@
             reg.rejected.length ? `rejected ${JSON.stringify(reg.rejected)}` : `deadline ${TOOL_DEADLINE_MS}ms`,
             Math.round(performance.now()-tr));
           regInfo = { accepted: reg.accepted, rejected: reg.rejected,
-                      briefChars: g.briefChars };
+                      briefChars: g.briefChars, briefLimit: g.briefLimit };
           renderTools();
           $("leave").disabled = false;
           status("Ready. She opens — she should greet you and set the first task.");

@@ -244,7 +244,7 @@ export type ClientMetadata = z.infer<typeof clientMetadataSchema>;
  * The cap the mint enforces on `instructions`. Exported so an app can budget its prompt
  * assembly against the real number instead of probing for it with a binary search.
  */
-export const MAX_SESSION_INSTRUCTIONS_CHARS = 4_000;
+export const MAX_SESSION_INSTRUCTIONS_CHARS = 8_000;
 
 export const liveKitSessionWireRequestSchema = z
   .object({

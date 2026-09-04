@@ -69,7 +69,7 @@
           "instructions": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 4000
+            "maxLength": 8000
           },
           "initial_context": {
             "default": [],

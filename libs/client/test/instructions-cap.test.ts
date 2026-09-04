@@ -15,7 +15,17 @@ function instructionIssues(instructions: string): number {
   return parsed.error.issues.filter((issue) => issue.path[0] === "instructions").length;
 }
 
+function initialContextIssues(content: string): number {
+  const parsed = liveKitSessionRequestSchema.safeParse({
+    avatarId: "ava_1",
+    initialContext: [{ role: "system", content }],
+  });
+  if (parsed.success) return 0;
+  return parsed.error.issues.filter((issue) => issue.path[0] === "initialContext").length;
+}
+
 test("the exported cap is the one the mint schema enforces", () => {
+  assert.equal(MAX_SESSION_INSTRUCTIONS_CHARS, 8_000);
   const cap = liveKitSessionRequestSchema.shape.instructions.unwrap().maxLength;
   assert.equal(cap, MAX_SESSION_INSTRUCTIONS_CHARS);
 });
@@ -23,4 +33,9 @@ test("the exported cap is the one the mint schema enforces", () => {
 test("the cap is exact: at the boundary passes, one past it is refused", () => {
   assert.equal(instructionIssues("x".repeat(MAX_SESSION_INSTRUCTIONS_CHARS)), 0);
   assert.ok(instructionIssues("x".repeat(MAX_SESSION_INSTRUCTIONS_CHARS + 1)) > 0);
+});
+
+test("raising instructions does not widen each initial-context message", () => {
+  assert.equal(initialContextIssues("x".repeat(4_000)), 0);
+  assert.ok(initialContextIssues("x".repeat(4_001)) > 0);
 });

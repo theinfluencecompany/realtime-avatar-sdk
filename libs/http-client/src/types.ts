@@ -173,7 +173,7 @@ export type VideoPolicy =
 
 /** What YOUR SERVER decides about a call. Never accept any of this from a browser. */
 export interface CallPolicy {
-  /** Her behavior contract — who she is and how she speaks. Max 4000 chars. */
+  /** Her behavior contract — who she is and how she speaks. Max 8000 chars. */
   instructions?: string;
   /** Up to 32 prior messages, replayed as memory. */
   context?: readonly ContextMessage[];

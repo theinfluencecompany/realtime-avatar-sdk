@@ -5,7 +5,7 @@
  * to give the model a tool per thing on screen, and that dies on arithmetic: `MAX_TOOLS` is 32,
  * so at three actions apiece you run out at the eleventh manipulative. Long before that ceiling
  * you run out of the thing that actually binds, which is her attention — `instructions` caps at
- * 4000 characters and every tool needs a sentence explaining when to reach for it.
+ * 8000 characters and every tool needs a sentence explaining when to reach for it.
  *
  * So the manipulatives register with a CURRICULUM in the page, and she is given six generic verbs.
  * Four manipulatives or four hundred, this file does not change and her brief does not change.
@@ -29,6 +29,7 @@ import { RealtimeAvatar, RealtimeAvatarHttpError, isQueued } from "realtime-avat
 
 const PORT = Number(process.env.PORT ?? 4199);
 const MAX_SECONDS = Number(process.env.MAX_CALL_SECONDS ?? 420);
+const MAX_INSTRUCTIONS_CHARS = 8_000;
 
 const apiKey = process.env.REALTIME_AVATAR_API_KEY;
 if (!apiKey) {
@@ -477,8 +478,8 @@ const server = createServer(async (req, res) => {
        * cannot have: the mint 422s on qwen, so that spec never reached a call.)
        */
       const instructions = [teacher.persona, BASE].filter(Boolean).join("\n\n");
-      if (instructions.length > 4000) {
-        return void json(res, 500, { error: "composed brief over 4000 chars" });
+      if (instructions.length > MAX_INSTRUCTIONS_CHARS) {
+        return void json(res, 500, { error: `composed brief over ${MAX_INSTRUCTIONS_CHARS} chars` });
       }
 
       const call = await rta.startCall({
@@ -521,10 +522,11 @@ const server = createServer(async (req, res) => {
       });
       // The grant is relayed byte-for-byte; our own metadata rides in sibling fields the page
       // strips before handing it to the SDK. `briefChars` is here so the trace rail can show how
-      // close the composed brief is to the 4000-character ceiling.
+      // close the composed brief is to the session-instructions ceiling.
       return void json(res, 200, {
         grant: call.raw, teacher: teacher.slug,
         briefChars: instructions.length,
+        briefLimit: MAX_INSTRUCTIONS_CHARS,
         voice: voiceName
           ? `${voiceName} (${voice.provider}${lab ? ", lab" : ""})`
           : "platform default — nothing pinned",
@@ -625,16 +627,16 @@ function json(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-// A composed brief that overruns 4000 characters is rejected at mint time, which surfaces as a
+// A composed brief that overruns the instructions cap is rejected at mint time, which surfaces as a
 // generic 422 well after the interesting part of the stack. Cheaper to find out at boot — and
 // the persona line makes the longest character, not the average one, the one that matters.
 const LONGEST_PERSONA = Math.max(0, ...CAST.map((c) => c.persona.length));
 const LONGEST_BRIEF = BASE.length + LONGEST_PERSONA + 2;
-if (LONGEST_BRIEF > 4000) {
-  console.error(`composed brief is ${LONGEST_BRIEF} chars, over the 4000 limit`);
+if (LONGEST_BRIEF > MAX_INSTRUCTIONS_CHARS) {
+  console.error(`composed brief is ${LONGEST_BRIEF} chars, over the ${MAX_INSTRUCTIONS_CHARS} limit`);
   process.exit(1);
 }
-console.log(`  brief ${String(LONGEST_BRIEF).padStart(4)} / 4000 chars`);
+console.log(`  brief ${String(LONGEST_BRIEF).padStart(4)} / ${MAX_INSTRUCTIONS_CHARS} chars`);
 /* Say plainly, every boot, what will be sent — and what will deliberately NOT be. */
 console.log("  cast:");
 for (const c of Object.values(TEACHERS)) console.log(`    ${c.slug.padEnd(7)} ${c.name} · ${c.avatarId}`);
