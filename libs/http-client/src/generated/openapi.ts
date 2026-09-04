@@ -292,7 +292,6 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         LiveKitSessionRequest: {
-            /** @default maria */
             avatar_id: string;
             /** @default plain_white */
             background_id: string;
@@ -546,7 +545,10 @@ export interface components {
              * @enum {string}
              */
             sourceKind: "image" | "video";
-            /** @enum {string} */
+            /**
+             * @description Omit it. This is not a choice between renderers — the model is DERIVED from `sourceKind` (`image` → `realtime-avatar-live-v1`, `video` → `realtime-avatar-video-v1`), and sending one that disagrees with your `sourceKind` is `422 Avatar model is not compatible with its source kind`. So an explicit value can only ever restate what the source already decided, or fail. It follows that `realtime-avatar-video-v1` is unreachable on the `image` lane everyone uses: it needs `sourceKind: "video"`, which is closed.
+             * @enum {string}
+             */
             modelId?: "realtime-avatar-live-v1" | "realtime-avatar-video-v1";
             sourceAssetId?: string;
             motionPrompt?: string;
