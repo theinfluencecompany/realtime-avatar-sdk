@@ -4,6 +4,10 @@ import type {
   RealtimeAvatarRequestOptions,
 } from "./session-client";
 import type { LiveKitSessionReleaseReason } from "./wire";
+// Extension on purpose (tsconfig `allowImportingTsExtensions`): it is the one runtime import in
+// this file, and with it node's type-stripping runner can load the module directly, so the
+// refusal contract below is pinned by a test that CALLS it rather than one that greps it.
+import { RealtimeAvatarApiError } from "./errors.ts";
 
 /**
  * The client `AvatarCall` and the hooks ask for, talking to YOUR proxy route.
@@ -102,8 +106,16 @@ export function createProxyClient(options: ProxyClientOptions): AvatarSessionCli
         return { status: "busy", busy: busy as never };
       }
       if (!response.ok) {
-        const detail = await response.text().catch(() => "");
-        throw new Error(`realtime-avatar: proxy refused the call (${response.status}) ${detail}`.trim());
+        // Your route's refusal IS the answer the page has to act on: a 402 is the paywall, a 401
+        // is sign-in, a 403 `upgrade_required` is the plan wall, a 404 is "no longer here". Every
+        // one of those is routed on `.status` and the body's `code`, so they have to be ON the
+        // thrown value. The bare Error this used to throw typeset the status into a sentence and
+        // carried neither: an adopter reading `error.status` found undefined, and every refusal
+        // fell through to its retryable "connection lost" wall. A user who was simply out of
+        // credits saw the character as unavailable — never the paywall — on every call, until
+        // their balance changed. Same class the key-bearing client throws, so one wall router
+        // serves both transports.
+        throw await RealtimeAvatarApiError.fromResponse(response);
       }
       // Opaque. The grant is relayed byte-for-byte and read only by the room.
       return { status: "ready", grant: (await response.json()) as never };
