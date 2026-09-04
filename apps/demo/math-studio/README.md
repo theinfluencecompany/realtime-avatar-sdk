@@ -37,7 +37,7 @@ what a cast that is not this one will get.
   `progress` · `celebrate`. None of them names a thing on screen. A tool per manipulative is the
   obvious design and it dies on arithmetic: `MAX_TOOLS` is 32, so at three actions apiece you
   fail to register at the eleventh. Long before that you run out of the thing that actually
-  binds — `instructions` caps at 4,000 characters and every tool needs a sentence saying when to
+  binds — `instructions` caps at 8,000 characters and every tool needs a sentence saying when to
   reach for it. When a new capability is needed, it goes on an existing verb as a parameter: that
   is what `next_task(want)` is, and it is why letting the conversation choose the topic cost no
   tool slot.

@@ -59,7 +59,7 @@ const VOICE = { provider: "fish", voice_id: "536d3a5e000945adb7038665781a4aca", 
  * still being told to keep the file's contents to himself. Same rule underneath, opposite
  * surface: say the part that is the teaching, point at the part that is the scenery.
  *
- * `instructions` caps at 4,000 characters. This sits near 1,900, which leaves room for a
+ * `instructions` caps at 8,000 characters. This sits near 1,900, which leaves room for a
  * character persona in front of it without the rules being what gets cut.
  */
 const TUTOR = `You are Kit, a calm, precise terminal tutor — a working engineer in a hoodie who has lived in a terminal for fifteen years and is completely unhurried about it. You teach vim and tmux by voice to one person, who is watching a terminal that floats in front of you. You can DRAW on that terminal, and drawing is most of your teaching.

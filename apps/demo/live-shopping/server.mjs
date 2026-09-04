@@ -39,6 +39,7 @@ import { RealtimeAvatar, RealtimeAvatarHttpError, isQueued } from "realtime-avat
 
 const PORT = Number(process.env.PORT ?? 4197);
 const MAX_SECONDS = Number(process.env.MAX_CALL_SECONDS ?? 300);
+const MAX_INSTRUCTIONS_CHARS = 8_000;
 
 const apiKey = process.env.REALTIME_AVATAR_API_KEY;
 if (!apiKey) {
@@ -403,13 +404,13 @@ function json(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-// A brief over 4000 characters is refused at the mint as a generic 422, well after the
+// A brief over the instructions cap is refused at the mint as a generic 422, well after the
 // interesting part of the stack. Cheaper to find out at boot.
-if (HOST_PROMPT.length > 4000) {
-  console.error(`brief is ${HOST_PROMPT.length} chars, over the 4000 limit`);
+if (HOST_PROMPT.length > MAX_INSTRUCTIONS_CHARS) {
+  console.error(`brief is ${HOST_PROMPT.length} chars, over the ${MAX_INSTRUCTIONS_CHARS} limit`);
   process.exit(1);
 }
-console.log(`  brief   ${String(HOST_PROMPT.length).padStart(4)} / 4000 chars`);
+console.log(`  brief   ${String(HOST_PROMPT.length).padStart(4)} / ${MAX_INSTRUCTIONS_CHARS} chars`);
 console.log(`  voice   ${VOICE ? `${VOICE.provider} ${VOICE.voice_id}` : "NOT PINNED — the platform picks, and her gender is a coin toss"}`);
 console.log(`  catalog ${CATALOG.length} products, `
   + `${CATALOG.filter((p) => p.stock > 0).length} in stock`);
