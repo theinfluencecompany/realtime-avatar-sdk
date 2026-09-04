@@ -25,6 +25,19 @@ return call.raw;   // relay to the browser byte-for-byte
 
 That is the whole server half. The client joins with the payload and renders her.
 
+New here? The [quickstart](https://realtimeavatar.ai/docs/quickstart) goes from an API key to a
+working call, and a [sandbox key](https://realtimeavatar.ai/signup) is free with no card. Mount
+the server half on your framework:
+[Next.js](https://realtimeavatar.ai/docs/nextjs) ·
+[Express](https://realtimeavatar.ai/docs/express) ·
+[Hono, Workers, Bun, Deno](https://realtimeavatar.ai/docs/hono) ·
+[TanStack Start](https://realtimeavatar.ai/docs/tanstack-start), and render it with
+[React or React Native](https://realtimeavatar.ai/docs/react).
+
+Using a coding agent? Point it at [`AGENTS.md`](../../AGENTS.md) and give it the
+[MCP server](https://realtimeavatar.ai/docs/mcp) so it can read your real avatar ids instead of
+inventing them.
+
 ---
 
 ## What you get
@@ -184,6 +197,14 @@ for building your own queue UI, and the zod schemas `sessionBehaviorSchema` / `s
 ## Docs and support
 
 - Full documentation: <https://realtimeavatar.ai/docs>
+- [Quickstart](https://realtimeavatar.ai/docs/quickstart) — key to a live call
+- [Authentication](https://realtimeavatar.ai/docs/authentication) — what belongs on your server, and why
+- [Calls](https://realtimeavatar.ai/docs/sessions) — what your server decides and what the client reports
+- [Creating an avatar](https://realtimeavatar.ai/docs/video) — one photo in, a moving character out
+- [Tool calling](https://realtimeavatar.ai/docs/tool-calling) — your handlers, your server, no hosted executor
+- [MCP server](https://realtimeavatar.ai/docs/mcp) — give a coding agent the account itself
+- [API reference](https://realtimeavatar.ai/docs/api-reference) · [OpenAPI 3.1](https://realtimeavatar.ai/openapi.json)
+- [Pricing](https://realtimeavatar.ai/pricing) — one meter, seconds on air
 - Issues and feature requests: this repo
 - The API is versioned at `/api/v1`; breaking changes get a new version, not a silent edit.
 

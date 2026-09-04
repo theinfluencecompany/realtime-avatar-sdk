@@ -18,6 +18,10 @@ guessing ids and inventing shapes.
 }
 ```
 
+Full page, including the write tools and what they cost:
+<https://realtimeavatar.ai/docs/mcp>. You need an API key first — a
+[sandbox key](https://realtimeavatar.ai/signup) is free and needs no card.
+
 Working on it in this repo? `npm run build`, then point `command` at `node` with
 `args: ["/abs/path/to/realtime-avatar-sdk/libs/mcp/dist/bin.js"]`.
 

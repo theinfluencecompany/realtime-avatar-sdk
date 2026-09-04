@@ -527,6 +527,31 @@ giving *her* a tool to redress her own room.
 
 ---
 
+## When this file is not enough
+
+This file is the contract for the SDK. When you need the platform's own reference — the wire
+shapes, the pricing, the endpoint table — fetch it rather than guessing. Every page below is
+also served as raw markdown by appending `.md`, and there is an agent guide at
+<https://realtimeavatar.ai/llms.txt> plus the whole corpus in one file at
+<https://realtimeavatar.ai/llms-full.txt>.
+
+| Need | Fetch |
+| --- | --- |
+| Key → a live call, end to end | <https://realtimeavatar.ai/docs/quickstart.md> |
+| What belongs on the server, and why | <https://realtimeavatar.ai/docs/authentication.md> |
+| What the mint decides; what the client reports | <https://realtimeavatar.ai/docs/sessions.md> |
+| Creating a character from one photo | <https://realtimeavatar.ai/docs/video.md> |
+| Tool calling, and the 2.5s deadline | <https://realtimeavatar.ai/docs/tool-calling.md> |
+| Every endpoint, request and response | <https://realtimeavatar.ai/openapi.json> |
+| What a live minute costs | <https://realtimeavatar.ai/pricing.md> |
+
+**Do not guess an avatar id.** They are not derivable, and a plausible-looking one 404s at the
+mint. Either call `listAvatars()`, or run the MCP server — `npx -y realtime-avatar-mcp`, see
+<https://realtimeavatar.ai/docs/mcp.md> — which exists so you can read the real account instead
+of inventing shapes.
+
+---
+
 ## What is NOT here
 
 Say so plainly rather than working around it:
