@@ -2458,7 +2458,7 @@
             "maximum": 9007199254740991
           },
           "clips": {
-            "maxItems": 12,
+            "maxItems": 20,
             "type": "array",
             "items": {
               "type": "object",

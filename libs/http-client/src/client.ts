@@ -385,7 +385,7 @@ export class RealtimeAvatar {
    * concurrent writer surfaces as a 409 instead of a lost update. Omit it to declare
    * unconditionally.
    *
-   * At most 12 clips: up to six `idle`, up to two `listen`, the rest `gesture`. Several
+   * At most 20 clips: up to eight `idle`, up to two `listen`, the rest `gesture`. Several
    * idles are a resting ROTATION she drifts between, not alternatives to one. An uploaded
    * clip (`source: { assetId }`) must start AND end on the avatar's rest pose — pose
    * validation rejects it otherwise (`status: "failed"`, the verdict in `poseCheck`),

@@ -282,7 +282,7 @@ export function createServer(options: CreateServerOptions): McpServer {
           ]).describe("motionPrompt renders motion; assetId uploads a clip that must start AND end on the rest pose"),
           durationSeconds: z.number().optional(),
           reroll: z.boolean().optional().describe("Set true to force a re-render of the same prompt"),
-        })).max(12).describe("The COMPLETE library. Omitted clips are retired."),
+        })).max(20).describe("The COMPLETE library (≤20 clips, ≤8 idle, ≤2 listen). Omitted clips are retired."),
         expectedRevision: z.number().int().optional()
           .describe("CAS: the revision you last read. Omit to declare unconditionally."),
       },
