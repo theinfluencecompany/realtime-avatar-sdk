@@ -32,7 +32,7 @@ const mint = (response: Response) =>
   clientAnswering(response).createLiveKitSessionOrBusy({ avatarId: "ava_test", mode: "avatar" } as never);
 
 test("a 402 from the route is a RealtimeAvatarApiError carrying status, code and billing", async () => {
-  // The exact body prelulu's gate answers with when a wallet is under the 60s start floor.
+  // The exact body an adopter's credit gate answers with when a wallet is under its start floor.
   const refusal = json(402, {
     error: "You're out of credits.",
     code: "insufficient_credits",
