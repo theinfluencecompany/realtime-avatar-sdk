@@ -927,6 +927,20 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     if (grantState.status !== "ready" || !grantState.grant) return;
     // Terminal phases have already released; re-arming would fight them.
     if (recovery.kind === "failed" || recovery.kind === "ended") return;
+    // NOR an IN-PLACE RECONNECT. This watchdog exists for a grant that lands and never
+    // connects; `in-place-reconnecting` is the opposite case — the room DID connect, and
+    // LiveKit is recovering the same session under us. `onConnectionStateChange` clears
+    // `connected` when that starts, which is exactly the shape this effect arms on, so
+    // without this line every transient blip longer than 12s (a backgrounded tab, wifi to
+    // cellular, a tunnel) is escalated into a hard release and a full re-mint of a call
+    // LiveKit was about to recover. The user watches the old room's last decoded frame the
+    // whole time, which reads as the character freezing mid-conversation.
+    //
+    // LiveKit already bounds its own attempt: a recovery that genuinely fails arrives here
+    // as `disconnected`, and that drives the ladder below. There is nothing for this timer
+    // to catch in between, and a slot cannot strand — the session is joined and metered, so
+    // the platform's own release path owns it.
+    if (recovery.kind === "in-place-reconnecting") return;
     const timer = window.setTimeout(() => {
       releaseRef.current("disconnected");
       // Carry the CURRENT attempt so the ladder's budget advances from where it is —
