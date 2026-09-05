@@ -20,8 +20,9 @@ import {
 } from "@livekit/components-react";
 import { createElement, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
-import { DisconnectReason, RemoteTrack, Room, Track } from "livekit-client";
+import { DisconnectReason, Room, Track } from "livekit-client";
 import { confirmMicTrackEnded } from "./mic-single-flight";
+import { applyAvatarPlayoutDelay, DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS } from "../browser/playout-delay";
 import { RealtimeAvatarCapacityError } from "../errors";
 import type { AvatarSessionClient, RealtimeAvatarRequestOptions } from "../session-client";
 import type { LiveKitSessionGrant, LiveKitSessionRequest } from "../livekit-grant";
@@ -170,31 +171,11 @@ export function useReleaseMicLeaseOnTrackEnded(token: symbol): void {
   }, [localParticipant, token, localParticipant?.audioTrackPublications.size]);
 }
 
-/**
- * Receiver-side playout delay (SECONDS) for the avatar media tracks.
- *
- * The avatar is published from a GPU datacenter and reaches viewers over the
- * public internet, where a few percent of packet loss is normal. A shallow
- * receiver buffer stalls (freezes) on every loss while it waits for a
- * retransmit; a deeper buffer recovers the lost packets BEFORE playout, so the
- * viewer sees smooth 25fps instead of freezing. Measured at ~5% loss this took
- * the stream from ~11fps with multi-second freezes to a steady 25fps with zero
- * freezes.
- *
- * 0.5s is applied via the native {@link RemoteTrack.setPlayoutDelay}, which sets
- * the receiver's `playoutDelayHint` — the same Chromium jitter-buffer knob the
- * old hand-rolled `jitterBufferTarget` reached into (the spec renamed
- * playoutDelayHint→jitterBufferTarget; both influence the same buffer depth),
- * but typed and SDK-owned so there is no cast or feature-probe. The hint is NOT
- * free at the open: the receiver holds the FIRST video frame toward the target
- * (~250-450ms of measured TTFF), a deliberate cost paid once for the freeze-free
- * steady state above. The open-small-then-ramp variant that tried to dodge that
- * cost was shipped, failed twice (the rVFC ramp trigger is throttled on the
- * opacity:0-mounted element, stranding the shallow buffer), and was deliberately
- * removed in 2262e4c7b — do not re-propose it. No-op on browsers that don't
- * support the hint (the SDK warns and moves on).
- */
-export const DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS = 0.5;
+// The cushion itself — the constant, the measurement behind it and the pure
+// apply helper — lives with the vanilla browser helpers (../browser/playout-delay)
+// so a plain-DOM page can reach it through `realtime-avatar/browser`. Re-exported
+// here so the React entries keep their names.
+export { applyAvatarPlayoutDelay, DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS };
 
 /**
  * Sets the avatar AUDIO and VIDEO tracks' native playout delay so the stream has
@@ -218,39 +199,6 @@ export function useAvatarPlayoutDelay(
   }, [videoMediaTrack, audioMediaTrack, delaySeconds]);
 }
 
-/** A track that can take a native playout-delay hint (a subscribed RemoteTrack). */
-type PlayoutDelayTarget = Pick<RemoteTrack, "setPlayoutDelay">;
-
-/**
- * Apply the SAME native playout delay to the avatar's audio + video tracks
- * (kept equal so the a/v sync stays lip-locked). The delay is floored at 0 so a
- * negative input can never throw, and only subscribed `RemoteTrack`s take the
- * hint — placeholders / not-yet-subscribed tracks are skipped. Pure + exported
- * so the clamp and the both-tracks-equal invariant are unit-testable without a
- * DOM (the hook is a thin effect wrapper around this).
- */
-export function applyAvatarPlayoutDelay(
-  videoTrack: unknown,
-  audioTrack: unknown,
-  delaySeconds: number = DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS,
-): void {
-  const delay = Math.max(0, delaySeconds);
-  playoutDelayTarget(videoTrack)?.setPlayoutDelay(delay);
-  playoutDelayTarget(audioTrack)?.setPlayoutDelay(delay);
-}
-
-/**
- * Narrow an unknown track to one that accepts a playout-delay hint. Duck-typed
- * on the `setPlayoutDelay` method rather than `instanceof RemoteTrack`: a
- * placeholder/local track lacks the method (skipped), and it keeps the apply
- * helper unit-testable with a plain fake.
- */
-function playoutDelayTarget(track: unknown): PlayoutDelayTarget | undefined {
-  const candidate = track as { setPlayoutDelay?: unknown } | null | undefined;
-  return typeof candidate?.setPlayoutDelay === "function"
-    ? (candidate as PlayoutDelayTarget)
-    : undefined;
-}
 
 export type LiveKitAvatarGrantStatus = "idle" | "requesting" | "ready" | "busy" | "failed";
 export type LiveKitConnectionStatus = ReturnType<typeof useConnectionState>;
