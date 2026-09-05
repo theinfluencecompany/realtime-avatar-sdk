@@ -219,7 +219,7 @@
       // The non-React tool plane, served by this app's own server from the installed package.
       // In a bundled app this is a plain import of "realtime-avatar-tools".
       import { attachAvatarTools } from "/sdk/tools.js";
-      import { applyPlayoutDelay } from "/sdk/browser.js";
+      import { prepareAvatarRoom } from "/sdk/browser.js";
 
       const $ = (id) => document.getElementById(id);
       const say = (t) => ($("status").textContent = t);
@@ -980,10 +980,10 @@
         let sawVideo = false;
         await livekit();
         room = new Room();
+        // One call, before connect: every track she publishes gets the 0.5s receiver cushion the React
+        // surface applies on its own. Without it the browser's shallow default buffer freezes her on every lost packet.
+        prepareAvatarRoom(room);
         room.on(RoomEvent.TrackSubscribed, (track) => {
-          // The same receiver cushion the React surface ships: 0.5s of loss recovery, applied to
-          // audio and video alike so the pair stays lip-locked. Without it she freezes on every lost packet.
-          applyPlayoutDelay(track);
           if (track.kind === Track.Kind.Video) {
             sawVideo = true;
             track.attach($("her"));

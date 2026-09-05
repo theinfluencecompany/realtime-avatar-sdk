@@ -5,7 +5,7 @@ import {
   applyAvatarPlayoutDelay,
   applyPlayoutDelay,
   DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS,
-} from "../src/browser/playout-delay.ts";
+} from "../src/playout-delay.ts";
 
 /**
  * The flat 0.5s cushion is load-bearing (measured at ~5% loss it took the stream from
@@ -62,11 +62,22 @@ test("one implementation, two doors: the browser entry exports it and the React 
   // The React module cannot be imported under plain node (it pulls React and livekit-client),
   // so the invariant is read off the source the same way the README-surface test does.
   const here = new URL(".", import.meta.url);
-  const browserIndex = readFileSync(new URL("../src/browser/index.ts", here), "utf8");
-  const reactLiveKit = readFileSync(new URL("../src/react/livekit.ts", here), "utf8");
-  assert.match(browserIndex, /applyPlayoutDelay,[\s\S]*from "\.\/playout-delay"/, "the vanilla entry exports the helper");
-  assert.match(reactLiveKit, /import \{ applyAvatarPlayoutDelay, DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS \} from "\.\.\/browser\/playout-delay"/, "React imports the shared implementation");
+  const browserIndex = readFileSync(new URL("../src/index.ts", here), "utf8");
+  const reactLiveKit = readFileSync(new URL("../../client/src/react/livekit.ts", here), "utf8");
+  assert.match(browserIndex, /applyPlayoutDelay,[\s\S]*from "\.\/playout-delay\.ts"/, "the vanilla entry exports the helper");
+  assert.match(browserIndex, /prepareAvatarRoom,[\s\S]*from "\.\/prepare-room\.ts"/, "and the room preparer");
+  assert.match(reactLiveKit, /from "\.\.\/\.\.\/\.\.\/browser\/src\/playout-delay"/, "React imports the shared implementation");
   assert.doesNotMatch(reactLiveKit, /export function applyAvatarPlayoutDelay/, "React no longer owns a second copy");
   assert.doesNotMatch(reactLiveKit, /export const DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS/, "one source for the number");
   assert.match(reactLiveKit, /export \{ applyAvatarPlayoutDelay, DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS \};/, "and re-exports both so /react keeps its names");
+});
+
+test("the React room applies the cushion room-wide, not only inside AvatarVideoSurface", () => {
+  const here = new URL(".", import.meta.url);
+  const reactLiveKit = readFileSync(new URL("../../client/src/react/livekit.ts", here), "utf8");
+  assert.match(reactLiveKit, /function AvatarPlayoutCushion/, "a room-level cushion component exists");
+  assert.match(reactLiveKit, /room\.on\(RoomEvent\.TrackSubscribed, onSubscribed\)/, "it listens for every subscription");
+  assert.match(reactLiveKit, /playoutDelaySeconds = DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS/, "on by default");
+  assert.match(reactLiveKit, /playoutDelaySeconds === false/, "and can be switched off explicitly");
+  assert.match(reactLiveKit, /createElement\(Fragment, null, cushion, children, roomAudio\)/, "rendered inside every RealtimeAvatarLiveKitRoom");
 });

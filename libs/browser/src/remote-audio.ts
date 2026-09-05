@@ -22,6 +22,8 @@
 
 /** LiveKit's event name for "audio playback became allowed or blocked". Verified against
  *  `RoomEvent.AudioPlaybackStatusChanged` in livekit-client; it is not the enum's key. */
+import { prepareAvatarRoom } from "./prepare-room.ts";
+
 const AUDIO_PLAYBACK_CHANGED = "audioPlaybackChanged";
 /** `RoomEvent.TrackSubscribed`. */
 const TRACK_SUBSCRIBED = "trackSubscribed";
@@ -44,6 +46,14 @@ export interface AudioCapableRoom {
 }
 
 export interface AttachRemoteAudioOptions {
+  /**
+   * Receiver playout cushion applied to EVERY remote track the room subscribes (video
+   * included, so the pair stays lip-locked) via `prepareAvatarRoom`. Default 0.5s — the
+   * measured freeze-free depth. `false` leaves the room untouched, for a page that owns
+   * its own buffering. Not undone by `detach()`: a shallower buffer mid-call only brings
+   * the freezes back.
+   */
+  playoutDelaySeconds?: number | false;
   /**
    * Where to park the audio elements. Defaults to `document.body`.
    *
@@ -95,6 +105,12 @@ export function attachRemoteAudio(
   const container = options.container ?? document.body;
   const elements = new Set<HTMLMediaElement>();
   let detached = false;
+
+  // The one line every plain-DOM page used to be missing. Doing it here means anyone who
+  // followed the documented pattern already has the cushion without knowing the word.
+  if (options.playoutDelaySeconds !== false) {
+    prepareAvatarRoom(room, { playoutDelaySeconds: options.playoutDelaySeconds });
+  }
 
   const publishPlaybackState = () => {
     if (detached) return;

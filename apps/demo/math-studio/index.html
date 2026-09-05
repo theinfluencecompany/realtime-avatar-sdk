@@ -571,7 +571,7 @@
       // A failure here is swallowed — the click path re-runs the import and reports it.
       livekit().catch(() => {});
       import { attachAvatarTools, TOOL_DEADLINE_MS } from "/sdk/tools.js";
-      import { enableMicrophone, applyPlayoutDelay } from "/sdk/browser.js";
+      import { enableMicrophone, prepareAvatarRoom } from "/sdk/browser.js";
       const $ = (id) => document.getElementById(id);
 
       /* ══ SPLIT PANE ══════════════════════════════════════════════════════════ */
@@ -2578,10 +2578,10 @@
 
           await livekit();
           room = new Room();
+          // One call, before connect: every track she publishes gets the 0.5s receiver cushion the React
+          // surface applies on its own. Without it the browser's shallow default buffer freezes her on every lost packet.
+          prepareAvatarRoom(room);
           room.on(RoomEvent.TrackSubscribed, (t, pub, p) => {
-            // The same receiver cushion the React surface ships: 0.5s of loss recovery, applied to
-            // audio and video alike so the pair stays lip-locked. Without it she freezes on every lost packet.
-            applyPlayoutDelay(t);
             Trace.room("TrackSubscribed", `${t.kind} from ${p?.identity ?? "?"}`);
             if (t.kind === "video") {
               t.attach($("her"));

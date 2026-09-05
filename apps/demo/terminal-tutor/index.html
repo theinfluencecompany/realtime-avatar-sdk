@@ -268,7 +268,7 @@
       // A failure here is swallowed — the click path re-runs the import and reports it.
       livekit().catch(() => {});
       import { attachAvatarTools } from "/sdk/tools.js";
-      import { enableMicrophone, attachRemoteAudio, applyPlayoutDelay } from "/sdk/browser.js";
+      import { enableMicrophone, attachRemoteAudio, prepareAvatarRoom } from "/sdk/browser.js";
 
       const $ = (id) => document.getElementById(id);
       const cap = (t, bad = false) => { $("caption").textContent = t; $("caption").className = bad ? "bad" : ""; };
@@ -1611,6 +1611,9 @@
         sessionId = grant.session_id;               // held from HERE — the beacon needs it now
         await livekit();
         room = new Room();
+        // One call, before connect: every track she publishes gets the 0.5s receiver cushion the React
+        // surface applies on its own. Without it the browser's shallow default buffer freezes her on every lost packet.
+        prepareAvatarRoom(room);
 
         // BEFORE connect, and INTO the document. `track.attach()` hands back a detached element:
         // left out of the DOM there is nothing to play and nothing to click when autoplay blocks
@@ -1629,9 +1632,6 @@
         });
 
         room.on(RoomEvent.TrackSubscribed, (track) => {
-          // The same receiver cushion the React surface ships: 0.5s of loss recovery, applied to
-          // audio and video alike so the pair stays lip-locked. Without it she freezes on every lost packet.
-          applyPlayoutDelay(track);
           if (track.kind === Track.Kind.Video) {
             track.attach($("kit"));
             $("kit").classList.add("on");

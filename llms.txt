@@ -21,9 +21,9 @@ Runtime: Node >= 20. Zero dependencies. Server-only (it holds the API key).
 - libs/browser (realtime-avatar/browser): browser audio — enableMicrophone()
   returns WHY the mic did not start (the macOS system denial is not the browser denial, and the
   address bar cannot fix it), attachRemoteAudio() plays her and surfaces a blocked autoplay,
-  applyPlayoutDelay(track) gives every subscribed track the 0.5s receiver cushion the React
-  surface applies for you (without it she freezes on every lost packet).
-  No React, no livekit-client dependency
+  prepareAvatarRoom(room) gives every track the room subscribes the 0.5s receiver cushion
+  (without it she freezes on every lost packet; attachRemoteAudio calls it for you, and the
+  React RealtimeAvatarLiveKitRoom applies it room-wide). No React, no livekit-client dependency
 - libs/mcp (realtime-avatar-mcp): MCP server so an agent can read avatars,
   balance and the per-session bill directly. Read-only unless REALTIME_AVATAR_ALLOW_WRITES=1.
 
