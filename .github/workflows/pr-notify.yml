@@ -1,0 +1,95 @@
+name: PR notify (Feishu eng chat)
+
+# One PR line per event into the team's engineering chat. Every repo that posts there uses
+# this same lane, so each line starts with [repo] to stay readable once the chat carries
+# more than one of them.
+#
+# Needs three secrets — FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_ENG_CHAT_ID. Set them at
+# the ORG level (visible to selected repos) rather than per repo, so a new repo joins the
+# thread by adding the workflow alone. Missing secrets are a clean skip, never a red X:
+# a notification lane must not fail a PR.
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, labeled, closed]
+
+jobs:
+  notify:
+    if: >-
+      github.event.action == 'opened'
+      || github.event.action == 'ready_for_review'
+      || (github.event.action == 'labeled' && contains(github.event.label.name, 'needs-review'))
+      || (github.event.action == 'closed' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Post the PR event to the engineering chat
+        env:
+          EVENT: ${{ github.event.action }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          IS_DRAFT: ${{ github.event.pull_request.draft }}
+          LABEL_ADDED: ${{ github.event.label.name }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_ADDITIONS: ${{ github.event.pull_request.additions }}
+          PR_DELETIONS: ${{ github.event.pull_request.deletions }}
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_ENG_CHAT: ${{ secrets.FEISHU_ENG_CHAT_ID }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" = "labeled" ] && [[ "$LABEL_ADDED" != *"needs-review"* ]]; then echo "label churn — skip"; exit 0; fi
+          if [ "$EVENT" = "closed" ] && [ "$MERGED" != "true" ]; then echo "closed-unmerged — skip"; exit 0; fi
+          if [ -z "${FEISHU_APP_ID:-}" ] || [ -z "${FEISHU_APP_SECRET:-}" ] || [ -z "${FEISHU_ENG_CHAT:-}" ]; then
+            echo "Feishu secrets not set on this repo — skipping (add FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_ENG_CHAT_ID)"
+            exit 0
+          fi
+          python3 - <<'PY' || echo "feishu notify failed (non-fatal)"
+          import json, os, urllib.request
+
+          def post(url, payload, headers):
+              req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers)
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.load(r)
+
+          try:
+              token = post(
+                  "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+                  {"app_id": os.environ["FEISHU_APP_ID"], "app_secret": os.environ["FEISHU_APP_SECRET"]},
+                  {"Content-Type": "application/json"},
+              ).get("tenant_access_token", "")
+          except Exception as e:
+              print("feishu token failed (non-fatal):", e)
+              raise SystemExit(0)
+          if not token:
+              print("no tenant_access_token (non-fatal)")
+              raise SystemExit(0)
+
+          event = os.environ["EVENT"]
+          merged = event == "closed"
+          draft = os.environ.get("IS_DRAFT") == "true"
+          icon = "✅ MERGED" if merged else f"🔀 PR {event}"
+          # [repo] first: this chat carries several repos, and the repo is the fact you need
+          # before the number means anything.
+          text = (
+              f"[{os.environ['REPO_NAME']}] {icon} #{os.environ['PR_NUM']} — {os.environ['PR_TITLE']}"
+              f"{' (draft)' if draft and not merged else ''}\n"
+              f"by {os.environ['PR_AUTHOR']} · +{os.environ.get('PR_ADDITIONS') or 0}/-{os.environ.get('PR_DELETIONS') or 0}\n"
+              f"{os.environ['PR_URL']}"
+          )
+          try:
+              out = post(
+                  "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+                  {"receive_id": os.environ["FEISHU_ENG_CHAT"], "msg_type": "text",
+                   "content": json.dumps({"text": text})},
+                  {"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+              )
+              print("sent:", out.get("code"), out.get("msg"))
+          except Exception as e:
+              print("send failed (non-fatal):", e)
+          PY
