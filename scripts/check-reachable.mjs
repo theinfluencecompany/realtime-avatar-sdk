@@ -29,7 +29,7 @@ async function entryFiles() {
   // libs/client publishes NOTHING — its dist exists only so a test can import the built artifact.
   // Treating its entries as roots would make its whole subtree look shipped, which is the mistake
   // this script exists to avoid. The dist-to-src mapping in resolveSpec picks it up via the test.
-  for (const pkg of [SDK, join(ROOT, "libs/mcp")]) {
+  for (const pkg of [SDK, join(ROOT, "libs/mcp"), join(ROOT, "libs/examples")]) {
     let config;
     try {
       config = await readFile(join(pkg, "tsup.config.ts"), "utf8");

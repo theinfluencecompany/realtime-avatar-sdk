@@ -1,0 +1,31 @@
+{
+  "name": "realtime-avatar-examples",
+  "version": "0.8.0",
+  "description": "The words and contracts behind the Realtime Avatar example demos — briefs, builder prompts and tool descriptors — as one published source for every host that runs them.",
+  "license": "MIT",
+  "author": "The Influence Company",
+  "homepage": "https://realtimeavatar.ai/docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theinfluencecompany/realtime-avatar-sdk.git",
+    "directory": "libs/examples"
+  },
+  "bugs": {
+    "url": "https://github.com/theinfluencecompany/realtime-avatar-sdk/issues"
+  },
+  "keywords": ["ai", "avatar", "realtime", "examples", "demos", "prompts", "tool-calling"],
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "README.md"],
+  "main": "./dist/index.js",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./tools": { "types": "./dist/tools.d.ts", "default": "./dist/tools.js" },
+    "./coding-companion": { "types": "./dist/coding-companion.d.ts", "default": "./dist/coding-companion.js" },
+    "./package.json": "./package.json"
+  },
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  }
+}

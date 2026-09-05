@@ -14,6 +14,11 @@ From the repo root, once, so the published SDK this example imports is present a
 npm install && npm run build
 ```
 
+The brief, the builder's system prompt and the tool descriptors are not in this folder: they
+come from [`realtime-avatar-examples`](../../../libs/examples), the same package the hosted
+port on realtimeavatar.ai imports, so the two cannot drift. Copied out of this repo, the
+example needs `npm i realtime-avatar realtime-avatar-examples livekit-client`.
+
 Then, in this folder:
 
 ```bash

@@ -217,6 +217,8 @@
       // The non-React tool plane, served by this app's own server from the installed package.
       // In a bundled app this is a plain import of "realtime-avatar-tools".
       import { attachAvatarTools } from "/sdk/tools.js";
+      import { CODING_COMPANION_TOOLS, PUBLISH_TOOL as PUBLISH_TOOL_DESCRIPTOR } from "/sdk/examples/coding-companion.js";
+      import { toolSet } from "/sdk/examples/tools.js";
       import { prepareAvatarRoom } from "/sdk/browser.js";
 
       const $ = (id) => document.getElementById(id);
@@ -817,23 +819,10 @@
       // The deadline is 2.5 seconds. A build is tens of seconds and a publish is about ten,
       // so NEITHER can return its result: both hand back a receipt and keep their real
       // promise on the panel, and she learns the outcome the way the user does — by asking.
-      const TOOLS = {
-        build_app: {
-          description:
-            "Start building or changing the web app from something the user has just asked for, passing their request in their own words. Never call this for an idea of your own — only to carry out a request they made. Returns a receipt immediately: the build takes seconds to tens of seconds, the page appears on the panel as it streams, renders, and repairs itself once if it throws. Use check_app to learn the outcome. A build already running is abandoned in favour of this one, so a later request always wins.",
-          parameters: {
-            type: "object",
-            properties: {
-              request: {
-                type: "string",
-                description:
-                  "What to build or change, in the user's words. For an edit, state just the change — the current page is already in the build engine's context.",
-              },
-            },
-            required: ["request"],
-            additionalProperties: false,
-          },
-          execute: ({ request }) => {
+      const TOOLS = toolSet(CODING_COMPANION_TOOLS, {
+        // The descriptors — names, descriptions, argument schemas — come from the shared package;
+        // only the handlers live here, because they touch this page's state.
+        build_app: ({ request }) => {
             const text = String(request ?? "").trim();
             if (!text) return { status: "empty", message: "say what to build" };
             /**
@@ -874,13 +863,7 @@
             // announcing a result that is tens of seconds away.
             return { job: j.id, status: "started" };
           },
-        },
-
-        check_app: {
-          description:
-            "The state of the studio: how the current build is going, what the page reported when it ran, which versions exist, and which one is on screen. Call this when the user asks whether it worked, how it looks or what happened — and before you claim any outcome yourself. Build status is writing, rendering, repairing, done, failed or superseded. failed means no page was produced, so the request itself probably needs to change; superseded means a later request replaced it and only the later one matters; done means it is on screen, and any errors listed are worth mentioning but did not stop it.",
-          parameters: { type: "object", properties: {}, additionalProperties: false },
-          execute: () => {
+        check_app: () => {
             const result = {
               build: job
                 ? { job: job.id, status: job.status, version: job.version, errors: job.errors.slice(0, 300) }
@@ -899,20 +882,7 @@
             }
             return result;
           },
-        },
-
-        restore_version: {
-          description:
-            "Put an earlier version of the app back on screen. Call this when the user asks to undo, go back, or return to how it was. Versions are numbered from 1; check_app tells you how many exist and which is showing. The restored version becomes the one the next build edits from.",
-          parameters: {
-            type: "object",
-            properties: {
-              version: { type: "integer", description: "Which version to show, counting from 1." },
-            },
-            required: ["version"],
-            additionalProperties: false,
-          },
-          execute: ({ version }) => {
+        restore_version: ({ version }) => {
             const n = Number(version);
             if (!show(n)) {
               tool(`→ no version ${version}`);
@@ -921,8 +891,7 @@
             tool(`→ restored v${n}`);
             return { ok: true, showing: n, versions: versions.length };
           },
-        },
-      };
+      });
 
       /**
        * Only offered when the server says it is configured.
@@ -931,12 +900,8 @@
        * will try it, apologise, and try it again. So an unconfigured deployment ships neither
        * the verb nor the line about it in her brief.
        */
-      const PUBLISH_TOOL = {
-        publish_app: {
-          description:
-            "Put the current version of the app on a public URL anyone can open. Call this when the user asks to publish, deploy, ship, or share it. Returns a receipt immediately; it takes about ten seconds. check_app reports the publish status and the live URL when it is ready. Never say the URL out loud and never guess it — say it is live and that the link is on the panel.",
-          parameters: { type: "object", properties: {}, additionalProperties: false },
-          execute: () => {
+      const PUBLISH_TOOL = toolSet([PUBLISH_TOOL_DESCRIPTOR], {
+        publish_app: () => {
             if (!currentHtml()) {
               tool("→ nothing to publish");
               return { status: "empty", message: "there is no app yet — build one first" };
@@ -946,8 +911,7 @@
             tool("→ publishing…");
             return { status: "started" };
           },
-        },
-      };
+      });
 
       // ── the call ───────────────────────────────────────────────────────────────────────
       $("call").onclick = async () => {

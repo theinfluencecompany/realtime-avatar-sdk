@@ -34,6 +34,8 @@
     "libs/browser/src",
     "libs/browser/test",
     "libs/mcp/src",
-    "libs/mcp/test"
+    "libs/mcp/test",
+    "libs/examples/src",
+    "libs/examples/test"
   ]
 }

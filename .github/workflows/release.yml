@@ -132,7 +132,7 @@ jobs:
             });
             console.log(dirs.sort().join(" "));
           ')
-          actual=$(printf "%s\n" sdk-server mcp | sort | tr "\n" " " | sed "s/ $//")
+          actual=$(printf "%s\n" sdk-server mcp examples | sort | tr "\n" " " | sed "s/ $//")
           if [ "$expected" != "$actual" ]; then
             echo "::error::publish list is [$actual] but the non-private workspaces are [$expected]"
             exit 1
@@ -147,7 +147,7 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
           fail=0
-          for dir in sdk-server mcp; do
+          for dir in sdk-server mcp examples; do
             version=$(node -p "require('./libs/$dir/package.json').version")
             if [ "$version" != "$tag" ]; then
               echo "::error::libs/$dir is $version but the tag says $tag"
@@ -173,7 +173,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          ALL="sdk-server mcp"
+          ALL="sdk-server mcp examples"
 
           if [ -n "$NODE_AUTH_TOKEN" ]; then
             # Token auth: provenance is opt-in, so ask for it. On an OIDC publish npm emits
