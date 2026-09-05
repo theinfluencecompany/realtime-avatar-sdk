@@ -456,12 +456,16 @@
         const t0 = Date.now();
         tick = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); $("timer").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 1000);
 
-        const mic = await startMic(room);
-        if (!mic.ok) say(`you're in, but the mic didn't start. ${mic.why}`);
+        // TOOLS FIRST, MIC SECOND. His opening line is generated the moment you are in the
+        // room, and the worker holds it only briefly for the tool manifest. Registering behind
+        // the mic prompt (up to 15s) meant the first turn was generated with the tools known
+        // only as words — which is how `rate_interest({ score: 70 })` ended up spoken aloud.
         try {
           const reg = await attachAvatarTools(room, TOOLS, { timeoutMs: 15000 });
           if (!reg.accepted.length) say("connected — but his tools didn't arm (the meters won't move)");
         } catch { /* the date still works without the HUD */ }
+        const mic = await startMic(room);
+        if (!mic.ok) say(`you're in, but the mic didn't start. ${mic.why}`);
 
         setRizz(50);
         if (mic.ok) say("you're in — just talk, or type below 💬");
