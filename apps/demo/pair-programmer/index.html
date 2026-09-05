@@ -203,6 +203,14 @@
         #say { width: min(340px, 52vw) }
       }
     </style>
+    <!-- LiveKit is loaded on the first gesture (see the module script): a static import would
+         hold every handler hostage to three sequential CDN round trips, and the page would paint
+         a live-looking button that swallows clicks until they finish. These warm the connection
+         and the three files the import resolves to, so the click that needs them rarely waits. -->
+    <link rel="preconnect" href="https://esm.sh" crossorigin />
+    <link rel="modulepreload" href="https://esm.sh/livekit-client@2.19.2" crossorigin />
+    <link rel="modulepreload" href="https://esm.sh/livekit-client@2.19.2/es2022/livekit-client.mjs" crossorigin />
+    <link rel="modulepreload" href="https://esm.sh/node/process.mjs" crossorigin />
   </head>
   <body class="tab-preview">
     <!-- `muted` is not a preference, it is what makes autoplay legal. The voice arrives on its
@@ -285,12 +293,27 @@
     </script>
 
     <script type="module">
-      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+      // LiveKit arrives on the first gesture, not at module evaluation. A static import here ran
+      // BEFORE every line below it — ES semantics hoist it — so all the handler wiring waited on
+      // three sequential CDN round trips while the page showed a live-looking button that swallowed
+      // clicks. The <head> preloads the same three files; `livekit()` is awaited right before the
+      // Room is built, and a failed load surfaces through the same catch as a failed connect.
+      const LIVEKIT = "https://esm.sh/livekit-client@2.19.2";
+      let Room, RoomEvent, Track;
+      let livekitLoading;
+      const livekit = () =>
+        (livekitLoading ??= import(LIVEKIT)
+          .then((m) => { ({ Room, RoomEvent, Track } = m); return m; })
+          .catch((e) => { livekitLoading = undefined; throw e; }));
+      // Start it now, without blocking: the bytes are usually already here from the <head>
+      // preloads, so by the first click the module is evaluated and the await above is instant.
+      // A failure here is swallowed — the click path re-runs the import and reports it.
+      livekit().catch(() => {});
       // The non-React tool plane and the browser audio helpers, served by this app's own server
       // from the installed packages. In a bundled app both are plain imports of
       // "realtime-avatar-tools" and "-browser".
       import { attachAvatarTools } from "/sdk/tools.js";
-      import { enableMicrophone, attachRemoteAudio } from "/sdk/browser.js";
+      import { enableMicrophone, attachRemoteAudio, applyPlayoutDelay } from "/sdk/browser.js";
 
       const $ = (id) => document.getElementById(id);
       const cap = (t, bad = false) => {
@@ -1129,6 +1152,7 @@
         const grant = await res.json();
         sessionId = grant.session_id; // held from HERE — the pagehide beacon needs it now
         let sawVideo = false;
+        await livekit();
         room = new Room();
 
         // BEFORE connect, and INTO the document. `track.attach()` hands back a detached element:
@@ -1151,6 +1175,9 @@
         });
 
         room.on(RoomEvent.TrackSubscribed, (track) => {
+          // The same receiver cushion the React surface ships: 0.5s of loss recovery, applied to
+          // audio and video alike so the pair stays lip-locked. Without it she freezes on every lost packet.
+          applyPlayoutDelay(track);
           if (track.kind !== Track.Kind.Video) return;
           sawVideo = true;
           track.attach($("avatar"));

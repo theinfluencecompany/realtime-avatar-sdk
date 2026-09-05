@@ -152,6 +152,14 @@
         .row { justify-content: flex-start }
       }
     </style>
+    <!-- LiveKit is loaded on the first gesture (see the module script): a static import would
+         hold every handler hostage to three sequential CDN round trips, and the page would paint
+         a live-looking button that swallows clicks until they finish. These warm the connection
+         and the three files the import resolves to, so the click that needs them rarely waits. -->
+    <link rel="preconnect" href="https://esm.sh" crossorigin />
+    <link rel="modulepreload" href="https://esm.sh/livekit-client@2.19.2" crossorigin />
+    <link rel="modulepreload" href="https://esm.sh/livekit-client@2.19.2/es2022/livekit-client.mjs" crossorigin />
+    <link rel="modulepreload" href="https://esm.sh/node/process.mjs" crossorigin />
   </head>
   <body>
     <div class="wrap">
@@ -226,8 +234,24 @@
     </div>
 
     <script type="module">
-      import { Room, RoomEvent, Track } from "https://esm.sh/livekit-client@2.19.2";
+      // LiveKit arrives on the first gesture, not at module evaluation. A static import here ran
+      // BEFORE every line below it — ES semantics hoist it — so all the handler wiring waited on
+      // three sequential CDN round trips while the page showed a live-looking button that swallowed
+      // clicks. The <head> preloads the same three files; `livekit()` is awaited right before the
+      // Room is built, and a failed load surfaces through the same catch as a failed connect.
+      const LIVEKIT = "https://esm.sh/livekit-client@2.19.2";
+      let Room, RoomEvent, Track;
+      let livekitLoading;
+      const livekit = () =>
+        (livekitLoading ??= import(LIVEKIT)
+          .then((m) => { ({ Room, RoomEvent, Track } = m); return m; })
+          .catch((e) => { livekitLoading = undefined; throw e; }));
+      // Start it now, without blocking: the bytes are usually already here from the <head>
+      // preloads, so by the first click the module is evaluated and the await above is instant.
+      // A failure here is swallowed — the click path re-runs the import and reports it.
+      livekit().catch(() => {});
       import { attachAvatarTools } from "/sdk/tools.js";
+      import { applyPlayoutDelay } from "/sdk/browser.js";
 
       const $ = (id) => document.getElementById(id);
       const say = (t) => { $("status").classList.add("on"); $("status").textContent = t; };
@@ -420,8 +444,12 @@
 
       async function join(grant) {
         sessionId = grant.session_id;
+        await livekit();
         room = new Room();
         room.on(RoomEvent.TrackSubscribed, (track) => {
+          // The same receiver cushion the React surface ships: 0.5s of loss recovery, applied to
+          // audio and video alike so the pair stays lip-locked. Without it she freezes on every lost packet.
+          applyPlayoutDelay(track);
           if (track.kind === Track.Kind.Video) {
             track.attach($("date"));
             // Reveal the live face only once it actually PAINTS a frame; until then the generated

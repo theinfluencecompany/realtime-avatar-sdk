@@ -87,6 +87,7 @@ async function avatarId() {
  * here only so the example has no build step.
  */
 const TOOLS_MODULE = createRequire(import.meta.url).resolve("realtime-avatar/tools");
+const BROWSER_MODULE = createRequire(import.meta.url).resolve("realtime-avatar/browser");
 
 /**
  * Calls THIS process started, so `/api/end` can only end its own. The route hears from any
@@ -176,6 +177,10 @@ const server = createServer(async (req, res) => {
       return void json(res, 200, { ok: true });
     }
 
+    if (req.method === "GET" && req.url === "/sdk/browser.js") {
+      const js = await readFile(BROWSER_MODULE);
+      return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);
+    }
     if (req.method === "GET" && req.url === "/sdk/tools.js") {
       const js = await readFile(TOOLS_MODULE);
       return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);

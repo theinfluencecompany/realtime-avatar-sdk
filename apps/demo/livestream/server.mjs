@@ -12,7 +12,11 @@
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { RealtimeAvatar, RealtimeAvatarHttpError, isQueued } from "realtime-avatar";
+
+/** Served raw so this example needs no build step. A real app imports the package and bundles it. */
+const BROWSER_MODULE = createRequire(import.meta.url).resolve("realtime-avatar/browser");
 
 const PORT = Number(process.env.PORT ?? 4198);
 const MAX_SECONDS = Number(process.env.MAX_CALL_SECONDS ?? 300);
@@ -125,6 +129,10 @@ const server = createServer(async (req, res) => {
       return void json(res, 200, { ok: true });
     }
 
+    if (req.method === "GET" && path === "/sdk/browser.js") {
+      const js = await readFile(BROWSER_MODULE);
+      return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);
+    }
     if (req.method === "GET" && (path === "/" || path === "/index.html")) {
       const html = await readFile(new URL("./index.html", import.meta.url));
       return void res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
