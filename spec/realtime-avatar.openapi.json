@@ -25,7 +25,18 @@
     "securitySchemes": {
       "bearerAuth": {
         "type": "http",
-        "scheme": "bearer"
+        "scheme": "bearer",
+        "description": "An API key, sent as `Authorization: Bearer <api_key>`. Keys carry named scopes; each operation declares the one it needs in `x-required-scopes`, and the catalogue of all of them is `x-scopes` on this scheme. A 401 or 403 from this API answers with a `WWW-Authenticate` challenge whose `resource_metadata` points at https://realtimeavatar.ai/.well-known/oauth-protected-resource/api (RFC 9728), which repeats the scope list machine-readably. Mint a key in the dashboard or with `POST /v1/api-keys`.",
+        "x-scopes": {
+          "avatars:read": "List and read avatars, their clips and their assets.",
+          "avatars:write": "Create, update and delete avatars; upload assets; change clips and the resting loop.",
+          "realtime:write": "Mint and release live calls, and read pool capacity.",
+          "credits:read": "Read the workspace credit balance and what live calls are holding.",
+          "usage:read": "Read per-session billed usage detail.",
+          "usage:write": "Report usage events. Reserved for first-party runtimes; no public operation requires it.",
+          "api_keys:write": "Mint further API keys.",
+          "*": "Every operation. Granted by the dashboard's default key for convenience — prefer the narrow scopes above, which are what an agent should request."
+        }
       }
     },
     "schemas": {
@@ -2994,6 +3005,7 @@
         "additionalProperties": false
       },
       "Error": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "error": {
@@ -3002,25 +3014,66 @@
           },
           "status": {
             "type": "integer",
-            "description": "Repeats the HTTP status in the body. Absent on unhandled 500s."
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Repeats the HTTP status in the body. Always present."
           },
           "code": {
             "type": "string",
-            "description": "Machine-readable discriminator, present where the failure has one — billing, clip-library and loop refusals all carry it. Switch on this rather than on `error`, whose wording is not a contract. The set is open and grows with the API; the codes a given endpoint can return are documented with that endpoint at https://realtimeavatar.ai/docs/api-reference."
+            "description": "Machine-readable discriminator. ALWAYS present: a failure that names its own — billing, clip-library and loop refusals, `insufficient_scope` — carries that, and everything else carries the status's default (`unauthorized`, `not_found`, `rate_limited`, …). Switch on this rather than on `error`, whose wording is not a contract. The set is open and grows with the API; the codes a given endpoint can return are documented with that endpoint at https://realtimeavatar.ai/docs/api-reference."
+          },
+          "documentation": {
+            "type": "string",
+            "format": "uri",
+            "description": "Where to read how to resolve a failure of this class — the authentication guide for 401/403, the API reference otherwise. Always present."
           },
           "retryable": {
-            "type": "boolean",
-            "description": "Set when the failure is worth retrying as-is."
+            "description": "Set when the failure is worth retrying as-is.",
+            "type": "boolean"
+          },
+          "requiredScope": {
+            "description": "Present on `403 insufficient_scope` — the one scope this operation needed and the key did not carry. Repeated in the `WWW-Authenticate` challenge as `scope=`.",
+            "type": "string",
+            "enum": [
+              "*",
+              "api_keys:write",
+              "credits:read",
+              "avatars:read",
+              "avatars:write",
+              "realtime:write",
+              "usage:read",
+              "usage:write"
+            ]
+          },
+          "grantedScopes": {
+            "description": "Present alongside `requiredScope` — the scopes the presented key does carry.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "*",
+                "api_keys:write",
+                "credits:read",
+                "avatars:read",
+                "avatars:write",
+                "realtime:write",
+                "usage:read",
+                "usage:write"
+              ]
+            }
           },
           "billingUrl": {
-            "type": "string",
-            "description": "Present on 402 — where to send the user to top up."
+            "description": "Present on 402 — where to send the user to top up.",
+            "type": "string"
           }
         },
         "required": [
-          "error"
+          "error",
+          "status",
+          "code",
+          "documentation"
         ],
-        "additionalProperties": true
+        "additionalProperties": {}
       }
     }
   },
@@ -3076,6 +3129,9 @@
             }
           }
         },
+        "x-required-scopes": [
+          "realtime:write"
+        ],
         "summary": "Get a capacity snapshot",
         "tags": [
           "Realtime"
@@ -3155,6 +3211,9 @@
           }
         },
         "description": "Requires an API key with the `realtime:write` scope.",
+        "x-required-scopes": [
+          "realtime:write"
+        ],
         "summary": "Mint a realtime session",
         "tags": [
           "Realtime"
@@ -3217,6 +3276,9 @@
             }
           }
         },
+        "x-required-scopes": [
+          "realtime:write"
+        ],
         "summary": "Release a session's capacity lease",
         "tags": [
           "Realtime"
@@ -3269,6 +3331,9 @@
           }
         },
         "description": "Requires an API key with the `avatars:read` scope.",
+        "x-required-scopes": [
+          "avatars:read"
+        ],
         "summary": "List avatars",
         "tags": [
           "Avatars"
@@ -3329,6 +3394,9 @@
           }
         },
         "description": "Requires an API key with the `avatars:write` scope.",
+        "x-required-scopes": [
+          "avatars:write"
+        ],
         "summary": "Create an avatar from a portrait",
         "tags": [
           "Avatars"
@@ -3391,6 +3459,9 @@
           }
         },
         "description": "Requires an API key with the `avatars:read` scope.",
+        "x-required-scopes": [
+          "avatars:read"
+        ],
         "summary": "Get an avatar",
         "tags": [
           "Avatars"
@@ -3461,6 +3532,9 @@
           }
         },
         "description": "Requires an API key with the `avatars:write` scope.",
+        "x-required-scopes": [
+          "avatars:write"
+        ],
         "summary": "Update an avatar",
         "tags": [
           "Avatars"
@@ -3514,6 +3588,9 @@
           }
         },
         "description": "Requires an API key with the `avatars:write` scope.",
+        "x-required-scopes": [
+          "avatars:write"
+        ],
         "summary": "Delete an avatar",
         "tags": [
           "Avatars"
@@ -3576,6 +3653,9 @@
           }
         },
         "description": "Requires an API key with the `avatars:read` scope.",
+        "x-required-scopes": [
+          "avatars:read"
+        ],
         "summary": "List an avatar's motion clips",
         "tags": [
           "Avatars"
@@ -3655,6 +3735,9 @@
             }
           }
         },
+        "x-required-scopes": [
+          "avatars:write"
+        ],
         "summary": "Declare an avatar's clip library",
         "tags": [
           "Avatars"
@@ -3726,6 +3809,9 @@
             }
           }
         },
+        "x-required-scopes": [
+          "avatars:write"
+        ],
         "summary": "Sync an externally hosted clip library",
         "tags": [
           "Avatars"
@@ -3807,6 +3893,9 @@
             }
           }
         },
+        "x-required-scopes": [
+          "avatars:write"
+        ],
         "summary": "Re-direct an avatar's resting loop",
         "tags": [
           "Avatars"
@@ -3869,6 +3958,9 @@
             }
           }
         },
+        "x-required-scopes": [
+          "api_keys:write"
+        ],
         "summary": "Mint an API key",
         "tags": [
           "API keys"
@@ -3921,6 +4013,9 @@
             }
           }
         },
+        "x-required-scopes": [
+          "avatars:read"
+        ],
         "summary": "List assets",
         "tags": [
           "Assets"
@@ -4001,6 +4096,9 @@
           }
         },
         "description": "Requires an API key with the `avatars:write` scope.",
+        "x-required-scopes": [
+          "avatars:write"
+        ],
         "summary": "Upload an asset",
         "tags": [
           "Assets"
@@ -4063,6 +4161,9 @@
           }
         },
         "description": "Requires an API key with the `avatars:write` scope.",
+        "x-required-scopes": [
+          "avatars:write"
+        ],
         "summary": "Create an asset from a URL",
         "tags": [
           "Assets"
@@ -4115,6 +4216,9 @@
             }
           }
         },
+        "x-required-scopes": [
+          "credits:read"
+        ],
         "summary": "Get the credit balance",
         "tags": [
           "Credits"
@@ -4216,6 +4320,9 @@
             }
           }
         },
+        "x-required-scopes": [
+          "usage:read"
+        ],
         "summary": "List billed realtime sessions",
         "tags": [
           "Usage"

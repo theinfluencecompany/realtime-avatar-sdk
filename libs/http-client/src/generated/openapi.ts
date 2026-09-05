@@ -876,12 +876,24 @@ export interface components {
         Error: {
             /** @description Human-readable message. Not a stable contract — switch on `code` or `status`. */
             error: string;
-            /** @description Repeats the HTTP status in the body. Absent on unhandled 500s. */
-            status?: number;
-            /** @description Machine-readable discriminator, present where the failure has one — billing, clip-library and loop refusals all carry it. Switch on this rather than on `error`, whose wording is not a contract. The set is open and grows with the API; the codes a given endpoint can return are documented with that endpoint at https://realtimeavatar.ai/docs/api-reference. */
-            code?: string;
+            /** @description Repeats the HTTP status in the body. Always present. */
+            status: number;
+            /** @description Machine-readable discriminator. ALWAYS present: a failure that names its own — billing, clip-library and loop refusals, `insufficient_scope` — carries that, and everything else carries the status's default (`unauthorized`, `not_found`, `rate_limited`, …). Switch on this rather than on `error`, whose wording is not a contract. The set is open and grows with the API; the codes a given endpoint can return are documented with that endpoint at https://realtimeavatar.ai/docs/api-reference. */
+            code: string;
+            /**
+             * Format: uri
+             * @description Where to read how to resolve a failure of this class — the authentication guide for 401/403, the API reference otherwise. Always present.
+             */
+            documentation: string;
             /** @description Set when the failure is worth retrying as-is. */
             retryable?: boolean;
+            /**
+             * @description Present on `403 insufficient_scope` — the one scope this operation needed and the key did not carry. Repeated in the `WWW-Authenticate` challenge as `scope=`.
+             * @enum {string}
+             */
+            requiredScope?: "*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "usage:write";
+            /** @description Present alongside `requiredScope` — the scopes the presented key does carry. */
+            grantedScopes?: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "usage:write")[];
             /** @description Present on 402 — where to send the user to top up. */
             billingUrl?: string;
         } & {
