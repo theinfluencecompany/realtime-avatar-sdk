@@ -26,6 +26,9 @@ Runtime: Node >= 20. Zero dependencies. Server-only (it holds the API key).
   React RealtimeAvatarLiveKitRoom applies it room-wide). No React, no livekit-client dependency
 - libs/mcp (realtime-avatar-mcp): MCP server so an agent can read avatars,
   balance and the per-session bill directly. Read-only unless REALTIME_AVATAR_ALLOW_WRITES=1.
+- libs/examples (realtime-avatar-examples): the demos' contracts — brief, builder
+  prompt, tool descriptors — one source imported by apps/demo AND by the hosted ports
+  on realtimeavatar.ai, so the copies cannot drift; pure data, zero dependencies
 
 Every call is full duplex — she listens the whole time she speaks, so she can be cut off
 mid-sentence. `mode` only picks the renderer: mode:"avatar" (the default) publishes video,

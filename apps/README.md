@@ -50,7 +50,8 @@ The folder is a promise. One question, answered in this order:
 
 `coding-companion` and `pair-programmer` are the one deliberate exception to the sentence
 above, and they are only worth keeping while that stays true: same brief, same tools, same
-build engine, two composites. The pair IS the lesson — what a layout changes and what it does
+build engine, two composites. They cannot drift apart in behaviour, because neither carries
+the brief or the tools: both import them from [`realtime-avatar-examples`](../libs/examples). The pair IS the lesson — what a layout changes and what it does
 not — so if they ever drift apart in behaviour they stop being a comparison and become a
 duplicate, and the duplicate is the one to delete.
 
@@ -71,15 +72,20 @@ example gallery is configured outside this repository and is not covered by that
 2. **A single `.env.example`** naming every variable it needs. No hidden config.
 3. **No shared local imports.** Depend on the published SDK, not on `../../libs`. An example
    that only works inside this repo teaches the wrong thing. Every app here obeys this.
-4. **The policy decided server-side.** An example that forwards a request body into
+4. **The contract comes from `realtime-avatar-examples`.** A demo's brief, its builder prompt
+   and its tool descriptors are published from [`libs/examples`](../libs/examples) and imported
+   by the demo here AND by its hosted port on realtimeavatar.ai. Never paste them inline: a
+   copy is a fork, and the last set of copies drifted within twelve days. `libs/examples/test`
+   fails on an inline copy. The handlers stay in the page — they are the host's.
+5. **The policy decided server-side.** An example that forwards a request body into
    `startCall` is teaching a security bug, and agents copy examples verbatim.
-5. **A stated cost** if it starts a call — minutes are billed, and someone running an example
+6. **A stated cost** if it starts a call — minutes are billed, and someone running an example
    should know that before they run it.
-6. **Its own default port**, so two examples can run side by side. Taken today: 4192
+7. **Its own default port**, so two examples can run side by side. Taken today: 4192
    coding-companion, 4193 canvas-tools, 4194 terminal-tutor, 4195 dating-rehearsal, 4196
    pair-programmer, 4197 live-shopping, 4198 livestream, 4199 math-studio, 4200 persuasion,
    4201 set-designer.
-7. **LiveKit comes from the example's own origin, never a CDN.** The browser half imports
+8. **LiveKit comes from the example's own origin, never a CDN.** The browser half imports
    `livekit-client` from `/vendor/livekit-client.mjs`, which the server serves from the installed
    peer (`require.resolve("livekit-client")`, gzip, a version ETag) — the exact version the SDK was
    installed and tested with, one request, and no third-party origin between a visitor and the

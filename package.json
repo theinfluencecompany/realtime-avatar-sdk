@@ -11,7 +11,7 @@
   },
   "scripts": {
     "boundary": "node scripts/check-boundary.mjs",
-    "build": "npm run build -w libs/sdk-server && npm run build -w libs/mcp",
+    "build": "npm run build -w libs/sdk-server && npm run build -w libs/mcp && npm run build -w libs/examples",
     "check": "npm run typecheck && npm run build && npm test && npm run boundary && npm run messages && npm run surface && npm run reachable && npm run spec:verify && npm run externals && npm run derivation && npm run apps:python",
     "apps:python": "python3 scripts/check-python-apps.py",
     "messages": "node scripts/check-commit-messages.mjs",

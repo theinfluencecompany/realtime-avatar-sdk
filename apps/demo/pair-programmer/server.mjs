@@ -25,6 +25,7 @@ import { readFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import { randomBytes } from "node:crypto";
 import { RealtimeAvatar, RealtimeAvatarHttpError, isQueued } from "realtime-avatar";
+import { companionBrief, BUILD_ENGINE_SYSTEM_PROMPT } from "realtime-avatar-examples/coding-companion";
 
 const PORT = Number(process.env.PORT ?? 4196);
 const MAX_SECONDS = Number(process.env.MAX_CALL_SECONDS ?? 300);
@@ -81,62 +82,11 @@ const COMPAT_DATE = "2025-08-01";
 const VOICE = { provider: "fish", voice_id: "536d3a5e000945adb7038665781a4aca", language: "en" };
 
 /**
- * The brief — the coding companion's, unchanged in every load-bearing line.
- *
- * The tools are named and given rules of engagement, because a description alone does not
- * keep a model honest about outcomes: a build it STARTED reads, to a language model, a lot like
- * a build that WORKED. The "never announce a result check_app has not given you" line is the
- * one doing the work, and it covers publishing too — which takes even longer than a build.
- *
- * The second load-bearing line is "never build something they did not ask for". Without it
- * the call opens mid-project — measured on the coding companion, twice, on a silent line:
- * "I've been staring at that navigation bar and I think we should swap it for a sidebar"
- * before a word was said — and then CALLS build_app on the idea. Three invented builds in
- * four minutes of silence, each narrated as though it had been requested. Nothing in a tool
- * description prevents that, because from the model's side inventing the request and carrying
- * it out are the same move. It has to be forbidden in the brief, and the state it is wrong
- * about ("nothing is built, you have no history with this person") has to be stated rather
- * than implied.
- *
- * "The panel" is the word the measured version used and it is left alone. It is where the app
- * is, whether that is a column beside the character or a sheet of glass in front of them,
- * and rewording a prompt that has been observed working to match a new stylesheet is the
- * wrong trade.
+ * The brief and the builder's system prompt come from the published examples package — the
+ * ONE place the words live, shared with the coding companion and with the hosted port on
+ * realtimeavatar.ai. Editing them here would only make this copy drift; edit
+ * `libs/examples/src/coding-companion.ts` in the SDK repo.
  */
-const companionBrief = () => `You are a warm, sharp senior engineer building a web app out loud with someone talking to you by voice. You are the VOICE, not the builder. The app is written by tools in the page, on your say-so, and it appears on the panel beside you.
-
-The call starts with an EMPTY panel and no history between you. There is no app yet, nothing has been discussed, and you have not been working on anything. Open by asking what they want to build.
-
-Your tools:
-- build_app — call it ONLY to carry out something this person has just asked you for, passing their request in their own words. It returns a receipt immediately; the real build takes seconds to tens of seconds, streams the page onto the panel, renders it, and repairs itself once if it throws.
-- check_app — call it when they ask whether it worked, how it looks, or what happened${canPublish ? ", and to find out whether a publish has finished" : ""}. A build you started is not a build that worked: never announce a result check_app has not given you.
-- restore_version — call it when they ask to go back, undo, or return to an earlier version. Versions are numbered from 1 and check_app tells you which exist.${
-  canPublish
-    ? "\n- publish_app — call it when they ask to publish, deploy, ship or share. It returns a receipt immediately and takes ten seconds or so; check_app gives you the live URL when it is ready. Never invent or spell out the URL — say it is live and that the link is on the panel."
-    : ""
-}
-
-After starting a build, say so in one short sentence and move on. If check_app says writing, rendering or repairing, say it is still going. If it says failed, say what broke in words — not code — and ask what they actually want.
-
-RULES: Never call build_app for an idea of your own. Not to open the call, not to fill a silence, not because something on the panel could be better. You may SUGGEST anything you like out loud; the tool is for what they have actually asked for, because a page they did not ask for still lands on the panel with their name on it. If the line goes quiet, ask what they want to build and then wait — do not build something to fill the gap.
-Never read code aloud. Never spell out syntax, symbols, tags, markdown, a class name or a URL. The app appears on a panel beside you — point at it ("it's on the panel", "take a look"). At most two spoken sentences per turn. Be specific: name what you changed, flag the one tradeoff worth knowing.`;
-
-/**
- * The code model's system prompt. It writes for the SANDBOX, not for a human reader — the
- * window's contents are handed straight to an iframe with an opaque origin, so anything that
- * is not a runnable single-file document lands in the preview and breaks the render.
- */
-const CODE_SYSTEM = `You are the build engine behind a voice-driven web app studio. You output ONE COMPLETE, self-contained HTML document and nothing else.
-
-HARD RULES:
-- Output RAW HTML only, starting with <!doctype html>. No markdown, no code fences, no prose, no explanation before or after.
-- ONE file. Inline every style in <style> and every script in <script>. No local imports, no bundler, no build step.
-- It renders in a sandboxed iframe with an OPAQUE ORIGIN: localStorage, sessionStorage, cookies, and same-origin fetch are unavailable and throw. Keep all state in memory, in JavaScript variables. A cross-origin CDN <script src> or <link href> over https does work if you genuinely need one — prefer hand-written CSS.
-- alert, confirm and prompt are blocked by the sandbox. Render messages into the page instead.
-- When you are given the current document and a change, return the ENTIRE updated document. Never a diff, never a fragment, never "unchanged" placeholders.
-- Make it look finished: real layout, deliberate spacing, a coherent palette, sensible typography, and it must hold up at phone width. Populate it with plausible sample content — never an empty shell.
-- Keep it focused. Prefer clarity over cleverness.`;
-
 /**
  * The character to call.
  *
@@ -175,6 +125,8 @@ async function avatarId() {
 const require_ = createRequire(import.meta.url);
 const TOOLS_MODULE = require_.resolve("realtime-avatar/tools");
 const BROWSER_MODULE = require_.resolve("realtime-avatar/browser");
+/** The shared demo contract (tool descriptors + toolSet), served raw like the SDK modules above. */
+const EXAMPLES_DIR = new URL("./", import.meta.resolve("realtime-avatar-examples/coding-companion"));
 /**
  * livekit-client is the SDK's peer dependency, and the browser half imports it from HERE rather
  * than from a CDN: the exact version the SDK was installed and tested with, one same-origin
@@ -313,7 +265,7 @@ const server = createServer(async (req, res) => {
       const call = await rta.startCall({
         avatarId: await avatarId(),
         mode: "avatar", // the renderer, not the turn-taking: every call is full duplex.
-        instructions: companionBrief(),
+        instructions: companionBrief({ canPublish }),
         voice: VOICE, // pinned, not defaulted — see above
         // THE GRANT. Without it the worker never exposes `rta.tools.register`, registration
         // in the browser fails, and not one tool is reachable from the model.
@@ -391,7 +343,7 @@ const server = createServer(async (req, res) => {
         body: JSON.stringify({
           model: CODE_MODEL,
           messages: [
-            { role: "system", content: CODE_SYSTEM },
+            { role: "system", content: BUILD_ENGINE_SYSTEM_PROMPT },
             { role: "user", content: ask },
           ],
           temperature: 0.3,
@@ -453,6 +405,11 @@ const server = createServer(async (req, res) => {
           ...(gzip ? { "content-encoding": "gzip" } : {}),
         })
         .end(gzip ? LIVEKIT_GZ : LIVEKIT_JS);
+    }
+    const example = /^\/sdk\/examples\/([a-z-]+\.js)$/.exec(path);
+    if (req.method === "GET" && example) {
+      const js = await readFile(new URL(example[1], EXAMPLES_DIR));
+      return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);
     }
     if (req.method === "GET" && path === "/sdk/browser.js") {
       const js = await readFile(BROWSER_MODULE);
