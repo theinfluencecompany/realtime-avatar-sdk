@@ -12,11 +12,26 @@
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
+import { gzipSync } from "node:zlib";
 import { createRequire } from "node:module";
 import { RealtimeAvatar, RealtimeAvatarHttpError, isQueued } from "realtime-avatar";
 
 /** Served raw so this example needs no build step. A real app imports the package and bundles it. */
 const BROWSER_MODULE = createRequire(import.meta.url).resolve("realtime-avatar/browser");
+/**
+ * livekit-client is the SDK's peer dependency, and the browser half imports it from HERE rather
+ * than from a CDN: the exact version the SDK was installed and tested with, one same-origin
+ * request, and no third-party origin between a visitor and the call. Read once, compressed once,
+ * served with a version ETag so a reload costs a 304.
+ */
+// import.meta.resolve, not require.resolve: the package's `require` condition is the UMD build,
+// which has no ES exports — a page importing { Room } from it fails on the first click. The
+// `import` condition is the ESM build the browser can actually import.
+const LIVEKIT_MODULE = new URL(import.meta.resolve("livekit-client"));
+const LIVEKIT_VERSION = JSON.parse(await readFile(new URL("../package.json", LIVEKIT_MODULE), "utf8")).version;
+const LIVEKIT_JS = await readFile(LIVEKIT_MODULE);
+const LIVEKIT_GZ = gzipSync(LIVEKIT_JS);
+const LIVEKIT_ETAG = `"livekit-client-${LIVEKIT_VERSION}"`;
 
 const PORT = Number(process.env.PORT ?? 4198);
 const MAX_SECONDS = Number(process.env.MAX_CALL_SECONDS ?? 300);
@@ -129,6 +144,18 @@ const server = createServer(async (req, res) => {
       return void json(res, 200, { ok: true });
     }
 
+    if (req.method === "GET" && path === "/vendor/livekit-client.mjs") {
+      if (req.headers["if-none-match"] === LIVEKIT_ETAG) return void res.writeHead(304, { etag: LIVEKIT_ETAG }).end();
+      const gzip = /\bgzip\b/.test(req.headers["accept-encoding"] ?? "");
+      return void res
+        .writeHead(200, {
+          "content-type": "text/javascript; charset=utf-8",
+          etag: LIVEKIT_ETAG,
+          "cache-control": "public, max-age=0, must-revalidate",
+          ...(gzip ? { "content-encoding": "gzip" } : {}),
+        })
+        .end(gzip ? LIVEKIT_GZ : LIVEKIT_JS);
+    }
     if (req.method === "GET" && path === "/sdk/browser.js") {
       const js = await readFile(BROWSER_MODULE);
       return void res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" }).end(js);
