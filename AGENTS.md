@@ -139,10 +139,14 @@ mid-`await`, and the rejection becomes an unhandled promise nobody is watching. 
 reported back is one sentence, "the mic won't start", covering causes with different fixes.
 
 ```ts
-import { enableMicrophone, attachRemoteAudio } from "realtime-avatar/browser";
+import { enableMicrophone, attachRemoteAudio, applyPlayoutDelay } from "realtime-avatar/browser";
 
 const audio = attachRemoteAudio(room, {                 // BEFORE connect — see below
   onPlaybackBlocked: (unblock) => { btn.hidden = unblock === null; btn.onclick = () => unblock?.(); },
+});
+room.on(RoomEvent.TrackSubscribed, (track) => {
+  applyPlayoutDelay(track);                             // audio AND video — see below
+  if (track.kind === Track.Kind.Video) track.attach(videoEl);
 });
 await room.connect(grant.livekit_url, grant.participant_token);
 const mic = await enableMicrophone(room);
@@ -165,6 +169,13 @@ The four that are expensive to guess:
 - **Autoplay is blocked until a gesture.** `room.startAudio()` clears it but must be called
   *from* the gesture, so the page has to know it is blocked in order to offer a button.
   `RoomEvent.AudioPlaybackStatusChanged` is that signal.
+- **The browser's default receiver buffer freezes her on every lost packet.** The avatar comes
+  from a GPU datacenter over the public internet, where a few percent of loss is normal, and a
+  shallow buffer stalls on each one waiting for the retransmit. `applyPlayoutDelay(track)` on every
+  subscribed track sets the 0.5s cushion the React surface applies for you — measured at ~5% loss
+  it took the picture from ~11fps with multi-second freezes to a steady 25fps. Apply it to audio
+  and video alike: WebRTC syncs the pair to the larger hint, so an unequal pair lets the lips lag
+  the voice. If you render the picture yourself and skip `AvatarCall`, this line is not optional.
 
 Mic capture needs a secure origin: https, or `http://localhost`. A LAN address over plain
 HTTP leaves `navigator.mediaDevices` undefined, which surfaces as a `TypeError` naming a
