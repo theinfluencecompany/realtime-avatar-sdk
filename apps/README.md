@@ -79,5 +79,14 @@ example gallery is configured outside this repository and is not covered by that
    coding-companion, 4193 canvas-tools, 4194 terminal-tutor, 4195 dating-rehearsal, 4196
    pair-programmer, 4197 live-shopping, 4198 livestream, 4199 math-studio, 4200 persuasion,
    4201 set-designer.
+7. **LiveKit comes from the example's own origin, never a CDN.** The browser half imports
+   `livekit-client` from `/vendor/livekit-client.mjs`, which the server serves from the installed
+   peer (`require.resolve("livekit-client")`, gzip, a version ETag) — the exact version the SDK was
+   installed and tested with, one request, and no third-party origin between a visitor and the
+   call. Until 2026-09 the pages pulled a pinned build from esm.sh: three sequential round trips
+   before any handler was wired, and a version the SDK had never run against. The SDK itself
+   stays a *peer* of `livekit-client` (`realtime-avatar/browser` never imports it, so it pins no
+   version and adds no bytes); an example copied out of this repo needs
+   `npm i realtime-avatar livekit-client`.
 
 Keep them small. An example is read far more often than it is run.

@@ -203,14 +203,10 @@
         #say { width: min(340px, 52vw) }
       }
     </style>
-    <!-- LiveKit is loaded on the first gesture (see the module script): a static import would
-         hold every handler hostage to three sequential CDN round trips, and the page would paint
-         a live-looking button that swallows clicks until they finish. These warm the connection
-         and the three files the import resolves to, so the click that needs them rarely waits. -->
-    <link rel="preconnect" href="https://esm.sh" crossorigin />
-    <link rel="modulepreload" href="https://esm.sh/livekit-client@2.19.2" crossorigin />
-    <link rel="modulepreload" href="https://esm.sh/livekit-client@2.19.2/es2022/livekit-client.mjs" crossorigin />
-    <link rel="modulepreload" href="https://esm.sh/node/process.mjs" crossorigin />
+    <!-- LiveKit is loaded on the first gesture (see the module script), from THIS origin: the
+         installed peer the SDK was tested with, one request, no third-party CDN between a visitor
+         and the call. Preloading it here means the click that needs it rarely waits. -->
+    <link rel="modulepreload" href="/vendor/livekit-client.mjs" />
   </head>
   <body class="tab-preview">
     <!-- `muted` is not a preference, it is what makes autoplay legal. The voice arrives on its
@@ -295,10 +291,12 @@
     <script type="module">
       // LiveKit arrives on the first gesture, not at module evaluation. A static import here ran
       // BEFORE every line below it — ES semantics hoist it — so all the handler wiring waited on
-      // three sequential CDN round trips while the page showed a live-looking button that swallowed
-      // clicks. The <head> preloads the same three files; `livekit()` is awaited right before the
-      // Room is built, and a failed load surfaces through the same catch as a failed connect.
-      const LIVEKIT = "https://esm.sh/livekit-client@2.19.2";
+      // the LiveKit download while the page showed a live-looking button that swallowed clicks.
+      // It comes from this origin (/vendor/livekit-client.mjs — the installed peer the SDK was
+      // tested with, not a CDN's copy of some other version); the <head> preloads it, `livekit()`
+      // is awaited right before the Room is built, and a failed load surfaces through the same
+      // catch as a failed connect.
+      const LIVEKIT = "/vendor/livekit-client.mjs";
       let Room, RoomEvent, Track;
       let livekitLoading;
       const livekit = () =>
