@@ -12,3 +12,16 @@ export {
   type AudioCapableRoom,
   type RemoteAudioAttachment,
 } from "./remote-audio.ts";
+export {
+  applyAvatarPlayoutDelay,
+  applyPlayoutDelay,
+  DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS,
+  type PlayoutDelayTarget,
+} from "./playout-delay.ts";
+export {
+  prepareAvatarRoom,
+  type PreparableParticipant,
+  type PreparableRoom,
+  type PrepareAvatarRoomOptions,
+  type PreparedAvatarRoom,
+} from "./prepare-room.ts";

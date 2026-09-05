@@ -140,7 +140,7 @@ Browser — these never can:
 | --- | --- |
 | `realtime-avatar/react` | `AvatarCall`, `useAvatarCall`, `useRealtimeSession`, `useSessionLifecycle` |
 | `realtime-avatar/react-native` | The same surface for Expo / React Native |
-| `realtime-avatar/browser` | `enableMicrophone`, `attachRemoteAudio`, `applyPlayoutDelay` — no React |
+| `realtime-avatar/browser` | `enableMicrophone`, `attachRemoteAudio`, `prepareAvatarRoom` — no React |
 | `realtime-avatar/tools` | `attachAvatarTools` — the browser tool plane |
 
 Every adapter takes the same two hooks: `authorize` gates the request, `session` decides the
@@ -169,12 +169,16 @@ start" is one sentence covering six causes with different fixes — and one of t
 system denial, cannot be fixed from the address bar and needs the browser restarted.
 `attachRemoteAudio` attaches into the DOM *before* `connect`, which is what stops a track
 arriving mid-connect from being lost on a fast connection.
-`applyPlayoutDelay` gives a subscribed track the same 0.5s receiver cushion the React surface
-applies on its own: the avatar crosses the public internet, a shallow buffer freezes on every lost
-packet, and a deeper one recovers it before playout (measured at ~5% loss: ~11fps with
-multi-second freezes → a steady 25fps). Call it for every track `TrackSubscribed` hands you, audio
-and video both, so the pair stays lip-locked. Until it lived here it was only reachable through
-`/react`, which is why every plain-DOM page — this repo's demos included — froze that way.
+`prepareAvatarRoom(room)` — one call after `new Room()` — gives every track the room subscribes
+the same 0.5s receiver cushion the React surface applies on its own: the avatar crosses the public
+internet, a shallow buffer freezes on every lost packet, and a deeper one recovers it before
+playout (measured at ~5% loss: ~11fps with multi-second freezes → a steady 25fps). It covers audio
+and video alike so the pair stays lip-locked, and `attachRemoteAudio` calls it for you, so a page
+that follows the pattern above never has to know the knob exists. `applyPlayoutDelay(track)` is the
+per-track primitive underneath. Until these lived here the cushion was only reachable through
+`/react`, which is why every plain-DOM page — this repo's demos included — froze that way; and in
+React it was applied only by `AvatarVideoSurface`, so `RealtimeAvatarLiveKitRoom` now applies it
+room-wide to whatever you render inside it (`playoutDelaySeconds={false}` opts out).
 
 `attachAvatarTools` runs your functions in the page. Nothing is executed on the platform, and
 a tool has **2.5 seconds** to answer before the call gives up on it and tells her it failed.

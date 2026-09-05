@@ -22,11 +22,15 @@
  * removed in 2262e4c7b — do not re-propose it. No-op on browsers that don't
  * support the hint (the SDK warns and moves on).
  *
- * This lives in the browser folder, not the React one, because the React
- * surface applies it for you and a vanilla page has to do it itself. Until this
- * file existed the helper was only reachable through `realtime-avatar/react`,
- * so every plain-DOM adopter — every one of this repo's own demos included —
- * ran with the browser's default shallow buffer and froze on every lost packet.
+ * This lives in the vanilla browser package, not the React one, because the
+ * React surface applies it for you and a plain-DOM page has to be given it.
+ * Until this file existed the helper was only reachable through
+ * `realtime-avatar/react`, so every plain-DOM adopter — every one of this repo's
+ * own demos included — ran with the browser's default shallow buffer and froze on
+ * every lost packet. Nobody should have to know this knob exists: `prepareAvatarRoom`
+ * (and `attachRemoteAudio`, which calls it) applies it to every track the room
+ * subscribes, and `RealtimeAvatarLiveKitRoom` does the same for React. This file is
+ * the one place the number and its reasoning live.
  * Structural like its siblings: no `livekit-client` import, no version pin.
  */
 

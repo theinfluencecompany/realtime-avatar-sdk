@@ -78,7 +78,7 @@
     </p>
 
     <script type="module">
-      import { applyPlayoutDelay } from "/sdk/browser.js";
+      import { prepareAvatarRoom } from "/sdk/browser.js";
       // LiveKit arrives on the first gesture, not at module evaluation. A static import here ran
       // BEFORE every line below it — ES semantics hoist it — so all the handler wiring waited on
       // three sequential CDN round trips while the page showed a live-looking button that swallowed
@@ -178,10 +178,10 @@
 
           await livekit();
           room = new Room({ adaptiveStream: true });
+          // One call, before connect: every track she publishes gets the 0.5s receiver cushion the React
+          // surface applies on its own. Without it the browser's shallow default buffer freezes her on every lost packet.
+          prepareAvatarRoom(room);
           room.on(RoomEvent.TrackSubscribed, (track) => {
-            // The same receiver cushion the React surface ships: 0.5s of loss recovery, applied to
-            // audio and video alike so the pair stays lip-locked. Without it she freezes on every lost packet.
-            applyPlayoutDelay(track);
             if (track.kind === Track.Kind.Video) {
               track.attach($("v"));
               $("v").classList.add("on");

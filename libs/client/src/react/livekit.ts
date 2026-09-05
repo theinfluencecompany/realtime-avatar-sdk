@@ -20,9 +20,13 @@ import {
 } from "@livekit/components-react";
 import { createElement, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
-import { DisconnectReason, Room, Track } from "livekit-client";
+import { DisconnectReason, Room, RoomEvent, Track } from "livekit-client";
 import { confirmMicTrackEnded } from "./mic-single-flight";
-import { applyAvatarPlayoutDelay, DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS } from "../browser/playout-delay";
+import {
+  applyAvatarPlayoutDelay,
+  applyPlayoutDelay,
+  DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS,
+} from "../../../browser/src/playout-delay";
 import { RealtimeAvatarCapacityError } from "../errors";
 import type { AvatarSessionClient, RealtimeAvatarRequestOptions } from "../session-client";
 import type { LiveKitSessionGrant, LiveKitSessionRequest } from "../livekit-grant";
@@ -172,8 +176,8 @@ export function useReleaseMicLeaseOnTrackEnded(token: symbol): void {
 }
 
 // The cushion itself — the constant, the measurement behind it and the pure
-// apply helper — lives with the vanilla browser helpers (../browser/playout-delay)
-// so a plain-DOM page can reach it through `realtime-avatar/browser`. Re-exported
+// apply helper — lives in the vanilla browser package (libs/browser/src/playout-delay)
+// so a plain-DOM page reaches it through `realtime-avatar/browser`. Re-exported
 // here so the React entries keep their names.
 export { applyAvatarPlayoutDelay, DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS };
 
@@ -725,8 +729,43 @@ export type RealtimeAvatarLiveKitRoomProps = Omit<
   /** Passed directly to LiveKitRoom. */
   options?: LiveKitRoomProps["options"];
   renderRoomAudio?: boolean;
+  /**
+   * Receiver playout cushion applied to EVERY remote track this room subscribes — so
+   * whatever you render inside (a bare `<VideoTrack>`, your own `<video>`, or
+   * {@link AvatarVideoSurface}) gets the freeze-free buffer, not only the SDK's own
+   * surface. Default {@link DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS}. `false` opts out
+   * for a consumer that owns its own buffering.
+   */
+  playoutDelaySeconds?: number | false;
   children?: ReactNode;
 };
+
+/**
+ * Room-wide cushion. Until this existed only {@link AvatarVideoSurface} applied the
+ * delay, so a React adopter who rendered the track themselves inside
+ * {@link RealtimeAvatarLiveKitRoom} froze exactly like a vanilla page. Tracks already
+ * subscribed on mount get it at once; every later subscription gets it on arrival.
+ * {@link useAdaptivePlayout} still wins where it is enabled: it re-opens at the ceiling
+ * on every track change and descends from there.
+ */
+function AvatarPlayoutCushion({ seconds }: { seconds: number }): null {
+  const room = useRoomContext();
+  useEffect(() => {
+    const onSubscribed = (track: unknown): void => {
+      applyPlayoutDelay(track, seconds);
+    };
+    for (const participant of room.remoteParticipants.values()) {
+      for (const publication of participant.trackPublications.values()) {
+        applyPlayoutDelay(publication.track, seconds);
+      }
+    }
+    room.on(RoomEvent.TrackSubscribed, onSubscribed);
+    return () => {
+      room.off(RoomEvent.TrackSubscribed, onSubscribed);
+    };
+  }, [room, seconds]);
+  return null;
+}
 
 /** Thin typed bridge from a Realtime Avatar grant into LiveKitRoom. */
 export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps): ReactElement {
@@ -737,11 +776,16 @@ export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps)
     video = false,
     options,
     renderRoomAudio = true,
+    playoutDelaySeconds = DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS,
     children,
     ...roomProps
   } = props;
   const shouldConnect = Boolean(grant && connect);
   const roomAudio = renderRoomAudio ? createElement(RoomAudioRenderer, { key: "room-audio" }) : null;
+  const cushion =
+    playoutDelaySeconds === false
+      ? null
+      : createElement(AvatarPlayoutCushion, { key: "playout-cushion", seconds: playoutDelaySeconds });
   // HARD-DEFAULT adaptiveStream OFF (kept, post-simulcast — the rationale changed but
   // the value did not; the video-layering design doc). adaptiveStream selects the
   // layer by RENDERED ELEMENT SIZE + visibility, which is the WRONG lever for us twice
@@ -767,7 +811,7 @@ export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps)
       video,
       options: roomOptions,
     },
-    createElement(Fragment, null, children, roomAudio),
+    createElement(Fragment, null, cushion, children, roomAudio),
   );
 }
 
