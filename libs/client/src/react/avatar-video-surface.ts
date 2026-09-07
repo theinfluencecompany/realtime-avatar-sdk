@@ -33,6 +33,7 @@ import { useAvatarPlayoutDelay } from "./livekit";
 import { useAvatarAdaptivePlayoutDelay } from "./use-adaptive-playout";
 import { useAvatarQualityGovernor, type FreezeReadingFn } from "./use-quality-governor";
 import { DEFAULT_GOVERNOR_CONFIG, type QualityCap } from "./quality-governor";
+import { FrameRecovery } from "./frame-recovery";
 
 /** A network gap longer than this is no longer presented as a frozen live frame. */
 export const DEFAULT_AVATAR_FRAME_STALL_MS = 800;
@@ -114,8 +115,8 @@ export type AvatarVideoSurfaceProps = {
    * Debounce (ms) before dropping BACK to the idle clip once the live layer stops
    * being shown (turn end), so back-to-back turns don't flash the idle clip for a
    * frame between them. Default 700. A disconnect bypasses this and reverts to idle
-   * immediately (a dead room is never held). Showing the live layer is always
-   * immediate — only the hide is debounced.
+   * immediately (a dead room is never held). A new track shows its first frame
+   * immediately; after a frame stall, sustained progress is required to return.
    */
   idleReturnDelayMs?: number;
   /**
@@ -165,9 +166,8 @@ export type AvatarVideoSurfaceProps = {
  * end, network drop, agent gone, turn-end mute).
  *
  * ONE BODY, ONE POSE. Only one media layer ever runs: the idle clip is paused while
- * the live layer covers it, and re-enters at its anchor (frame 0) when it takes over.
- * That is what lets the handover be a swap with no blending — see the front-layer and
- * `useIdleWhileResting` notes for the measurements behind it.
+ * the live layer covers it. A temporary interruption resumes the idle clip where
+ * it paused; a deliberate rest or disconnect returns it to its anchor (frame 0).
  *
  * This is the SSOT for "is the avatar live right now": it reads the LiveKit
  * connection state ({@link useConnectionState}) and the bound avatar track
@@ -295,9 +295,14 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   const idleVideoRef = useRef<HTMLVideoElement | null>(null);
   const boxAspect = aspectRatio ?? null;
 
-  // ONE BODY, ONE POSE. The idle clip runs ONLY while it is the visible layer, and
-  // it re-enters at the ANCHOR every time it takes over. See `useIdleWhileResting`.
-  useIdleWhileResting(idleVideoRef, idleVideoUrl, showLive);
+  // A network stall/reconnect is not an anchor-aligned turn end. Rewinding on
+  // each temporary fallback visibly replays the opening on an unstable link.
+  useIdleWhileResting(
+    idleVideoRef,
+    idleVideoUrl,
+    showLive,
+    !live || connectionState === ConnectionState.Disconnected,
+  );
   useLiveResumeOnProducing(liveWrapRef, trackProducing);
 
   const fitClass = fit === "cover" ? AVATAR_VIDEO_FIT_COVER : AVATAR_VIDEO_FIT_CONTAIN;
@@ -658,6 +663,9 @@ function useLiveFrameFlow(
   stallAfterMs: number,
 ): LiveFrameFlow {
   const boundedStallMs = normalizeFrameStallMs(stallAfterMs);
+  // Keep recovery evidence across mute/unmute on the SAME track: a network mute
+  // must not turn every recovery burst into another immediately visible first frame.
+  const recovery = useMemo(() => new FrameRecovery(boundedStallMs), [trackIdentity, boundedStallMs]);
   const [flowing, setFlowing] = useState(false);
   const [seenFrame, setSeenFrame] = useState(false);
   const flowingRef = useRef(false);
@@ -695,6 +703,9 @@ function useLiveFrameFlow(
     const markFrame = (): void => {
       const previous = sampleRef.current;
       const now = Date.now();
+      // A frame callback and the polling fallback can observe the same frame.
+      // Advance both cursors together so a poll cannot extend a stopped burst.
+      lastCurrentTime = video?.currentTime ?? lastCurrentTime;
       const firstFrame = !previous.seenFrame;
       sampleRef.current = {
         seenFrame: true,
@@ -710,9 +721,10 @@ function useLiveFrameFlow(
         resumePending: false,
       };
       if (firstFrame) setSeenFrame(true);
-      if (!flowingRef.current) {
-        flowingRef.current = true;
-        setFlowing(true);
+      const nextFlowing = recovery.frame(now);
+      if (flowingRef.current !== nextFlowing) {
+        flowingRef.current = nextFlowing;
+        setFlowing(nextFlowing);
       }
     };
 
@@ -760,13 +772,17 @@ function useLiveFrameFlow(
         lastCurrentTime = video.currentTime;
         markFrame();
       }
-      const nextFlowing = isFrameFlowingAt({
+      const frameFresh = isFrameFlowingAt({
         trackProducing: true,
         seenFrame: sampleRef.current.seenFrame,
         lastFrameAtMs: sampleRef.current.lastFrameAtMs,
         nowMs: Date.now(),
         stallAfterMs: boundedStallMs,
       });
+      if (!frameFresh && sampleRef.current.seenFrame) recovery.stall();
+      // Timer ticks are not frames. An isolated recovered frame remains fresh
+      // for 800ms, but that must not satisfy the sustained-progress requirement.
+      const nextFlowing = frameFresh && recovery.ready;
       if (flowingRef.current !== nextFlowing) {
         flowingRef.current = nextFlowing;
         setFlowing(nextFlowing);
@@ -783,7 +799,7 @@ function useLiveFrameFlow(
   // A full reconnect can replace the RemoteTrack while both publications remain
   // `live`. Reset the presentation clock so a new track whose currentTime starts at
   // zero is never compared with the retired track's larger timestamp.
-  }, [wrapRef, trackProducing, trackIdentity, boundedStallMs]);
+  }, [wrapRef, trackProducing, trackIdentity, boundedStallMs, recovery]);
 
   const freezeReading = useCallback<FreezeReadingFn>(() => {
     const sample = sampleRef.current;
@@ -840,36 +856,22 @@ export function useDebouncedHide(wanted: boolean, delayMs: number): boolean {
 }
 
 /**
- * The idle clip runs ONLY while it is the layer being shown, and re-enters at the
- * ANCHOR every time it takes over.
- *
- * Both halves are load-bearing, and the old behaviour had neither.
- *
- * PAUSE WHILE COVERED. The idle clip used to play for the entire call underneath an
- * opaque live layer — invisible, still decoding, and (the part that mattered) still
- * ADVANCING. By the time the live layer stepped aside, its cursor sat wherever a
- * free-running clock had carried it, which is unrelated to the pose the renderer just
- * left. That is the whole ghost: two clocks, one body. A paused layer cannot drift.
- *
- * RE-ENTER AT THE ANCHOR. Frame 0 is the shared i2v still every clip of an avatar is
- * generated from, and the renderer's body plays back to that same pose (it runs its
- * clips to completion). So seeking to 0 before the handover is what makes the swap
- * anchor→anchor — the one position where the two layers agree by construction, and
- * therefore the one place a swap is invisible without any blending.
- *
- * The decoder holds the last live frame while this runs, so the seek+play happens
- * BEHIND a still picture and the viewer sees one continuous body.
+ * Pause the idle clip while covered, and resume its playhead during temporary
+ * stalls/reconnects. Only a deliberate rest or disconnect seeks to the anchor.
+ * A network stall can happen at any pose; replaying frame 0 on each packet burst
+ * does not align it with the live stream and makes the fallback visibly jump.
  */
 function useIdleWhileResting(
   videoRef: { current: HTMLVideoElement | null },
   idleVideoUrl: string | null,
   showLive: boolean,
+  resetToAnchor: boolean,
 ): void {
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !idleVideoUrl) return;
-    applyIdleRest(video, showLive);
-  }, [videoRef, idleVideoUrl, showLive]);
+    applyIdleRest(video, showLive, resetToAnchor);
+  }, [videoRef, idleVideoUrl, showLive, resetToAnchor]);
 }
 
 /** The minimum an idle layer must expose for {@link applyIdleRest} (test seam). */
@@ -885,19 +887,23 @@ export type RestableVideoElement = {
  * enforces are testable without a DOM or a React tree:
  *
  *     covered → paused (and left where it is — nothing is watching it)
- *     resting → seeked to the ANCHOR (frame 0), then playing
+ *     temporary fallback → resume the paused playhead
+ *     deliberate rest → seek to the ANCHOR (frame 0), then play
  *
  * The seek is skipped when already at 0: re-seeking a PLAYING element would stutter it
  * once per commit, which is the defect this function exists to remove, not cause.
  */
-export function applyIdleRest(video: RestableVideoElement, showLive: boolean): void {
+export function applyIdleRest(
+  video: RestableVideoElement,
+  showLive: boolean,
+  resetToAnchor = true,
+): void {
   if (showLive) {
     // Covered: stop the clock. Nothing to see, nothing to decode, nothing to drift.
     video.pause();
     return;
   }
-  // Taking over: enter at the anchor, then run.
-  if (video.currentTime !== 0) video.currentTime = 0;
+  if (resetToAnchor && video.currentTime !== 0) video.currentTime = 0;
   if (video.paused) void Promise.resolve(video.play()).catch(() => {});
 }
 

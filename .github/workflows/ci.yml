@@ -68,6 +68,12 @@ jobs:
       # JS, so a consumer on 20 never runs this suite.
       - run: npm test
         if: matrix.node != '20'
+      - name: Install browser for frame-stall regression
+        if: matrix.node == '22'
+        run: npx playwright install --with-deps chromium
+      - name: Interrupted frame delivery does not replay idle
+        if: matrix.node == '22'
+        run: npm run eval:web-stall
       # Scans shipped JS, .d.ts AND sourcemaps. A sourcemap's sourcesContent embeds the
       # original source, so a clean source tree can still publish a leaky artifact.
       - run: npm run boundary

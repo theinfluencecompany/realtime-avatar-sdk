@@ -1,7 +1,7 @@
 {
   "name": "realtime-avatar-sdk",
   "private": true,
-  "description": "Realtime Avatar SDK \u2014 live voice and video characters you can interrupt.",
+  "description": "Realtime Avatar SDK — live voice and video characters you can interrupt.",
   "license": "MIT",
   "workspaces": [
     "libs/*"
@@ -22,15 +22,18 @@
     "spec:types": "openapi-typescript spec/realtime-avatar.openapi.json -o libs/http-client/src/generated/openapi.ts",
     "surface": "node scripts/check-public-surface.mjs",
     "test": "node --test --experimental-transform-types libs/*/test/*.test.ts",
+    "eval:web-stall": "node scripts/eval-web-stall.mjs",
     "typecheck": "tsc --noEmit && tsc -p libs/client/tsconfig.json --noEmit && tsc -p libs/sdk-server/tsconfig.json --noEmit",
     "reachable": "node scripts/check-reachable.mjs",
-    "spec:verify": "openapi-typescript spec/realtime-avatar.openapi.json -o /tmp/rta-generated-check.ts && diff -q /tmp/rta-generated-check.ts libs/http-client/src/generated/openapi.ts || (echo '\\n\u2717 generated/openapi.ts does not match the vendored spec \u2014 run `npm run spec` and commit' && exit 1)",
+    "spec:verify": "openapi-typescript spec/realtime-avatar.openapi.json -o /tmp/rta-generated-check.ts && diff -q /tmp/rta-generated-check.ts libs/http-client/src/generated/openapi.ts || (echo '\\n✗ generated/openapi.ts does not match the vendored spec — run `npm run spec` and commit' && exit 1)",
     "externals": "node scripts/check-externals.mjs",
     "derivation": "node scripts/check-derivation.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "esbuild": "0.27.7",
     "openapi-typescript": "^7.13.0",
+    "playwright": "1.60.0",
     "typescript": "^5.9.2"
   }
 }
