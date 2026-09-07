@@ -68,6 +68,20 @@ jobs:
       # JS, so a consumer on 20 never runs this suite.
       - run: npm test
         if: matrix.node != '20'
+      - name: Install browser and video fixture tools
+        if: matrix.node == '22'
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get install -y ffmpeg
+      - name: Interrupted frame delivery does not replay idle
+        if: matrix.node == '22'
+        run: npm run eval:web-stall
+      - uses: actions/upload-artifact@v4
+        if: failure() && matrix.node == '22'
+        with:
+          name: frame-stall-browser
+          path: /tmp/rta-web-stall-*/
+          retention-days: 7
       # Scans shipped JS, .d.ts AND sourcemaps. A sourcemap's sourcesContent embeds the
       # original source, so a clean source tree can still publish a leaky artifact.
       - run: npm run boundary
