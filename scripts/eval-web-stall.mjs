@@ -148,7 +148,9 @@ try {
   await page.evaluate(()=>window.disconnect());await page.waitForTimeout(150);
   assert.equal(await page.locator('[data-testid="avatar-live-layer"]').getAttribute('aria-hidden'),'true','disconnect must hide live');
   await page.screenshot({path:join(reportDir,'final.png')});
-  const transitions=beforeDisconnect.samples.filter((v,i,a)=>i&&v.live!==a[i-1].live);
+  // On a fast runner the first live frame can precede the first 50ms sample.
+  // Count that initial promotion from the surface's initial hidden state too.
+  const transitions=beforeDisconnect.samples.filter((v,i,a)=>v.live!==(i ? a[i-1].live : false));
   const summary={arm:baseline?'baseline':'working-tree',liveToIdle:transitions.filter(v=>!v.live).length,
     idleToLive:transitions.filter(v=>v.live).length,idleSeeks:beforeDisconnect.events.length,
     firstLiveAtMs:beforeDisconnect.samples.find(v=>v.live)?.at,
