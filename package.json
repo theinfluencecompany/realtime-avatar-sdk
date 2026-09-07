@@ -23,6 +23,8 @@
     "surface": "node scripts/check-public-surface.mjs",
     "test": "node --test --experimental-transform-types libs/*/test/*.test.ts",
     "eval:web-stall": "node scripts/eval-web-stall.mjs",
+    "eval:quality": "node scripts/eval-quality-governor.mjs",
+    "eval:video-ramp": "node scripts/eval-video-ramp.mjs",
     "typecheck": "tsc --noEmit && tsc -p libs/client/tsconfig.json --noEmit && tsc -p libs/sdk-server/tsconfig.json --noEmit",
     "reachable": "node scripts/check-reachable.mjs",
     "spec:verify": "openapi-typescript spec/realtime-avatar.openapi.json -o /tmp/rta-generated-check.ts && diff -q /tmp/rta-generated-check.ts libs/http-client/src/generated/openapi.ts || (echo '\\n✗ generated/openapi.ts does not match the vendored spec — run `npm run spec` and commit' && exit 1)",
