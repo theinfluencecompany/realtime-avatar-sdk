@@ -26,6 +26,7 @@ const arms=(process.env.RAMP_ARMS || "before,app-only,after").split(",");
 const packageBaseline=process.env.RAMP_PACKAGE_BASELINE;
 const packageCandidate=process.env.RAMP_PACKAGE_CANDIDATE;
 const peerRoot=process.env.RAMP_PEER_ROOT;
+const publisherPeerRoot=process.env.RAMP_PUBLISHER_PEER_ROOT || peerRoot;
 const lossEvery=Number(process.env.RAMP_LOSS_EVERY || 0);
 const lossStart=Number(process.env.RAMP_LOSS_START_MS || 5000);
 const lossEnd=Number(process.env.RAMP_LOSS_END_MS || 11000);
@@ -112,7 +113,7 @@ function App(){
   useAvatarAdaptivePlayoutDelay(videoTrack,audioTrack,arm!=='before',fasterPlayout);
   useAvatarQualityGovernor({enabled:arm==='before',freezeReading:smooth,
     config:arm==='before'?{...DEFAULT_GOVERNOR_CONFIG,openingCap:'high'}:stable});
-  return <><AvatarVideoSurface idleVideoUrl='/clip.mp4' openingCap='high' adaptiveQuality
+  return <><AvatarVideoSurface data-testid='ramp-surface' idleVideoUrl='/clip.mp4' openingCap='high' adaptiveQuality
     adaptivePlayout={arm==='before'} crossfadeMs={150} showLiveBadge={false} fit='cover'/><RoomAudioRenderer/></>;
 }
 if(role==='publisher'){
@@ -195,10 +196,14 @@ if(role==='publisher'){
 }
 `;
 const bundles={};
-for(const arm of arms){
-  const packagePath=arm==='after'?packageCandidate:packageBaseline;
+// The synthetic worker can select its own peer independently of the pinned
+// receiver. Record that choice: a publisher that sends no upper stream cannot
+// establish the receiver's full-resolution ramp, regardless of its requested cap.
+for(const arm of [...arms,'publisher']){
+  const packagePath=arm==='publisher'?undefined:arm==='after'?packageCandidate:packageBaseline;
+  const selectedPeerRoot=arm==='publisher'?publisherPeerRoot:peerRoot;
   const built=await build({stdin:{contents:entry,resolveDir:root,loader:"tsx"},bundle:true,write:false,
-    ...(peerRoot?{alias:Object.fromEntries(['react','react-dom','livekit-client','@livekit/components-react'].map(name=>[name,resolve(peerRoot,name)]))}:{}),
+    ...(selectedPeerRoot?{alias:Object.fromEntries(['react','react-dom','livekit-client','@livekit/components-react'].map(name=>[name,resolve(selectedPeerRoot,name)]))}:{}),
     platform:"browser",format:"esm",define:{"process.env.NODE_ENV":'"production"'},plugins:packagePath?[{
       name:'installed-sdk',setup(b){
         b.onResolve({filter:/^\.\/libs\/client\/src\/react\//},()=>({path:'sdk',namespace:'installed-sdk'}));
@@ -216,7 +221,10 @@ const server=createServer((req,res)=>{
   if(url.pathname==="/clip.mp4"){res.setHeader("Content-Type","video/mp4");res.end(clip);return;}
   if(url.pathname==="/app.js"){res.setHeader("Content-Type","text/javascript");res.end(bundles[url.searchParams.get("arm")]);return;}
   res.setHeader("Content-Type","text/html");
-  res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#091321}canvas{width:100%;height:100%}</style><div id="app"></div><script type="module" src="/app.js?arm='+encodeURIComponent(url.searchParams.get("arm"))+'"></script>');
+  // Supply the SDK's utility-class geometry without requiring the host's Tailwind
+  // build. Without this the 0.7.x live video sits below a full-size idle element,
+  // outside the viewport: its frame callbacks and the measurement are invalid.
+  res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#app{margin:0;width:100%;height:100%;overflow:hidden;background:#091321}canvas{width:100%;height:100%}[data-testid="ramp-surface"]{position:relative;width:100%;height:100%;overflow:hidden}[data-testid="avatar-live-layer"]{position:absolute;inset:0;z-index:20;width:100%;height:100%}[data-testid="avatar-idle-video"],[data-testid="avatar-live-layer"] video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 22%}</style><div id="app"></div><script type="module" src="/app.js?arm='+encodeURIComponent(url.searchParams.get('role')==='publisher'?'publisher':url.searchParams.get("arm"))+'"></script>');
 });
 await new Promise(r=>server.listen(0,"127.0.0.1",r));
 let browser;const reports=[];
@@ -229,19 +237,31 @@ try{
     try{
       const pubContext=await browser.newContext();contexts.push(pubContext);
       const publisher=await pubContext.newPage();
+      publisher.setDefaultTimeout(15000);
       const url=(role)=>`http://127.0.0.1:${server.address().port}/?`+new URLSearchParams({role,arm,token:token(room,role)});
-      await publisher.goto(url("publisher"));await publisher.waitForFunction(()=>window.ready,{},{timeout:30000});
+      console.log(name+': publisher connecting');
+      await publisher.goto(url("publisher"));await publisher.waitForFunction(()=>window.ready,{},{timeout:15000,polling:100});
       const viewerContext=await browser.newContext({viewport:{width:360,height:640},
         ...(trial===0?{recordVideo:{dir:reportDir,size:{width:360,height:640}}}:{})});contexts.push(viewerContext);
       const page=await viewerContext.newPage();const errors=[];
-      page.on("pageerror",e=>errors.push(e.message));
+      page.setDefaultTimeout(15000);
+      page.on("pageerror",e=>{errors.push(e.message);console.error(name+': '+e.message);});
+      await page.bringToFront();
       activeSince=Date.now();mediaPackets=0;droppedPackets=0;impairedMediaPackets=0;
-      await page.goto(url("viewer"));await page.waitForFunction(()=>window.ready,{},{timeout:30000});
+      console.log(name+': receiver connecting');
+      await page.goto(url("viewer"));await page.waitForFunction(()=>window.ready,{},{timeout:15000,polling:100});
+      console.log(name+': measuring');
       await page.waitForTimeout(durationMs);
       const report=await page.evaluate(()=>window.report);
+      report.layout=await page.evaluate(()=>{
+        const box=document.querySelector('[data-testid="avatar-live-layer"] video')?.getBoundingClientRect();
+        return {visible:document.visibilityState,video:box?{x:box.x,y:box.y,width:box.width,height:box.height}:null};
+      });
+      assert.equal(report.layout.visible,'visible');
+      assert.deepEqual(report.layout.video,{x:0,y:0,width:360,height:640},'live video must fill the visible receiver viewport');
       report.trial=trial+1;report.errors=errors;report.browser=browser.version();
       report.network={lossEvery,lossStart,lossEnd,mediaPackets,impairedMediaPackets,droppedPackets};
-      await page.screenshot({path:resolve(reportDir,name+".png")});
+      await page.screenshot({path:resolve(reportDir,name+".png"),timeout:15000});
       const video=page.video();await viewerContext.close();contexts.pop();
       if(video)await video.saveAs(resolve(reportDir,arm+".webm"));
       await writeFile(resolve(reportDir,name+".json"),JSON.stringify(report,null,2));reports.push(report);
@@ -252,5 +272,5 @@ try{
         widths:[...new Set(report.frames.map(f=>f.width))],frames:report.frames.length}));
     }finally{for(const context of contexts.reverse())await context.close();}
   }
-  await writeFile(resolve(reportDir,"runs.json"),JSON.stringify({baselineRef:"40b0b02850ff2a12ca349d40d11b34986aa51b6e",packageBaseline,packageCandidate,peerRoot,trials,durationMs,reports},null,2));
+  await writeFile(resolve(reportDir,"runs.json"),JSON.stringify({baselineRef:"40b0b02850ff2a12ca349d40d11b34986aa51b6e",packageBaseline,packageCandidate,peerRoot,publisherPeerRoot,trials,durationMs,reports},null,2));
 }finally{await browser?.close();await new Promise(r=>server.close(r));if(lossEvery){for(const socket of upstreams.values())socket.close();relay.close();}}

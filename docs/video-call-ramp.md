@@ -85,6 +85,10 @@ By default both source arms use revision
 To compare a consumer's exact pinned package, set `RAMP_PACKAGE_BASELINE`,
 `RAMP_PACKAGE_CANDIDATE`, and `RAMP_PEER_ROOT` to local package/dependency paths.
 Both arms then use those installed bundles with one shared React/LiveKit runtime.
+`RAMP_PUBLISHER_PEER_ROOT` can override the synthetic publisher independently;
+otherwise it follows `RAMP_PEER_ROOT`. Verify that an upper stream was actually
+received before interpreting a full-resolution ramp. Requested HIGH alone is not
+proof that the publisher/SFU delivered it.
 `RAMP_TRIALS`, `RAMP_DURATION_MS`, and `RAMP_ARMS` bound the workload.
 
 Loss runs use a local UDP relay on port 39082. During seconds 5–11 it drops every
