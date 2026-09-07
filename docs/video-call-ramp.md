@@ -72,8 +72,8 @@ uses the real LiveKit React bindings and SDK video surface. The three arms are:
 | Arm | Quality owner/config | SDK adapter | Consumer playout policy |
 | --- | --- | --- | --- |
 | before | Two governors; fresh config each render | Baseline | Existing defaults |
-| app-only | One governor; memoized config | Baseline | `shrinkAlpha: 0.25` |
-| after | One governor; memoized config | Patched | `shrinkAlpha: 0.25` |
+| app-only | Surface governor; memoized config | Baseline | `shrinkAlpha: 0.25` |
+| after | Surface governor; memoized config | Patched | `shrinkAlpha: 0.25` |
 
 The faster playout policy is a **consumer experiment**, not a change to SDK
 defaults in this PR. The fixture renders every 500 ms. It alternates arm order

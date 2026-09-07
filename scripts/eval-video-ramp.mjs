@@ -110,9 +110,9 @@ function App(){
   const stable=useMemo(()=>({...DEFAULT_GOVERNOR_CONFIG,openingCap:'high'}),[]);
   const {videoTrack,audioTrack}=useVoiceAssistant();
   useAvatarAdaptivePlayoutDelay(videoTrack,audioTrack,arm!=='before',fasterPlayout);
-  useAvatarQualityGovernor({enabled:true,freezeReading:smooth,
+  useAvatarQualityGovernor({enabled:arm==='before',freezeReading:smooth,
     config:arm==='before'?{...DEFAULT_GOVERNOR_CONFIG,openingCap:'high'}:stable});
-  return <><AvatarVideoSurface idleVideoUrl='/clip.mp4' openingCap='high' adaptiveQuality={arm==='before'}
+  return <><AvatarVideoSurface idleVideoUrl='/clip.mp4' openingCap='high' adaptiveQuality
     adaptivePlayout={arm==='before'} crossfadeMs={150} showLiveBadge={false} fit='cover'/><RoomAudioRenderer/></>;
 }
 if(role==='publisher'){
