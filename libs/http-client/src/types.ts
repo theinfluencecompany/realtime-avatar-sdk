@@ -49,6 +49,7 @@ import type { components } from "./generated/openapi.ts";
  * loudly if the field it names ever goes away.
  */
 type Wire = components["schemas"];
+type ChoreographyWire = NonNullable<Wire["LiveKitSessionRequest"]["choreography"]>;
 
 /**
  * Live video and audio (default), or audio only.
@@ -183,6 +184,15 @@ export interface CallPolicy {
   listen?: boolean;
   /** How she is rendered. */
   video?: VideoPolicy;
+  /** Server-owned clip policy. New choreography options require the tenant rollout flag. */
+  choreography?: {
+    directiveCooldownSeconds?: ChoreographyWire["directive_cooldown_seconds"];
+    idleSpecialProbability?: ChoreographyWire["idle_special_probability"];
+    noRepeatOneShots?: ChoreographyWire["no_repeat_one_shots"];
+    speakPolicy?: ChoreographyWire["speak_policy"];
+    specialWeight?: ChoreographyWire["special_weight"];
+    crossfadeMs?: ChoreographyWire["crossfade_ms"];
+  };
   /** Voice override for this call; omit to use the avatar's default. */
   voice?: unknown;
   /**

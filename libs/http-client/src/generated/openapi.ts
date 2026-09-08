@@ -385,7 +385,8 @@ export interface components {
                 video_cache_id?: string;
                 max_seconds?: number;
                 /** @enum {string} */
-                trigger?: "idle" | "listen" | "think" | "directive";
+                trigger?: "idle" | "listen" | "think" | "directive" | "emotion";
+                emotion?: string;
                 loop?: boolean;
                 weight?: number;
                 crossfade_ms?: number;
@@ -398,6 +399,11 @@ export interface components {
                 idle_dwell_min_seconds?: number;
                 idle_dwell_max_seconds?: number;
                 special_weight?: number;
+                idle_special_probability?: number;
+                directive_cooldown_seconds?: number;
+                no_repeat_one_shots?: boolean;
+                /** @constant */
+                speak_policy?: "tiered";
                 start_grace_seconds?: number;
                 crossfade_ms?: number;
                 /** @enum {string} */
@@ -739,11 +745,13 @@ export interface components {
             data: {
                 clipId: string;
                 /** @enum {string} */
-                role: "idle" | "listen" | "gesture";
+                role: "idle" | "listen" | "gesture" | "emotion";
+                emotion?: string | null;
                 /** @enum {string} */
                 status: "queued" | "generating" | "ready" | "failed";
                 url: string | null;
                 whenHint: string | null;
+                weight: number | null;
                 /** @enum {string} */
                 source: "generated" | "uploaded";
                 uploadAssetId: string | null;
@@ -788,8 +796,10 @@ export interface components {
             clips: {
                 clipId: string;
                 /** @enum {string} */
-                role: "idle" | "listen" | "gesture";
+                role: "idle" | "listen" | "gesture" | "emotion";
+                emotion?: string;
                 whenHint?: string;
+                weight?: number;
                 source: {
                     motionPrompt: string;
                 } | {
@@ -803,11 +813,13 @@ export interface components {
             data: {
                 clipId: string;
                 /** @enum {string} */
-                role: "idle" | "listen" | "gesture";
+                role: "idle" | "listen" | "gesture" | "emotion";
+                emotion?: string | null;
                 /** @enum {string} */
                 status: "queued" | "generating" | "ready" | "failed";
                 url: string | null;
                 whenHint: string | null;
+                weight: number | null;
                 /** @enum {string} */
                 source: "generated" | "uploaded";
                 uploadAssetId: string | null;

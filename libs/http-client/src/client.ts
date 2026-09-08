@@ -129,6 +129,17 @@ export class RealtimeAvatar {
     }
     if (options.maxSeconds !== undefined) body.max_session_seconds = Math.floor(options.maxSeconds);
     if (options.voice !== undefined) body.voice = options.voice;
+    if (options.choreography !== undefined) {
+      const c = options.choreography;
+      body.choreography = {
+        directive_cooldown_seconds: c.directiveCooldownSeconds,
+        idle_special_probability: c.idleSpecialProbability,
+        no_repeat_one_shots: c.noRepeatOneShots,
+        speak_policy: c.speakPolicy,
+        special_weight: c.specialWeight,
+        crossfade_ms: c.crossfadeMs,
+      };
+    }
     if (options.metadata !== undefined) body.client_metadata = options.metadata;
     // The grant is the gate: the worker only exposes tool registration for a session whose
     // mint carried this capability.

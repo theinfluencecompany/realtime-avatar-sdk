@@ -732,6 +732,16 @@ above if it has a trap in it. A rule that is only in someone's head is not a rul
 
 ### Releasing
 
+Clip choreography is a tenant-scoped rollout. `startCall({ choreography: {
+directiveCooldownSeconds: 0, idleSpecialProbability: 0.5, noRepeatOneShots: true,
+speakPolicy: "tiered" } })` is server policy; other tenants receive
+`403 clip_choreography_not_enabled`. `specialWeight` remains a per-clip default weight,
+not a pool probability. Emotion declarations use `role: "emotion", emotion: "smile"`
+(an explicit label, never inferred from the clip id). React session options carry the
+equivalent snake_case keys inside `choreography`. Ship workers, then platform contracts
+and tenant gate, then publish the SDK, then opt the application in. Do not publish these
+options ahead of the deployed platform. This change does not enable any call by default.
+
 Every release is **manual**. Nothing publishes on a merge — cutting a version is a decision,
 and a trigger you cannot decline is not one.
 
