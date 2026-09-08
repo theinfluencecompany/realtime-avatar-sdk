@@ -144,6 +144,7 @@ const clipTriggerSchema = z.enum([
   "listen", 
   "think", 
   "directive", 
+  "emotion",
 ]);
 
 export const sessionClipSchema = z
@@ -157,6 +158,7 @@ export const sessionClipSchema = z
     max_seconds: z.number().min(1).max(10).optional(),
 
     trigger: clipTriggerSchema.optional(),
+    emotion: z.string().trim().min(1).max(48).regex(/^[a-z][a-z0-9_-]*$/).optional(),
 
     loop: z.boolean().optional(),
 
@@ -179,6 +181,12 @@ export const sessionClipSchema = z
   .refine((clip) => clip.source_video_url || clip.video_cache_id, {
     message: "a clip needs source_video_url or video_cache_id",
   })
+  .refine((clip) => (clip.trigger === "emotion") === (clip.emotion !== undefined), {
+    message: "emotion is required exactly for trigger emotion", path: ["emotion"],
+  })
+  .refine((clip) => clip.trigger !== "emotion" || clip.loop !== true, {
+    message: "emotion clips are one-shots", path: ["loop"],
+  })
   // One cue, one name. Sending both is rejected at the edge, so catching it here turns a
   // remote 422 into a local error that says which field to drop.
   .refine((clip) => !(clip.when && clip.hint), {
@@ -193,6 +201,10 @@ const sessionChoreographySchema = z
     idle_dwell_max_seconds: z.number().min(1).max(120).optional(),
 
     special_weight: z.number().min(0).max(100).optional(),
+    idle_special_probability: z.number().min(0).max(1).optional(),
+    directive_cooldown_seconds: z.number().min(0).optional(),
+    no_repeat_one_shots: z.boolean().optional(),
+    speak_policy: z.literal("tiered").optional(),
 
     start_grace_seconds: z.number().min(0).max(60).optional(),
 
@@ -356,6 +368,7 @@ export const liveKitSessionRequestSchema = z
 
     // Unbounded, for the same reason as `clip_library` on the wire schema above.
     clipLibrary: z.array(sessionClipSchema).optional(),
+    choreography: sessionChoreographySchema.optional(),
 
     behavior: sessionBehaviorSchema.optional(),
 
@@ -562,6 +575,7 @@ export const toLiveKitSessionWireRequest = (
     voice: request.voice,
     voice_id: request.voiceId,
     clip_library: request.clipLibrary,
+    choreography: request.choreography,
     behavior: request.behavior,
     render_backend: request.renderBackend,
     support_edits: request.supportEdits,

@@ -80,7 +80,7 @@
           "instructions": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 8000
+            "maxLength": 16000
           },
           "initial_context": {
             "default": [],
@@ -100,7 +100,7 @@
                 "content": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 4000
+                  "maxLength": 8000
                 }
               },
               "required": [
@@ -464,8 +464,15 @@
                     "idle",
                     "listen",
                     "think",
-                    "directive"
+                    "directive",
+                    "emotion"
                   ]
+                },
+                "emotion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^[a-z][a-z0-9_-]*$"
                 },
                 "loop": {
                   "type": "boolean"
@@ -524,6 +531,22 @@
                 "type": "number",
                 "minimum": 0,
                 "maximum": 100
+              },
+              "idle_special_probability": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "directive_cooldown_seconds": {
+                "type": "number",
+                "minimum": 0
+              },
+              "no_repeat_one_shots": {
+                "type": "boolean"
+              },
+              "speak_policy": {
+                "type": "string",
+                "const": "tiered"
               },
               "start_grace_seconds": {
                 "type": "number",
@@ -2162,7 +2185,21 @@
                   "enum": [
                     "idle",
                     "listen",
-                    "gesture"
+                    "gesture",
+                    "emotion"
+                  ]
+                },
+                "emotion": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 48,
+                      "pattern": "^[a-z][a-z0-9_-]*$"
+                    },
+                    {
+                      "type": "null"
+                    }
                   ]
                 },
                 "status": {
@@ -2189,6 +2226,16 @@
                   "anyOf": [
                     {
                       "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "weight": {
+                  "anyOf": [
+                    {
+                      "type": "number"
                     },
                     {
                       "type": "null"
@@ -2378,6 +2425,7 @@
                 "status",
                 "url",
                 "whenHint",
+                "weight",
                 "source",
                 "uploadAssetId",
                 "motionPrompt",
@@ -2485,13 +2533,25 @@
                   "enum": [
                     "idle",
                     "listen",
-                    "gesture"
+                    "gesture",
+                    "emotion"
                   ]
+                },
+                "emotion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "pattern": "^[a-z][a-z0-9_-]*$"
                 },
                 "whenHint": {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 280
+                },
+                "weight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
                 },
                 "source": {
                   "anyOf": [
@@ -2564,7 +2624,21 @@
                   "enum": [
                     "idle",
                     "listen",
-                    "gesture"
+                    "gesture",
+                    "emotion"
+                  ]
+                },
+                "emotion": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 48,
+                      "pattern": "^[a-z][a-z0-9_-]*$"
+                    },
+                    {
+                      "type": "null"
+                    }
                   ]
                 },
                 "status": {
@@ -2591,6 +2665,16 @@
                   "anyOf": [
                     {
                       "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "weight": {
+                  "anyOf": [
+                    {
+                      "type": "number"
                     },
                     {
                       "type": "null"
@@ -2780,6 +2864,7 @@
                 "status",
                 "url",
                 "whenHint",
+                "weight",
                 "source",
                 "uploadAssetId",
                 "motionPrompt",

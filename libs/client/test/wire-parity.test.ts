@@ -4,6 +4,27 @@ import { test } from "node:test";
 import { RealtimeAvatar } from "../../http-client/src/index.ts";
 import { liveKitSessionGrantSchema, toLiveKitSessionWireRequest } from "../src/wire.ts";
 
+test("optional choreography reaches the wire on both SDK paths, including zero/false", async () => {
+  const core = await coreWire({ avatarId: "ava_parity", choreography: {
+    directiveCooldownSeconds: 0, idleSpecialProbability: 0.5,
+    noRepeatOneShots: false, speakPolicy: "tiered", specialWeight: 0.12, crossfadeMs: 200,
+  } });
+  const choreography = { directive_cooldown_seconds: 0, idle_special_probability: 0.5,
+    no_repeat_one_shots: false, speak_policy: "tiered" as const, special_weight: 0.12, crossfade_ms: 200 };
+  const react = toLiveKitSessionWireRequest({ avatarId: "ava_parity", choreography,
+    clipLibrary: [{ clip_id: "arbitrary", trigger: "emotion", emotion: "shy",
+      source_video_url: "https://example.com/clip.mp4" }],
+  });
+  assert.deepEqual(core.choreography, choreography);
+  assert.deepEqual(react.choreography, choreography);
+  assert.equal(react.clip_library?.[0].emotion, "shy");
+  assert.ok(!("choreography" in toLiveKitSessionWireRequest({ avatarId: "ava_parity" })));
+  assert.ok(!("choreography" in await coreWire({ avatarId: "ava_parity" })));
+  assert.throws(() => toLiveKitSessionWireRequest({ avatarId: "ava_parity",
+    clipLibrary: [{ clip_id: "emotion_smile", trigger: "emotion", source_video_url: "https://example.com/c.mp4" }],
+  }));
+});
+
 /**
  * Two packages translate the same call into the same wire, and nothing was checking that they
  * agreed. They did not: for `startCall({ avatarId })`, `realtime-avatar` sent
