@@ -46,6 +46,7 @@ export {
 } from "./adaptive-playout";
 export {
   AvatarVideoSurface,
+  DEFAULT_AVATAR_UNSTABLE_STALL_MS,
   type AvatarVideoFit,
   type AvatarVideoSurfaceProps,
   type LivePlaybackKeeper,

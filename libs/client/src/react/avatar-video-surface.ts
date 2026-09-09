@@ -33,10 +33,24 @@ import { useAvatarPlayoutDelay } from "./livekit";
 import { useAvatarAdaptivePlayoutDelay } from "./use-adaptive-playout";
 import { useAvatarQualityGovernor, type FreezeReadingFn } from "./use-quality-governor";
 import { DEFAULT_GOVERNOR_CONFIG, type QualityCap } from "./quality-governor";
-import { FrameRecovery } from "./frame-recovery";
+import { FrameRecovery, StallEscalation } from "./frame-recovery";
+// The escalated hold is part of this surface's contract (see `frameStallMs`), so it is
+// re-exported from here beside DEFAULT_AVATAR_FRAME_STALL_MS.
+export { DEFAULT_AVATAR_UNSTABLE_STALL_MS } from "./frame-recovery";
 
-/** A network gap longer than this is no longer presented as a frozen live frame. */
-export const DEFAULT_AVATAR_FRAME_STALL_MS = 800;
+/**
+ * A network gap longer than this is no longer presented as a frozen live frame.
+ *
+ * 2 s, not the 800 ms this shipped with. Every fall-back is a hard cut to a body at an
+ * unrelated pose and, ~500 ms of frames later, a cut back — so the threshold sets how
+ * often a lossy link makes the avatar visibly jump. On a prod rtx6000 call through a
+ * 900 kbit / 10 % loss link the steady-state presented-frame gaps were 650–1150 ms
+ * (2026-09-09): at 800 ms that is one jump per gap, ~10 in a minute; at 2 s it is none.
+ * The price is a frozen face for up to 2 s on a real outage — what every video call
+ * does under loss. Escalates further once the link has proven unstable; see
+ * {@link StallEscalation}.
+ */
+export const DEFAULT_AVATAR_FRAME_STALL_MS = 2_000;
 
 /** Ignore ordinary 15-25fps presentation spacing when scoring a freeze. */
 export const AVATAR_FRAME_GAP_FREEZE_FLOOR_MS = 100;
@@ -123,7 +137,14 @@ export type AvatarVideoSurfaceProps = {
   idleReturnDelayMs?: number;
   /**
    * Maximum time without a newly presented decoded frame before the live layer is
-   * treated as stalled and immediately replaced by the idle/poster floor. Default 800ms.
+   * treated as stalled and replaced by the idle/poster floor — i.e. how long the LAST
+   * live frame is held through a network gap. Default
+   * {@link DEFAULT_AVATAR_FRAME_STALL_MS} (2 s). Once two stalls land inside 15 s the
+   * link is treated as unstable and the hold steps up to
+   * {@link DEFAULT_AVATAR_UNSTABLE_STALL_MS} (4 s) until the window clears, so a
+   * flapping link settles on a briefly frozen face rather than a body swap per gap.
+   * A disconnect, a turn end (track muted) and a track that never presented a frame
+   * are not stalls and do not wait on this.
    */
   frameStallMs?: number;
   /** Extra className for the box (the layers fill it). */
@@ -283,7 +304,11 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
 
   // SHOW the live layer when wanted; otherwise debounce the hide so back-to-back
   // turns don't flash idle between them — UNLESS the room disconnected, which
-  // reverts immediately (no frozen frame on a dead room). This is a plain
+  // reverts immediately (no frozen frame on a dead room). A NETWORK stall also hides
+  // without this debounce: the hold through a gap lives in the stall threshold itself
+  // (`frameStallMs`, escalated by `StallEscalation`), and by the time `flowing` drops
+  // that hold has already been spent — adding the turn-end debounce on top would only
+  // land the swap ~500 ms before the recovery dwell completes. This is a plain
   // debounced reflection of `liveWanted` with ONE state + ONE effect — NOT an
   // opacity latch that can stick visible-but-frozen or sized-but-invisible: if
   // `liveWanted` stays false the layer always lands hidden.
@@ -386,8 +411,10 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   // the renderer's body plays back to. The decoder holds the last live frame until the
   // idle layer paints, so the handover is anchor→anchor: nothing to fade, nothing to
   // jump. A network stall is the one case the two cannot be made to agree, and there
-  // holding the frozen live frame (the `idleReturnDelayMs` debounce above) is the
-  // honest answer — a brief hold reads as the network, a snap reads as a fault.
+  // holding the frozen live frame is the honest answer — a brief hold reads as the
+  // network, a snap reads as a fault. That hold is `frameStallMs` (2 s), stepping up
+  // to 4 s once the link has flapped twice in 15 s (`StallEscalation`), so a lossy
+  // link freezes her briefly instead of cutting to another body once a second.
   const frontLayer = createElement(
     "div",
     {
@@ -672,6 +699,10 @@ function useLiveFrameFlow(
   // Keep recovery evidence across mute/unmute on the SAME track: a network mute
   // must not turn every recovery burst into another immediately visible first frame.
   const recovery = useMemo(() => new FrameRecovery(boundedStallMs), [trackIdentity, boundedStallMs]);
+  // The stall threshold in force, per track: the base `frameStallMs`, stepping up once
+  // the link has flapped twice in 15 s so a lossy link holds the frozen frame instead
+  // of swapping bodies on every gap. Same lifetime as `recovery` for the same reason.
+  const escalation = useMemo(() => new StallEscalation(boundedStallMs), [trackIdentity, boundedStallMs]);
   const [flowing, setFlowing] = useState(false);
   const [seenFrame, setSeenFrame] = useState(false);
   const flowingRef = useRef(false);
@@ -727,6 +758,9 @@ function useLiveFrameFlow(
         resumePending: false,
       };
       if (firstFrame) setSeenFrame(true);
+      // The recovery's own gap detector must agree with the watchdog's threshold, or a
+      // gap the watchdog holds through would still force a recovery dwell here.
+      recovery.stallAfterMs = escalation.thresholdMs(now);
       const nextFlowing = recovery.frame(now);
       if (flowingRef.current !== nextFlowing) {
         flowingRef.current = nextFlowing;
@@ -778,16 +812,25 @@ function useLiveFrameFlow(
         lastCurrentTime = video.currentTime;
         markFrame();
       }
+      const nowMs = Date.now();
+      const stallAfterMs = escalation.thresholdMs(nowMs);
+      recovery.stallAfterMs = stallAfterMs;
       const frameFresh = isFrameFlowingAt({
         trackProducing: true,
         seenFrame: sampleRef.current.seenFrame,
         lastFrameAtMs: sampleRef.current.lastFrameAtMs,
-        nowMs: Date.now(),
-        stallAfterMs: boundedStallMs,
+        nowMs,
+        stallAfterMs,
       });
-      if (!frameFresh && sampleRef.current.seenFrame) recovery.stall();
+      if (!frameFresh && sampleRef.current.seenFrame) {
+        // One stall EPISODE = the tick that takes the layer down, not every tick of
+        // the gap; a gap that lands during the recovery dwell is the same episode.
+        if (flowingRef.current) escalation.recordStall(nowMs);
+        recovery.stall();
+      }
       // Timer ticks are not frames. An isolated recovered frame remains fresh
-      // for 800ms, but that must not satisfy the sustained-progress requirement.
+      // for the stall threshold, but that must not satisfy the sustained-progress
+      // requirement.
       const nextFlowing = frameFresh && recovery.ready;
       if (flowingRef.current !== nextFlowing) {
         flowingRef.current = nextFlowing;
@@ -805,7 +848,7 @@ function useLiveFrameFlow(
   // A full reconnect can replace the RemoteTrack while both publications remain
   // `live`. Reset the presentation clock so a new track whose currentTime starts at
   // zero is never compared with the retired track's larger timestamp.
-  }, [wrapRef, trackProducing, trackIdentity, boundedStallMs, recovery]);
+  }, [wrapRef, trackProducing, trackIdentity, boundedStallMs, recovery, escalation]);
 
   const freezeReading = useCallback<FreezeReadingFn>(() => {
     const sample = sampleRef.current;
