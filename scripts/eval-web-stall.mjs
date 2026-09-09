@@ -24,9 +24,9 @@ import { build } from "esbuild";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const baseline = process.argv.includes("--baseline");
-// 0.10.0 + the governor fix (#63) — everything on main before this change, so the comparison
+// 0.11.0 — main immediately before this change, so the comparison
 // isolates the stall policy. Override with STALL_BASELINE_REF.
-const baselineRef = process.env.STALL_BASELINE_REF || "9815239";
+const baselineRef = process.env.STALL_BASELINE_REF || "90c00ae";
 const reportDir = process.env.STALL_REPORT_DIR || await mkdtemp(join(tmpdir(), "rta-web-stall-"));
 await mkdir(reportDir, { recursive: true });
 const playwrightPath = process.env.PLAYWRIGHT_MODULE || "playwright";
