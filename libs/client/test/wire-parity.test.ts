@@ -2,7 +2,29 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { RealtimeAvatar } from "../../http-client/src/index.ts";
-import { liveKitSessionGrantSchema, toLiveKitSessionWireRequest } from "../src/wire.ts";
+import { liveKitSessionGrantSchema, liveKitSessionWireRequestSchema, sessionBehaviorSchema, toLiveKitSessionWireRequest } from "../src/wire.ts";
+
+for (const gesture_freq of ["sparse", "balanced", "lively"]) {
+  test(`behavior rejects retired gesture_freq=${gesture_freq} at the schema and translator`, () => {
+    const behavior = { gestures_enabled: true, gesture_freq };
+    assert.equal(sessionBehaviorSchema.safeParse(behavior).success, false);
+    assert.equal(liveKitSessionWireRequestSchema.safeParse({ behavior }).success, false);
+    assert.throws(
+      () => toLiveKitSessionWireRequest({ avatarId: "ava_parity", behavior }),
+      /gesture_freq/,
+    );
+  });
+}
+
+test("behavior preserves empty and enabled/disabled settings without inventing a frequency", () => {
+  for (const behavior of [{}, { gestures_enabled: false }, { gestures_enabled: true }]) {
+    assert.deepEqual(sessionBehaviorSchema.parse(behavior), behavior);
+    const wire = toLiveKitSessionWireRequest({ avatarId: "ava_parity", behavior });
+    assert.deepEqual(wire.behavior, behavior);
+    assert.deepEqual(liveKitSessionWireRequestSchema.parse(wire).behavior, behavior);
+  }
+  assert.equal("behavior" in toLiveKitSessionWireRequest({ avatarId: "ava_parity" }), false);
+});
 
 /**
  * Two packages translate the same call into the same wire, and nothing was checking that they
