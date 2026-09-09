@@ -2,13 +2,18 @@
  * After a stall, isolated frames must not keep revealing a frozen live layer.
  * Require half a second of sustained progress before leaving the idle layer.
  * A new track still shows its very first frame immediately.
+ *
+ * `stallAfterMs` is mutable so the surface can hand it the CURRENT stall
+ * threshold (see {@link StallEscalation}): the self-detected gap in `frame()`
+ * must agree with the watchdog's, or a gap the watchdog holds through would
+ * still force a recovery dwell here.
  */
 export class FrameRecovery {
   private lastFrameAtMs: number | null = null;
   private stableSinceMs: number | null = null;
   ready = true;
 
-  constructor(private readonly stallAfterMs: number) {}
+  constructor(public stallAfterMs: number) {}
 
   stall(): void {
     this.ready = false;
@@ -29,5 +34,103 @@ export class FrameRecovery {
     }
     this.lastFrameAtMs = nowMs;
     return this.ready;
+  }
+}
+
+/**
+ * A first keyframe on a healthy link lands well inside this (measured ~200–500 ms after
+ * the track binds on the rtx6000 pool); waiting longer is a freeze the frame clock
+ * cannot see, because there is no frame to be late against.
+ */
+export const AVATAR_FIRST_FRAME_GRACE_MS = 1_000;
+
+/**
+ * Freeze-ms attributed to a track that has been producing for `waitedMs` without a
+ * single presented frame.
+ *
+ * Why this exists. A HIGH simulcast opening (`openingCap: "high"`) on a starved link is
+ * a black hole: the SFU keeps forwarding the layer the cap allows, the browser keeps
+ * asking for keyframes that never land intact, and nothing decodes for as long as the
+ * cap stays up — measured on prod through a 900 kbit / 10 % loss link (2026-09-09):
+ * 20–30 s with ONE frame decoded and 76–115 PLIs. The governor's probation bar would
+ * demote that within a tick, but its freeze feed was inhibited until a first frame
+ * existed, so the one opening that most needed a demotion could never get one. The
+ * wait for the first frame, past the grace, IS the freeze.
+ */
+export function firstFrameWaitFreezeMs(waitedMs: number): number {
+  if (!Number.isFinite(waitedMs) || waitedMs <= AVATAR_FIRST_FRAME_GRACE_MS) return 0;
+  return waitedMs - AVATAR_FIRST_FRAME_GRACE_MS;
+}
+
+/**
+ * Once a link has proven unstable, hold the frozen live frame this long before
+ * falling back to the idle floor. Measured on a prod rtx6000 call through a
+ * 900 kbit / 150 ms / 10 % loss link (2026-09-09): after the opening, presented-frame
+ * gaps cluster at 650–1150 ms with two multi-second outages around simulcast layer
+ * switches. Nothing shorter than a few seconds is worth a body swap on such a link.
+ */
+export const DEFAULT_AVATAR_UNSTABLE_STALL_MS = 4_000;
+
+/** A link is "unstable" while at least this many stalls landed inside the window. */
+export const AVATAR_UNSTABLE_LINK_STALLS = 2;
+
+/** Sliding window over which stalls are counted toward {@link AVATAR_UNSTABLE_LINK_STALLS}. */
+export const AVATAR_UNSTABLE_LINK_WINDOW_MS = 15_000;
+
+/**
+ * Per-track stall-threshold policy: the watchdog's "no frame for this long ⇒ fall
+ * back to idle" threshold, escalated while the link is flapping.
+ *
+ * Why this exists. Every live→idle→live swap is a hard cut between two bodies at
+ * unrelated poses (for an avatar whose idle clip IS its source footage, the same
+ * motion jumping to another phase — read by users as "it keeps replaying"). A
+ * flat threshold turns a lossy link into an oscillator: each gap past the
+ * threshold is one swap out and, ~500 ms of frames later, one swap back. Holding
+ * the last live frame through short gaps costs a brief freeze — the same thing every
+ * video call does under loss — and removes the oscillation entirely for gaps under
+ * the threshold. Once two stalls have landed inside a short window the link has
+ * shown its hand, and the threshold steps up so the surface converges on "hold the
+ * frozen face" instead of "cut to another body every second". It decays on its own:
+ * a stall older than the window no longer counts, so a link that heals returns to
+ * the base threshold without a reset.
+ *
+ * Pure and clock-free (the caller passes `nowMs`), so the policy is unit-tested
+ * without a DOM or a React tree. One instance per live TRACK — a replacement track
+ * starts with a clean slate, like {@link FrameRecovery}.
+ */
+export class StallEscalation {
+  private readonly stallsAtMs: number[] = [];
+  readonly unstableMs: number;
+
+  constructor(
+    readonly baseMs: number,
+    unstableMs: number = DEFAULT_AVATAR_UNSTABLE_STALL_MS,
+    readonly windowMs: number = AVATAR_UNSTABLE_LINK_WINDOW_MS,
+    readonly stallsToEscalate: number = AVATAR_UNSTABLE_LINK_STALLS,
+  ) {
+    // Escalation never LOWERS the threshold an adopter configured.
+    this.unstableMs = Math.max(baseMs, unstableMs);
+  }
+
+  /** Record one stall EPISODE (the moment the live layer is hidden), not one poll tick. */
+  recordStall(nowMs: number): void {
+    this.prune(nowMs);
+    this.stallsAtMs.push(nowMs);
+  }
+
+  /** The threshold in force right now. */
+  thresholdMs(nowMs: number): number {
+    this.prune(nowMs);
+    return this.stallsAtMs.length >= this.stallsToEscalate ? this.unstableMs : this.baseMs;
+  }
+
+  /** Is the link currently considered unstable (escalated)? */
+  unstable(nowMs: number): boolean {
+    return this.thresholdMs(nowMs) !== this.baseMs;
+  }
+
+  private prune(nowMs: number): void {
+    const cutoff = nowMs - this.windowMs;
+    while (this.stallsAtMs.length > 0 && this.stallsAtMs[0] < cutoff) this.stallsAtMs.shift();
   }
 }
