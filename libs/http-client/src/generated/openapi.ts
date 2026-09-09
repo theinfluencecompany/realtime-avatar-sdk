@@ -416,8 +416,6 @@ export interface components {
             };
             behavior?: {
                 gestures_enabled?: boolean;
-                /** @enum {string} */
-                gesture_freq?: "sparse" | "balanced" | "lively";
             };
             expression_profile?: string;
             /** @enum {string} */

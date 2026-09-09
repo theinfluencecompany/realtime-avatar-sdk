@@ -640,14 +640,6 @@
             "properties": {
               "gestures_enabled": {
                 "type": "boolean"
-              },
-              "gesture_freq": {
-                "type": "string",
-                "enum": [
-                  "sparse",
-                  "balanced",
-                  "lively"
-                ]
               }
             },
             "additionalProperties": false

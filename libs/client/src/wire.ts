@@ -217,8 +217,6 @@ export const sessionBehaviorSchema = z
   .object({
 
     gestures_enabled: z.boolean().optional(),
-
-    gesture_freq: z.enum(["sparse", "balanced", "lively"]).optional(),
   })
   .strict();
 export type SessionBehavior = z.infer<typeof sessionBehaviorSchema>;
