@@ -135,3 +135,23 @@ test("the recovery gap detector follows the threshold it is handed", () => {
   escalated.stallAfterMs = DEFAULT_AVATAR_UNSTABLE_STALL_MS;
   assert.equal(escalated.frame(3_000), true);
 });
+
+// ── first-frame wait: a HIGH opening that never decodes must read as a freeze ──
+import { AVATAR_FIRST_FRAME_GRACE_MS, firstFrameWaitFreezeMs } from "../src/react/frame-recovery.ts";
+
+test("a first keyframe inside the grace is not a freeze", () => {
+  assert.equal(firstFrameWaitFreezeMs(0), 0);
+  assert.equal(firstFrameWaitFreezeMs(400), 0);
+  assert.equal(firstFrameWaitFreezeMs(AVATAR_FIRST_FRAME_GRACE_MS), 0);
+});
+
+test("waiting past the grace counts every millisecond as frozen", () => {
+  assert.equal(firstFrameWaitFreezeMs(AVATAR_FIRST_FRAME_GRACE_MS + 1), 1);
+  // Two seconds without a keyframe clears the governor's probation bar (100 ms) many times over.
+  assert.ok(firstFrameWaitFreezeMs(2_000) >= 100);
+});
+
+test("a nonsense wait is not a freeze", () => {
+  assert.equal(firstFrameWaitFreezeMs(Number.NaN), 0);
+  assert.equal(firstFrameWaitFreezeMs(-5), 0);
+});

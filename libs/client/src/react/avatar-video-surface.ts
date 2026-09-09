@@ -33,7 +33,7 @@ import { useAvatarPlayoutDelay } from "./livekit";
 import { useAvatarAdaptivePlayoutDelay } from "./use-adaptive-playout";
 import { useAvatarQualityGovernor, type FreezeReadingFn } from "./use-quality-governor";
 import { DEFAULT_GOVERNOR_CONFIG, type QualityCap } from "./quality-governor";
-import { FrameRecovery, StallEscalation } from "./frame-recovery";
+import { FrameRecovery, StallEscalation, firstFrameWaitFreezeMs } from "./frame-recovery";
 // The escalated hold is part of this surface's contract (see `frameStallMs`), so it is
 // re-exported from here beside DEFAULT_AVATAR_FRAME_STALL_MS.
 export { DEFAULT_AVATAR_UNSTABLE_STALL_MS } from "./frame-recovery";
@@ -711,11 +711,14 @@ function useLiveFrameFlow(
     lastFrameAtMs: number | null;
     maxGapMs: number;
     resumePending: boolean;
+    /** When the track began producing (this binding) — the clock the first-frame wait runs on. */
+    producingSinceMs: number | null;
   }>({
     seenFrame: false,
     lastFrameAtMs: null,
     maxGapMs: 0,
     resumePending: false,
+    producingSinceMs: null,
   });
 
   useEffect(() => {
@@ -724,6 +727,7 @@ function useLiveFrameFlow(
       lastFrameAtMs: null,
       maxGapMs: 0,
       resumePending: document.visibilityState !== "visible",
+      producingSinceMs: trackProducing ? Date.now() : null,
     };
     flowingRef.current = false;
     setSeenFrame(false);
@@ -745,6 +749,7 @@ function useLiveFrameFlow(
       lastCurrentTime = video?.currentTime ?? lastCurrentTime;
       const firstFrame = !previous.seenFrame;
       sampleRef.current = {
+        producingSinceMs: previous.producingSinceMs,
         seenFrame: true,
         lastFrameAtMs: now,
         // A hidden tab/bfcache resume is a local scheduling gap, not network
@@ -854,6 +859,13 @@ function useLiveFrameFlow(
     const sample = sampleRef.current;
     const lastFrameAtMs = sample.lastFrameAtMs;
     const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
+    // NO FIRST FRAME YET is the one freeze the frame clock cannot see, and the one a HIGH
+    // opening on a starved link most needs the governor to act on (see
+    // firstFrameWaitFreezeMs). Report the wait itself, past the grace, so the probation
+    // bar can demote a layer whose keyframes never land instead of holding it forever.
+    if (!hidden && !sample.resumePending && trackProducing && !sample.seenFrame && sample.producingSinceMs !== null) {
+      return { freezeMsInWindow: firstFrameWaitFreezeMs(Date.now() - sample.producingSinceMs), inhibited: false };
+    }
     const inhibited = isFrameFreezeInhibited({
       hidden,
       resumePending: sample.resumePending,

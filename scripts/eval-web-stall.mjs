@@ -119,7 +119,12 @@ setInterval(() => {
   const live = layer?.querySelector('video');
   if (idle && idle !== observedIdle) {
     observedIdle = idle;
-    idle.addEventListener('seeking', () => window.events.push({at:performance.now()-started,type:'idle-seek',time:idle.currentTime}));
+    // A native loop wrap also fires seeking (from ~duration back to 0). Record where the
+    // playhead WAS so the report can tell a wrap from a reset to the opening.
+    let lastIdleTime = 0;
+    idle.addEventListener('timeupdate', () => {lastIdleTime = idle.currentTime;});
+    idle.addEventListener('seeking', () => window.events.push({at:performance.now()-started,type:'idle-seek',time:idle.currentTime,from:lastIdleTime,duration:idle.duration,
+      wrap: Number.isFinite(idle.duration) && lastIdleTime >= idle.duration - 0.4}));
     idle.addEventListener('ended', () => {window.endedIdle=true;});
   }
   if (live && live !== observedLive) {
@@ -202,7 +207,9 @@ try {
     // Count that initial promotion from the surface's initial hidden state too.
     const transitions=beforeDisconnect.samples.filter((v,i,a)=>v.live!==(i ? a[i-1].live : false));
     const summary={arm,pattern:name,liveToIdle:transitions.filter(v=>!v.live).length,
-      idleToLive:transitions.filter(v=>v.live).length,idleSeeks:beforeDisconnect.events.length,
+      idleToLive:transitions.filter(v=>v.live).length,
+      // Resets to the opening only — a native loop wrap is the clip's own business.
+      idleSeeks:beforeDisconnect.events.filter(e=>!e.wrap).length,idleWraps:beforeDisconnect.events.filter(e=>e.wrap).length,
       firstLiveAtMs:beforeDisconnect.samples.find(v=>v.live)?.at,
       idleVisibleMs: beforeDisconnect.samples.filter(v=>!v.live).length*50,
       presented:beforeDisconnect.samples.at(-1)?.presented,endsLive:beforeDisconnect.samples.at(-1)?.live};
@@ -227,12 +234,17 @@ try {
       // observer must not grant each brief burst the new-track fast path. The gap
       // exceeds the 2 s hold, so the layer must be down when the burst starts.
       for (let i=0;i<2;i++) {
+        const mark = await page.evaluate(()=>window.samples.length);
         await page.evaluate(()=>{window.flow(false);window.mute(true);});
         await page.waitForTimeout(2600);
         await page.evaluate(()=>{window.mute(false);window.flow(true);});
         await page.waitForTimeout(180);
-        assert.equal(await page.locator('[data-testid="avatar-live-layer"]').getAttribute('aria-hidden'),'true',
-          'same-track mute/unmute must preserve recovery hysteresis');
+        const hidden = await page.locator('[data-testid="avatar-live-layer"]').getAttribute('aria-hidden');
+        if (hidden !== 'true') {
+          const debug = await page.evaluate((m)=>window.samples.slice(m), mark);
+          await writeFile(join(reportDir,`${name}-mute-cycle-${i}-debug.json`),JSON.stringify(debug,null,1));
+        }
+        assert.equal(hidden,'true','same-track mute/unmute must preserve recovery hysteresis');
       }
       await page.waitForTimeout(1200);
       assert.equal(await page.locator('[data-testid="avatar-live-layer"]').getAttribute('aria-hidden'),'false',

@@ -38,6 +38,31 @@ export class FrameRecovery {
 }
 
 /**
+ * A first keyframe on a healthy link lands well inside this (measured ~200–500 ms after
+ * the track binds on the rtx6000 pool); waiting longer is a freeze the frame clock
+ * cannot see, because there is no frame to be late against.
+ */
+export const AVATAR_FIRST_FRAME_GRACE_MS = 1_000;
+
+/**
+ * Freeze-ms attributed to a track that has been producing for `waitedMs` without a
+ * single presented frame.
+ *
+ * Why this exists. A HIGH simulcast opening (`openingCap: "high"`) on a starved link is
+ * a black hole: the SFU keeps forwarding the layer the cap allows, the browser keeps
+ * asking for keyframes that never land intact, and nothing decodes for as long as the
+ * cap stays up — measured on prod through a 900 kbit / 10 % loss link (2026-09-09):
+ * 20–30 s with ONE frame decoded and 76–115 PLIs. The governor's probation bar would
+ * demote that within a tick, but its freeze feed was inhibited until a first frame
+ * existed, so the one opening that most needed a demotion could never get one. The
+ * wait for the first frame, past the grace, IS the freeze.
+ */
+export function firstFrameWaitFreezeMs(waitedMs: number): number {
+  if (!Number.isFinite(waitedMs) || waitedMs <= AVATAR_FIRST_FRAME_GRACE_MS) return 0;
+  return waitedMs - AVATAR_FIRST_FRAME_GRACE_MS;
+}
+
+/**
  * Once a link has proven unstable, hold the frozen live frame this long before
  * falling back to the idle floor. Measured on a prod rtx6000 call through a
  * 900 kbit / 150 ms / 10 % loss link (2026-09-09): after the opening, presented-frame
