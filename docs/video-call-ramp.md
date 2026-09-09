@@ -1,5 +1,51 @@
 # Quality ramp and receiver latency reproduction
 
+## Recovery after an opening bandwidth dip (2026-09-09)
+
+The additional regression cell starts HIGH, injects a pause at 1s, then restores a
+healthy link. Measure the time from the LOW action to permission to request HIGH.
+This is a controller measurement, not proof of delivered resolution or GPU speed.
+
+Before this change, the first failed opening increments `failures` to 1 and pays
+`8s * 2^1`, then starts a separate 3s clean window: **19s pinned below the top
+layer after a single transient**. The intended first-failure hold is the base 8s.
+Healthy observations during that hold should count toward the clean window.
+
+The gate also covers repeated failed upgrades (8/16/32/64/120s holds), congestion
+near the end of a hold, hidden/local-stall time, persistent poor quality, and
+unchanged clean HIGH/default LOW openings. An ongoing poor link must never pass
+this recovery gate. The SFU still decides which layer fits the actual bandwidth.
+
+```sh
+node --test --experimental-transform-types libs/client/test/quality-recovery.test.ts
+```
+
+The real React hook replay (`npm run eval:quality`) records 19s → 8s for the first
+failed opening and 35s → 16s for a repeated failed probe. Use
+`QUALITY_SOURCE_REF=2e0b323bd3ed87cef2167b2102754ff5c599f8d5` to replay the baseline
+through the same adapter, events, and virtual browser clock.
+
+The UDP fixture can also constrain downstream media to 450kbps during seconds
+5–11, with a finite 125ms queue and counted overflow drops:
+
+```sh
+RAMP_RECOVERY=1 RAMP_ARMS=before,after RAMP_TRIALS=2 \
+  RAMP_DURATION_MS=40000 RAMP_BANDWIDTH_BPS=450000 \
+  RAMP_REPORT_DIR=/tmp/video-recovery npm run eval:video-ramp
+```
+
+Recovery mode gives both arms one governor and identical playout settings; only
+the reducer differs. `RAMP_BASELINE_REF` selects the comparison revision.
+`RAMP_SERVER_UDP_PORT` and `RAMP_PROXY_PORT` select isolated fixture ports.
+Do not infer recovered resolution from a HIGH cap: each trial must first deliver
+the publisher's top layer on the clean link. The initial four runs on September 9
+were **INCONCLUSIVE as a paired recovery comparison**: before-1 and after-2 never
+delivered that layer, and long freezes persisted. The other runs and all failures
+are retained in the gallery. These runs do not establish a network performance
+improvement or qualify the tuning for production.
+
+## Opening policy and subscription identity (previous fix)
+
 `useAvatarQualityGovernor` initialized every subscription with LOW, even when the
 caller configured `openingCap: "high"`. Its effect also depended on config,
 freeze-getter, and TrackReference object identity. A consumer rendering a new
@@ -10,7 +56,8 @@ publication, and track. Equivalent policy values and replacement callbacks keep
 the controller alive. Actual policy/subscription changes rebind it. Per-binding
 stats cursors prevent an old asynchronous read from contaminating a replacement
 track. The existing downgrade thresholds, probation, default LOW opening, and
-recovery dwell are unchanged.
+recovery dwell were unchanged by that earlier fix; the recovery tuning above is
+a separate draft.
 
 This is a subscriber ceiling, not a request to bypass SFU congestion control:
 [LiveKit setVideoQuality](https://docs.livekit.io/reference/client-sdk-js/classes/RemoteTrackPublication.html#setVideoQuality).

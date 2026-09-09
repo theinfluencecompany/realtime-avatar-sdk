@@ -81,7 +81,8 @@ export interface GovernorConfig {
    *  low is kept (first impression is never a freeze); paying the POST-FAILURE
    *  penalty before any failure is not. */
   openingDwellMs: number; // 2_000
-  /** Base minimum hold at low before an up-probe is considered (grows on failure). */
+  /** Minimum hold after the first failure; repeated failures double this hold.
+   * Healthy observations during the hold count toward cleanMs. */
   dwellBaseMs: number; // 8_000  (≈ Meet's <10s server-simulcast recovery)
   /** Cap on the exponential dwell backoff — never pin low permanently. */
   dwellMaxMs: number; // 120_000
@@ -200,7 +201,7 @@ const isHealthy = (s: GovernorSignal): boolean =>
 
 /** The exponential dwell for the current failure count, capped. */
 const dwellMs = (failures: number, cfg: GovernorConfig): number =>
-  Math.min(cfg.dwellBaseMs * 2 ** failures, cfg.dwellMaxMs);
+  Math.min(cfg.dwellBaseMs * 2 ** Math.max(0, failures - 1), cfg.dwellMaxMs);
 
 const enter = (g: Governor, state: GovernorState, cap: QualityCap, nowMs: number): Governor => ({
   ...g,
@@ -228,7 +229,8 @@ export const step = (
   // FALSE-POSITIVE FENCE: hidden tab / muted / local-CPU freeze — trust nothing, do
   // nothing (a downgrade can't fix a decode/paint bottleneck; our Dia-freeze lesson).
   if (s.inhibited) {
-    return { governor: g };
+    // An unobserved interval cannot complete a continuously healthy window.
+    return { governor: g.healthySinceMs === null ? g : { ...g, healthySinceMs: null } };
   }
 
   // AUTHORITATIVE INSTANT DOWNGRADE from any non-low cap. Paused is 0ms-bar; freeze
@@ -276,12 +278,25 @@ export const step = (
       const resetFailures =
         healthy && healthySince !== null && nowMs - healthySince >= cfg.healthyResetMs;
       const dwellDone = nowMs - g.enteredAtMs >= dwellMs(g.failures, cfg);
+      const cleanDone = healthySince !== null && nowMs - healthySince >= cfg.cleanMs;
+      if (dwellDone && healthy && cleanDone) {
+        // Recovery needs BOTH the anti-flap hold and a clean window. The same
+        // healthy seconds can satisfy both; restarting cleanMs after the hold
+        // added a second penalty even when the link was healthy throughout.
+        return {
+          governor: {
+            ...enter(g, "probing_up", "high", nowMs),
+            failures: resetFailures ? 0 : g.failures,
+          },
+          action: { setCap: "high" },
+        };
+      }
       if (dwellDone && healthy) {
         return {
           governor: {
             ...enter(g, "cap_low_eligible", "low", nowMs),
             failures: resetFailures ? 0 : g.failures,
-            healthySinceMs: nowMs,
+            healthySinceMs: healthySince,
           },
         };
       }
