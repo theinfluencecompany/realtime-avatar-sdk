@@ -53,15 +53,13 @@ what a cast that is not this one will get.
   work, not a setting to spend. So there is no trade here between her face and being able to
   interrupt her: the call is `mode: "avatar"` and the brief tells her plainly that they will cut
   in and that she should follow them when they do.
-- **Her clips are synced at boot, not just declared.** Ms. Lin carries a four-state `video` map —
-  idle, happy, gentle, cheer — and `when` on each one is read by *her*, so it is written as
-  direction rather than as a rule an engine evaluates. Clips are prepared once and cached by URL
-  hash and the serve path only loads that cache, so a map that was never synced is silently
-  ignored on the first call after you add it. `syncClips` is idempotent, which is why it runs on
-  every boot and not behind a flag. **That tier is deprecated:** a new integration declares a
-  library with `setClipLibrary` — clips become a property of the character rather than of each
-  call, the platform renders and hosts them, and each one is pose-checked against her anchor
-  before it serves. This studio still shows the external tier because it is still live.
+- **Calls inherit the avatar's declared library.** Normal startup never uploads or replaces clips.
+  To import Ms. Lin's sample footage once, set `AVATAR_ID_LIN` to the matching avatar and run
+  `node --env-file=.env server.mjs --declare-clips`. This uploads assets and replaces the full
+  declaration using its current revision; existing clips not named by the sample are retired.
+  It may consume platform credits. Use only footage of the matching character and rest pose.
+  The command waits for processing and reports pose-validation failures rather than claiming
+  rejected clips are ready. An avatar supplied through generic `AVATAR_ID` keeps its own library.
 - **All three voices are pinned, and each one was measured before it was.** With `voice` omitted
   the platform chooses, and it reads neither the face nor the persona — so a character's gender
   was a coin toss on every call, and it had been landing male on a brief that opens "a woman in

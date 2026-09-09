@@ -284,22 +284,28 @@ never blanks a live avatar.
 ```ts
 const update = await rta.setClipLibrary(avatarId, {
   expectedRevision: library.revision,   // CAS — a concurrent writer 409s instead of losing
-  clips: [
-    { clipId: "idle_soft", role: "idle",    source: { motionPrompt: "breathing gently, a slow blink" } },
-    { clipId: "nod_along", role: "listen",  source: { motionPrompt: "nodding along, attentive" } },
-    { clipId: "wave_hi",   role: "gesture", whenHint: "when greeting", source: { assetId: "ast_…" } },
-  ],
+  clips: {
+    idle_soft: { source: { motionPrompt: "breathing gently, a slow blink" } },
+    nod_along: { source: { motionPrompt: "nodding once, attentive" } },
+    wave_hi: { source: { assetId: "ast_…" } },
+  },
+  idle: { clips: ["idle_soft"] },
+  on: {
+    userSpeechStarted: { clips: ["nod_along"] },
+  },
+  actions: {
+    greet: { description: "When greeting", clips: ["wave_hi"] },
+  },
 });
 // update.plan → { kept, queued, retired }
 ```
+
+Resting is implicit: the avatar's stored source is the rest state — weight 1, the one clip that may repeat, and never declared, so the id `primary` is reserved. `idle.clips` are variations drawn uniformly that never immediately repeat, with `idle.weight` saying how often a variation plays instead of resting (absent ⇒ 1, `0` ⇒ declared but off). `userSpeechStarted` requests one response per valid speech episode; `actions` supply semantic actions for the replying model, requestable rather than automatic. Actions run on the server and retain current-clip lip-sync. `session.performAction("greet")` requests an action from an authorized client; acceptance is not playback completion.
 
 An uploaded clip (`assetId`) must start AND end on the avatar's rest pose. Pose validation
 rejects one that does not — `status: "failed"` on that row with the structured verdict in
 `poseCheck`, extracted first/last frames included so the rejection is shown, not described.
 The rest of the library is untouched.
-
-`syncClips` is the deprecated external tier — clips on YOUR storage, cache-by-URL-hash —
-and it sunsets once observed traffic reaches zero. Do not build on it.
 
 ### 11. Re-shooting her is asynchronous, and a failed re-shoot leaves her `ready`
 
@@ -404,30 +410,20 @@ backstop. Every app in `apps/demo/` carries the full pattern end to end.
 ```ts
 video: {}                                     // rest in the avatar's stored source (default)
 video: { mode: "generative" }                 // no clips at all; synthesized
-video: {                                      // a state map we switch between — see below
-  states: {
-    happy:    { when: "when the user is happy",                    url: "…/happy.mp4" },
-    thinking: { when: "when she is considering something",         url: "…/thinking.mp4" },
-    shy:      { when: "when she is flustered", weight: 0.3,        url: "…/shy.mp4" },
-  },
-}
 video: {                                      // her stored clip, in a different world
   edits: { instruction: "turn the room into a snowy cabin at night" },
 }
 ```
 
-**`states` is the per-call override on the DEPRECATED external tier** — your URLs, prepared
-by `syncClips`, resolved per call. The durable path is the declared library (rule 10):
-`setClipLibrary` is a property OF THE CHARACTER, so every call gets it without being told,
-the platform renders and hosts the takes, and each one is pose-checked against her anchor
-before it can serve. Reach for `states` only when a single call genuinely needs a look the
-character does not own; it sunsets once the last consumer is off it.
+`setClipLibrary` declares the character's sources and behavior once (rule 10). Calls inherit
+that library without a per-call state map. The platform hosts and prepares the takes, and
+pose-checks uploads against the avatar's anchor before they can serve.
 
 The clip she **rests** in is deliberately not a call option. A call identifies the character,
 and the character's stored source video is what she rests in — upload it once at creation,
 not as a URL per call. A call that carries its own rest media is rejected outright.
 
-`when` is read **by the character**, not by a rules engine you write. Brief it like an actor.
+An action's `description` is read **by the character**, not by a rules engine you write. Brief it like an actor.
 `sentiment > 0.7` does nothing — nothing evaluates it.
 
 ### The one rule that decides whether multi-clip looks good
@@ -472,7 +468,7 @@ The same applies at avatar creation: give a **single looping video** and the res
 taken from it, or a **single still image** and the motion is generated around it. Either way
 you get a usable resting loop without cutting anything by hand.
 
-So treat the state map as an upgrade, not a prerequisite. Ship on `generative` or a single
+So treat an authored clip library as an upgrade, not a prerequisite. Ship on `generative` or a single
 loop, then author clips for the states that are actually worth directing — and only then does
 the matched-frame rule apply to you.
 

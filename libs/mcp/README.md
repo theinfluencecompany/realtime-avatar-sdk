@@ -41,7 +41,6 @@ With `REALTIME_AVATAR_ALLOW_WRITES=1`:
 | --- | --- | --- |
 | `set_loop` | Re-direct her resting loop from a new description | no |
 | `set_clip_library` | Declare an avatar's full clip set as JSON — the platform renders it | no |
-| `sync_clips` | **Deprecated.** The external-URL tier. Use `set_clip_library` | no |
 | `upload_asset` | Upload a file **from this machine's disk**, get a public URL | no |
 | `create_remote_asset` | Register a file already on the internet — no local copy | no |
 | `create_avatar_from_image` | Build an avatar from ONE still — the loop is generated | no |
@@ -54,7 +53,7 @@ The five tools above are **read-only**, and each carries `readOnlyHint` so a hos
 the annotation rather than on a name it has to recognise. Pointed at a production key, this
 server is no more dangerous than a dashboard you left open.
 
-`REALTIME_AVATAR_ALLOW_WRITES=1` adds the eight write tools. Only `start_call` costs credits,
+`REALTIME_AVATAR_ALLOW_WRITES=1` enables the write tools. Only `start_call` costs credits,
 and it **refuses a `tic_live_` key outright** — an operator who armed writes against a test
 key and later swapped in a production one should not discover it by being billed. Two
 independent gates, because one is a single mistake away from being none.
@@ -64,12 +63,11 @@ Two things to understand before arming writes:
 - **`upload_asset` reads local disk.** It opens whatever absolute path the agent names, on the
   machine running the server. Relative paths are refused rather than resolved against
   whatever directory the host spawned it in.
-- **The clip tools retire by omission.** Both `set_clip_library` and `sync_clips` take the
-  COMPLETE set you want live; anything missing from it stops being served. Each reports all
-  three buckets — kept/queued/retired — because "queued: 1" alone reads like nothing else
-  changed. Declare with `set_clip_library`: clips are JSON (`motionPrompt` or an uploaded
-  `assetId`) and the platform renders and hosts them. `sync_clips` is the deprecated tier
-  that takes URLs on your own storage.
+- **The clip declaration retires by omission.** `set_clip_library` takes the COMPLETE set;
+  anything missing from it stops being served. Its plan reports kept/queued/retired clips.
+  Declare `source.motionPrompt` or `source.assetId`; the platform hosts and prepares media.
+  The avatar's stored source is the implicit rest state — never declared, so the id
+  `primary` is reserved.
 
 ## Why an MCP server at all
 

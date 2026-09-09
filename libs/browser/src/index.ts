@@ -1,3 +1,4 @@
+export { checkVideoSupport, type VideoSupport } from "./video-support.ts";
 export {
   enableMicrophone,
   type EnableMicrophoneOptions,

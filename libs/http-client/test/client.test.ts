@@ -2,7 +2,120 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { RealtimeAvatar, SDK_VERSION } from "../src/client.ts";
 import { RealtimeAvatarError, RealtimeAvatarHttpError } from "../src/errors.ts";
-import { isQueued } from "../src/types.ts";
+import { isQueued, type ClipLibrary } from "../src/types.ts";
+import { z } from "zod";
+import type { components } from "../src/generated/openapi.ts";
+import { clipBehaviorSchema, clipLibraryDeclarationSchema } from "../src/generated/character-motion.ts";
+import {
+  clipLibraryDeclarationSchema as publicDeclarationSchema,
+  clipLibraryResponseSchema, clipLibraryUpdateSchema,
+} from "../src/generated/clip-library-schema.ts";
+import { CLIP_DECLARATION, CLIP_LIBRARY, CLIP_UPDATE, INVALID_CLIP_DECLARATIONS } from "./clip-library.fixture.ts";
+
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+
+test("clip schema input and output types exactly match OpenAPI without erasing record inputs", () => {
+  type Wire = components["schemas"];
+  const exact: [
+    Equal<z.input<typeof clipLibraryDeclarationSchema>, Wire["PutAvatarClipsRequest"]>,
+    Equal<z.output<typeof clipLibraryDeclarationSchema>, Wire["PutAvatarClipsRequest"]>,
+    Equal<z.input<typeof clipBehaviorSchema>, Wire["ListAvatarClipsResponse"]["behavior"]>,
+    Equal<z.output<typeof clipBehaviorSchema>, Wire["ListAvatarClipsResponse"]["behavior"]>,
+    Equal<z.input<typeof clipLibraryResponseSchema>, Wire["ListAvatarClipsResponse"]>,
+    Equal<z.output<typeof clipLibraryResponseSchema>, Wire["ListAvatarClipsResponse"]>,
+    Equal<z.input<typeof clipLibraryUpdateSchema>, Wire["PutAvatarClipsResponse"]>,
+    Equal<z.output<typeof clipLibraryUpdateSchema>, Wire["PutAvatarClipsResponse"]>,
+  ] = [true, true, true, true, true, true, true, true];
+  assert.ok(exact.every(Boolean));
+  const compileOnly = () => {
+    const input = (value: z.input<typeof clipLibraryDeclarationSchema>) => value;
+    const output = (value: z.output<typeof clipLibraryDeclarationSchema>) => value;
+    // @ts-expect-error clips is required even when empty
+    input({ expectedRevision: 0 });
+    // @ts-expect-error record input cannot become unknown through a preprocessor
+    input({ expectedRevision: 0, clips: 42 });
+    // @ts-expect-error a declared clip requires a source
+    input({ expectedRevision: 0, clips: { wave: {} } });
+    // @ts-expect-error action records require descriptions
+    input({ ...CLIP_DECLARATION, actions: { greet: { clips: ["wave"] } } });
+    // @ts-expect-error action records cannot become unknown through a preprocessor
+    input({ ...CLIP_DECLARATION, actions: "greet" });
+    // @ts-expect-error duration is a number in both input and output
+    output({ expectedRevision: 0, clips: { wave: { source: { motionPrompt: "wave", durationSeconds: "6" } } } });
+    // @ts-expect-error the idle weight remains numeric
+    output({ ...CLIP_DECLARATION, idle: { clips: ["nod"], weight: "1" } });
+    // @ts-expect-error idle is variations plus one weight, not a bare list
+    input({ ...CLIP_DECLARATION, idle: ["nod"] });
+    // @ts-expect-error candidate objects are gone — a reference is the clip id itself
+    input({ ...CLIP_DECLARATION, idle: { clips: [{ clip: "nod" }] } });
+    // @ts-expect-error responseStarted is gone — actions are declared at the root
+    input({ ...CLIP_DECLARATION, on: { responseStarted: { actions: {} } } });
+    // @ts-expect-error named pools are gone
+    input({ ...CLIP_DECLARATION, pools: { expressive: ["wave"] } });
+  };
+  void compileOnly;
+});
+
+test("the public declaration is the canonical executable schema", () => {
+  assert.equal(publicDeclarationSchema, clipLibraryDeclarationSchema);
+  assert.equal(clipLibraryResponseSchema.shape.behavior, clipBehaviorSchema);
+  assert.equal(clipLibraryUpdateSchema.shape.behavior, clipBehaviorSchema);
+  assert.deepEqual(publicDeclarationSchema.parse(CLIP_DECLARATION), CLIP_DECLARATION);
+});
+
+for (const { name, body, path } of INVALID_CLIP_DECLARATIONS) {
+  test(`canonical declaration rejects ${name} at the precise path`, () => {
+    const result = clipLibraryDeclarationSchema.safeParse(body);
+    assert.equal(result.success, false);
+    if (result.success) return;
+    assert.ok(result.error.issues.some(issue => JSON.stringify(issue.path) === JSON.stringify(path)),
+      JSON.stringify(result.error.issues));
+  });
+}
+
+test("canonical parsing trims sources and descriptions but preserves absent and zero weight", () => {
+  const parsed = clipLibraryDeclarationSchema.parse({
+    expectedRevision: 0,
+    clips: {
+      rest: { source: { assetId: " ast_rest " } },
+      wave: { source: { motionPrompt: " waves hello " } },
+    },
+    idle: { clips: ["wave"] },
+    actions: { greet: { description: " Greeting ", clips: ["wave"] } },
+  });
+  assert.deepEqual(parsed.clips, {
+    rest: { source: { assetId: "ast_rest" } }, wave: { source: { motionPrompt: "waves hello" } },
+  });
+  assert.equal(parsed.actions?.greet?.description, "Greeting");
+  // Absent stays absent (⇒ 1 at selection time); zero stays zero (declared but off).
+  assert.equal(Object.hasOwn(parsed.idle ?? {}, "weight"), false);
+  const disabled = clipLibraryDeclarationSchema.parse({
+    expectedRevision: 0,
+    clips: { wave: { source: { motionPrompt: "waves hello" } } },
+    idle: { clips: ["wave"], weight: 0 },
+  });
+  assert.equal(disabled.idle?.weight, 0);
+});
+
+for (const { name, body, path } of INVALID_CLIP_DECLARATIONS.filter(({ name }) =>
+  !name.includes("unknown reference") && !name.startsWith("reserved clip key") && !name.startsWith("whitespace source"))) {
+  test(`both HTTP response validators reuse canonical behavior for ${name}`, async () => {
+    const { expectedRevision, clips, ...behavior } = body;
+    for (const schema of [clipLibraryResponseSchema, clipLibraryUpdateSchema]) {
+      const result = schema.safeParse({ ...(schema === clipLibraryUpdateSchema ? CLIP_UPDATE : CLIP_LIBRARY), behavior });
+      assert.equal(result.success, false);
+      if (result.success) continue;
+      assert.ok(result.error.issues.some(issue => JSON.stringify(issue.path) === JSON.stringify(["behavior", ...path])),
+        JSON.stringify(result.error.issues));
+    }
+    const response = stub({ body: { ...CLIP_LIBRARY, behavior } });
+    await assert.rejects(new RealtimeAvatar({ apiKey: "k", fetch: response.fetchImpl }).listClips("ava_1"),
+      /clip library response did not match the contract/);
+    const update = stub({ body: { ...CLIP_UPDATE, behavior } });
+    await assert.rejects(new RealtimeAvatar({ apiKey: "k", fetch: update.fetchImpl }).setClipLibrary("ava_1", CLIP_DECLARATION),
+      /clip library response did not match the contract/);
+  });
+}
 
 /** A fetch stub that records the request and replays a canned response. */
 function stub(response: { status?: number; body?: unknown }) {
@@ -68,17 +181,16 @@ test("a busy pool is a queue, not a throw", async () => {
   assert.equal(call.retryAfterMs, 4000);
 });
 
-test("a state map compiles into clip_library with the cue under its public name", async () => {
+test("per-call state maps cannot override the stored declaration", async () => {
   const { seen, fetchImpl } = stub({ body: GRANT });
   const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
   await rta.startCall({
     avatarId: "ava_1",
-    video: { states: { happy: { when: "when the user is happy", url: "https://x/h.mp4", weight: 0.3 } } },
+    // @ts-expect-error clips belong to the avatar declaration, never a per-call state map
+    video: { states: { happy: { when: "when the user is happy", url: "https://x/h.mp4" } } },
   });
-  assert.deepEqual(seen.body?.clip_library, [{
-    clip_id: "happy", source_video_url: "https://x/h.mp4",
-    trigger: "directive", when: "when the user is happy", weight: 0.3,
-  }]);
+  assert.equal(seen.body?.clip_library, undefined);
+  assert.equal("syncClips" in rta, false);
 });
 
 test("a call never carries its own media — the rest clip belongs to the avatar", async () => {
@@ -86,11 +198,8 @@ test("a call never carries its own media — the rest clip belongs to the avatar
   const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
   await rta.startCall({
     avatarId: "ava_1",
-    video: { states: { happy: { when: "when the user is happy", url: "https://x/h.mp4" } } },
+    video: {},
   });
-  // The session endpoint rejects a body carrying media outright (422), so emitting any of
-  // these is not a degraded call — it is no call at all. Clip URLs ride inside
-  // `clip_library` entries, which is a different thing from the session's own source.
   assert.equal(seen.body?.source_kind, undefined);
   assert.equal(seen.body?.source_video_url, undefined);
   assert.equal(seen.body?.portrait_url, undefined);
@@ -107,11 +216,6 @@ test("edits carries the clip AND the instruction, and drops no other policy", as
         instruction: "turn the room into a snowy cabin at night",
         referenceUrl: "https://x/scarf.png",
       },
-      // `states` is mapped AFTER the edits block inside videoToWire. This is the field an
-      // edits branch that returned early would silently drop — the character would simply
-      // never switch states, for exactly the calls using the newest feature — so this test
-      // pins edits AND states surviving together.
-      states: { happy: { when: "when the user is happy", url: "https://x/h.mp4" } },
     },
     transcript: { url: "https://app.example/hook", secret: "0123456789abcdef" },
     metadata: { user_id: "u1" },
@@ -125,9 +229,7 @@ test("edits carries the clip AND the instruction, and drops no other policy", as
   // surface for exactly that reason.)
   assert.equal(seen.body?.source_kind, undefined);
   assert.equal(seen.body?.source_video_url, undefined);
-  const clips = seen.body?.clip_library as Array<Record<string, unknown>>;
-  assert.equal(clips?.length, 1);
-  assert.equal(clips?.[0]?.clip_id, "happy");
+  assert.equal(seen.body?.clip_library, undefined);
   assert.ok(seen.body?.transcript_webhook);
   assert.deepEqual(seen.body?.client_metadata, { user_id: "u1" });
 });
@@ -457,101 +559,102 @@ test("waitForLoop THROWS on a failed re-direct instead of polling forever", asyn
 test("waitForClips settles on failed clips — it does not wait for all-ready", async () => {
   // Waiting for all-`ready` is the intuitive version and it hangs forever: a pose-rejected
   // upload settles `failed`, which is terminal. Settled means nothing is still MOVING.
-  const row = (clipId: string, status: string) => ({
-    clipId, role: "gesture", status, url: null, whenHint: null, source: "generated",
-    motionPrompt: null, durationSeconds: 5, anchorVersion: 1, poseCheck: null, error: null,
-    createdAt: "x", updatedAt: "x",
-  });
-  const envelope = (statuses: string[]) => ({
-    data: statuses.map((st, i) => row(`c${i}`, st)),
-    avatarId: "ava_1", revision: 1, anchorVersion: 1, anchor: null, clipLibraryEligible: true,
+  const envelope = (status: ClipLibrary["data"][number]["status"]): ClipLibrary => ({
+    ...CLIP_LIBRARY,
+    data: CLIP_LIBRARY.data.map((clip) => clip.clipId === "wave" ? { ...clip, status } : clip),
   });
   const { fetchImpl } = scripted([
-    { body: envelope(["generating", "ready"]) },
-    { body: envelope(["failed", "ready"]) },
+    { body: envelope("generating") },
+    { body: envelope("failed") },
   ]);
   const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
   const library = await rta.waitForClips("ava_1", { pollMs: 1000, timeoutMs: 60_000 });
-  assert.deepEqual(library.data.map((c) => c.status), ["failed", "ready"]);
+  assert.deepEqual(library.data.map((c) => c.status), ["ready", "ready", "failed"]);
+  assert.deepEqual(library.behavior, CLIP_LIBRARY.behavior);
+  assert.equal(library.defaultSourceAssetId, "ast_default");
 });
 
-test("setClipLibrary declares the full library and hands back the plan", async () => {
-  const { seen, fetchImpl } = stub({ status: 202, body: {
-    data: [{
-      clipId: "wave", role: "gesture", status: "queued", url: null, whenHint: "when greeting",
-      source: "generated", motionPrompt: "waves hello", durationSeconds: 5, anchorVersion: 1,
-      poseCheck: null, error: null,
-      createdAt: "2026-08-27T00:00:00Z", updatedAt: "2026-08-27T00:00:00Z",
-    }],
-    avatarId: "ava_1", revision: 1, anchorVersion: 1,
-    anchor: { url: "https://cdn.example/rest.png", source: "portrait", timeMs: null },
-    clipLibraryEligible: true,
-    plan: { kept: [], queued: ["wave"], retired: ["old_idle"] },
-  } });
+test("setClipLibrary forwards the complete record and behavior verbatim", async () => {
+  const { seen, fetchImpl } = stub({ status: 202, body: CLIP_UPDATE });
   const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  const declaration = structuredClone(CLIP_DECLARATION);
 
-  const update = await rta.setClipLibrary("ava_1", {
-    expectedRevision: 0,
-    clips: [{ clipId: "wave", role: "gesture", whenHint: "when greeting", source: { motionPrompt: "waves hello" } }],
-  });
+  const update = await rta.setClipLibrary("ava_1", declaration);
 
   assert.equal(seen.method, "PUT");
   assert.ok(seen.url?.endsWith("/avatars/ava_1/clips"));
-  // This route's wire is already camelCase — the declaration passes through byte-for-byte.
-  assert.deepEqual(seen.body, {
-    expectedRevision: 0,
-    clips: [{ clipId: "wave", role: "gesture", whenHint: "when greeting", source: { motionPrompt: "waves hello" } }],
-  });
-  assert.deepEqual(update.plan, { kept: [], queued: ["wave"], retired: ["old_idle"] });
-  assert.equal(update.revision, 1);
+  assert.deepEqual(seen.body, CLIP_DECLARATION);
+  assert.deepEqual(declaration, CLIP_DECLARATION, "the caller's declaration is not mutated");
+  assert.deepEqual(update, CLIP_UPDATE);
 });
 
-test("setClipLibrary without expectedRevision omits the key — unconditional, not revision 0", async () => {
+test("setClipLibrary clears with an empty record and preserves revision zero", async () => {
   const { seen, fetchImpl } = stub({ status: 202, body: {
-    data: [], avatarId: "ava_1", revision: 2, anchorVersion: 1, anchor: null,
-    clipLibraryEligible: true, plan: { kept: [], queued: [], retired: [] },
+    ...CLIP_UPDATE, data: [], behavior: {},
+    plan: { kept: [], queued: [], retired: ["rest", "nod", "wave"] },
   } });
-  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", { clips: [] });
-  assert.ok(seen.body);
-  assert.ok(!("expectedRevision" in seen.body));
+  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", {
+    expectedRevision: 0, clips: {},
+  });
+  assert.deepEqual(seen.body, { expectedRevision: 0, clips: {} });
 });
 
-test("listClips hands back the envelope: rows plus revision, anchor and eligibility", async () => {
-  const { seen, fetchImpl } = stub({ body: {
-    data: [{
-      clipId: "wave", role: "gesture", status: "queued", url: null, whenHint: "when greeting",
-      source: "generated", motionPrompt: "waves hello", durationSeconds: 5, anchorVersion: 1,
-      poseCheck: null, error: null,
-      createdAt: "2026-08-27T00:00:00Z", updatedAt: "2026-08-27T00:00:00Z",
-    }],
-    avatarId: "ava_1", revision: 3, anchorVersion: 2,
+test("listClips retains rows, behavior, default source, revision and anchor", async () => {
+  const body = {
+    ...CLIP_LIBRARY, revision: 3, anchorVersion: 2,
     anchor: { url: "https://cdn.example/rest.png", source: "source_frame", timeMs: 1200 },
-    clipLibraryEligible: true,
-  } });
+  } satisfies ClipLibrary;
+  const { seen, fetchImpl } = stub({ body });
   const library = await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).listClips("ava_1");
   assert.equal(seen.method, "GET");
   assert.ok(seen.url?.endsWith("/avatars/ava_1/clips"));
-  assert.equal(library.revision, 3);
-  assert.equal(library.anchor?.timeMs, 1200);
-  assert.equal(library.data[0]?.clipId, "wave");
+  assert.deepEqual(library, body);
 });
 
 test("a clip envelope without a revision throws instead of disarming CAS", async () => {
-  // A missing `revision` flowing through would drop `expectedRevision` from the next
-  // declare — CAS silently degrades to unconditional. The guard makes that loud.
   const { fetchImpl } = stub({ status: 202, body: { data: [], plan: { kept: [], queued: [], retired: [] } } });
   await assert.rejects(
-    new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", { clips: [] }),
-    (err: unknown) => err instanceof RealtimeAvatarError && /did not match the contract/.test((err as Error).message),
+    new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", {
+      expectedRevision: 0, clips: {},
+    }),
+    (err: unknown) => err instanceof RealtimeAvatarError && /did not match the contract/.test(err.message),
   );
 });
 
-test("setClipLibrary is mutating, so the PUT carries an idempotency key", async () => {
-  const { attempts, fetchImpl } = scripted([{ status: 202, body: {
-    data: [], avatarId: "ava_1", revision: 1, anchorVersion: 1, anchor: null,
-    clipLibraryEligible: true, plan: { kept: [], queued: [], retired: [] },
+test("clip responses must include behavior and the accepted update plan", async () => {
+  const { behavior: _behavior, ...withoutBehavior } = CLIP_LIBRARY;
+  const missingBehavior = stub({ body: withoutBehavior });
+  await assert.rejects(
+    new RealtimeAvatar({ apiKey: "k", fetch: missingBehavior.fetchImpl }).listClips("ava_1"),
+    RealtimeAvatarError,
+  );
+  const missingPlan = stub({ status: 202, body: CLIP_LIBRARY });
+  await assert.rejects(
+    new RealtimeAvatar({ apiKey: "k", fetch: missingPlan.fetchImpl }).setClipLibrary("ava_1", CLIP_DECLARATION),
+    RealtimeAvatarError,
+  );
+});
+
+test("a stale clip revision surfaces as a 409 without retrying", async () => {
+  const { attempts, fetchImpl } = scripted([{ status: 409, body: {
+    error: "Clip library revision changed", code: "revision_conflict", status: 409,
   } }]);
-  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", { clips: [] });
+  await assert.rejects(
+    new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", CLIP_DECLARATION),
+    (err: unknown) => err instanceof RealtimeAvatarHttpError && err.status === 409,
+  );
+  assert.equal(attempts.length, 1);
+});
+
+test("setClipLibrary retries the same declaration with the same idempotency key", async () => {
+  const { attempts, fetchImpl } = scripted([
+    { status: 503 }, { status: 202, body: CLIP_UPDATE },
+  ]);
+  await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).setClipLibrary("ava_1", CLIP_DECLARATION);
+  assert.equal(attempts.length, 2);
+  assert.equal(new Set(attempts.map((attempt) => attempt.body)).size, 1);
+  assert.equal(attempts[0]?.body, JSON.stringify(CLIP_DECLARATION));
+  assert.equal(new Set(attempts.map((attempt) => attempt.headers.get("idempotency-key"))).size, 1);
   assert.match(attempts[0]?.headers.get("idempotency-key") ?? "", /.{16,}/);
 });
 

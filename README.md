@@ -199,12 +199,11 @@ rta.retimeAnchor(avatarId, anchorTimeMs)                    // same loop, differ
 rta.deleteAvatar(avatarId)
 
 // clip library
-rta.setClipLibrary(avatarId, { clips, expectedRevision? })  // declare the FULL set; CAS via expectedRevision
+rta.setClipLibrary(avatarId, { expectedRevision, clips, idle?, on?, actions? }) // full declaration; revision required
 rta.setLoop(avatarId, { motionPrompt })     // re-direct the RESTING LOOP; clips untouched
 rta.waitForLoop(avatarId)               // block until it settles; THROWS if it failed
 rta.waitForClips(avatarId)              // block until nothing is still rendering
 rta.listClips(avatarId)                 // rows + revision, anchor, eligibility
-rta.syncClips(avatarId, clipUrls)       // DEPRECATED — external-URL tier; use setClipLibrary
 
 // assets
 rta.createRemoteAsset({ kind, remoteUrl })

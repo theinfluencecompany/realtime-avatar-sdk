@@ -52,6 +52,8 @@ export type AvatarVideoSurfaceProps = {
    * avatars with no idle clip; the poster floor then shows at rest.
    */
   idleVideoUrl: string | null;
+  /** Reports presented-layer changes, not the agent's requested speaking state. */
+  onLiveVisibilityChange?: (visible: boolean) => void;
   /**
    * The avatar's PORTRAIT (its face) — the DEEPEST floor, rendered behind the idle
    * clip and the live video whenever provided. It paints IMMEDIATELY on connect
@@ -207,6 +209,8 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   // intentionally not destructured.
   const testId = props["data-testid"];
 
+  const visibilityCallback = useRef(props.onLiveVisibilityChange);
+  visibilityCallback.current = props.onLiveVisibilityChange;
   const { videoTrack, audioTrack } = useVoiceAssistant();
   // Apply the native de-jitter cushion to BOTH avatar tracks (equal delay keeps
   // them lip-locked). This is the only runtime call site — it re-applies
@@ -287,6 +291,8 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     liveWanted,
     connected && !networkStalled ? idleReturnDelayMs : 0,
   );
+
+  useEffect(() => { visibilityCallback.current?.(showLive); }, [showLive]);
 
   // The box fills its parent; an optional `aspectRatio` only seeds a size-jump
   // guard until the caller's own aspect box (which it now owns) takes over. The

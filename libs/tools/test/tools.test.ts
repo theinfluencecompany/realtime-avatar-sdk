@@ -31,6 +31,28 @@ test("registers a manifest and arms the tools", async () => {
   assert.equal((state.registered as { tools: unknown[] }).tools.length, 1);
 });
 
+test("the target worker may invoke a tool before registration returns", async () => {
+  let invoke!: (input: { payload: string; callerIdentity?: string }) => Promise<string>;
+  let result: { ok: boolean } | undefined;
+  const room = {
+    localParticipant: {
+      registerRpcMethod(_method: string, handler: typeof invoke) { invoke = handler; },
+      async performRpc() {
+        result = JSON.parse(await invoke({
+          callerIdentity: "agent-1",
+          payload: JSON.stringify({ name: "check_order", args: '{"order_id":"A1"}', call_id: "early" }),
+        }));
+        return JSON.stringify({ accepted: ["check_order"], rejected: [] });
+      },
+    },
+    remoteParticipants: new Map([["a", { identity: "agent-1" }]]),
+  };
+  await attachAvatarTools(room, { check_order: ok });
+  assert.equal(result?.ok, true);
+  const rejected = JSON.parse(await invoke({ callerIdentity: "other", payload: "{}" }));
+  assert.equal(rejected.ok, false);
+});
+
 test("a bad tool is dropped with a reason, not silently ignored", async () => {
   const { room } = fakeRoom();
   const r = await attachAvatarTools(room, {

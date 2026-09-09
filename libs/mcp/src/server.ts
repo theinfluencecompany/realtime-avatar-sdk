@@ -3,7 +3,9 @@ import { stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { RealtimeAvatar, isQueued } from "realtime-avatar";
+import {
+  RealtimeAvatar, isQueued, clipLibraryDeclarationSchema,
+} from "realtime-avatar";
 
 /**
  * Mirrors this package's `version`. It reaches the wire twice — as the MCP server's own
@@ -11,7 +13,7 @@ import { RealtimeAvatar, isQueued } from "realtime-avatar";
  * `test/server.test.ts` asserts the two stay equal; the equivalent constant in
  * `realtime-avatar` had that guard and this one did not, which is how it drifted.
  */
-export const MCP_VERSION = "0.9.1";
+export const MCP_VERSION = "0.10.0";
 
 /**
  * The Realtime Avatar MCP server.
@@ -44,6 +46,8 @@ export interface CreateServerOptions {
   /** Injected in tests. */
   fetch?: typeof fetch;
 }
+
+const clipLibraryInputSchema = clipLibraryDeclarationSchema.safeExtend({ avatarId: z.string() });
 
 const MICROS_PER_CREDIT = 1_000_000;
 
@@ -199,7 +203,7 @@ export function createServer(options: CreateServerOptions): McpServer {
       description:
         "The declared clip library: every non-retired clip with its render status, plus " +
         "the library revision (pass it to set_clip_library as expectedRevision), the pose " +
-        "anchor and eligibility. status is the render JOB, not serveability — a clip " +
+        "anchor, default source, idle and event behavior, and eligibility. status is the render JOB, not serveability — a clip " +
         "re-rendering keeps serving its previous take.",
       inputSchema: { avatarId: z.string() },
       annotations: { readOnlyHint: true, openWorldHint: true },
@@ -269,27 +273,20 @@ export function createServer(options: CreateServerOptions): McpServer {
         "unchanged clips are kept, new or changed ones are queued to render, omitted ones " +
         "are retired. The 202 is acceptance, not readiness — poll list_clips until no row " +
         "is queued or generating. Pass expectedRevision from list_clips so a concurrent " +
-        "writer surfaces as a 409 instead of a lost update. Does not spend credits.",
-      inputSchema: {
-        avatarId: z.string(),
-        clips: z.array(z.object({
-          clipId: z.string().describe("Stable id you choose; same id + same source = kept"),
-          role: z.enum(["idle", "listen", "gesture"]),
-          whenHint: z.string().optional().describe("Briefed to the character, like an actor"),
-          source: z.union([
-            z.object({ motionPrompt: z.string() }),
-            z.object({ assetId: z.string() }),
-          ]).describe("motionPrompt renders motion; assetId uploads a clip that must start AND end on the rest pose"),
-          durationSeconds: z.number().optional(),
-          reroll: z.boolean().optional().describe("Set true to force a re-render of the same prompt"),
-        })).max(20).describe("The COMPLETE library (≤20 clips, ≤8 idle, ≤2 listen). Omitted clips are retired."),
-        expectedRevision: z.number().int().optional()
-          .describe("CAS: the revision you last read. Omit to declare unconditionally."),
-      },
+        "writer surfaces as a 409 instead of a lost update. clips maps stable ids to sources; " +
+        "'primary' is reserved — the avatar's stored source is the implicit rest state, " +
+        "weight 1, and the one clip that may repeat. idle.clips are variations on resting, " +
+        "drawn uniformly and never twice running; idle.weight says how often a variation " +
+        "plays instead of resting. on.userSpeechStarted plays one listening reaction per " +
+        "speech episode; actions are requestable by description, never automatic. Clip " +
+        "references are checked before sending. New or changed sources can incur generation " +
+        "or pose-validation charges; behavior-only edits reuse media. Do not submit " +
+        "speculative declarations.",
+      inputSchema: clipLibraryInputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ avatarId, clips, expectedRevision }) => {
-      const update = await rta.setClipLibrary(avatarId, { clips, expectedRevision });
+    async ({ avatarId, ...declaration }) => {
+      const update = await rta.setClipLibrary(avatarId, declaration);
       const bucket = (label: string, ids: string[]) =>
         `${label} (${ids.length})${ids.length ? `  ${ids.join(", ")}` : ""}`;
       return text(
@@ -312,8 +309,8 @@ export function createServer(options: CreateServerOptions): McpServer {
       title: "Re-direct the resting loop",
       description:
         "Re-generate the RESTING LOOP — the video she plays when nothing else is happening — " +
-        "from a new one-sentence description. NOT a clip: a clip with role 'idle' is a " +
-        "variant spliced over the loop, and declaring one never changes what she rests in. " +
+        "from a new one-sentence description. This replaces the avatar's stored source, " +
+        "which is the implicit rest state her declared idle variations are weighted against. " +
         "Accepted immediately (202) and rendered over minutes; she stays ready and keeps " +
         "serving her previous loop the whole time, and the clip library is untouched. Bills " +
         "one video generation per call, so do not send it speculatively.",
@@ -334,42 +331,6 @@ export function createServer(options: CreateServerOptions): McpServer {
         `Re-direct accepted (${result.loopStatus}).\n` +
           `She is still playing the previous loop until the new one is ready:\n  ${result.servingUrl ?? "—"}\n\n` +
           "Poll get_avatar; the swap publishes in one step. Her clips are unaffected.",
-      );
-    },
-  );
-
-  server.registerTool(
-    "sync_clips",
-    {
-      title: "Sync an avatar's clips",
-      description:
-        "DEPRECATED — this serves the sunsetting external-URL clip tier; declare the " +
-        "library with set_clip_library instead. Clips are prepared once and cached by URL " +
-        "hash, and " +
-        "the serve path only LOADS that cache — so a clip you added but never synced does " +
-        "nothing at all on the next call, silently. Idempotent: call it after every clip " +
-        "change. Pass the complete set you want live; anything omitted is retired. This does " +
-        "not spend credits.",
-      inputSchema: {
-        avatarId: z.string(),
-        clipUrls: z.array(z.string().url()).max(64)
-          .describe("The COMPLETE set that should be live. Omitted clips are retired."),
-      },
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    },
-    async ({ avatarId, clipUrls }) => {
-      const result = await rta.syncClips(avatarId, clipUrls);
-      const line = (label: string, urls: string[]) =>
-        urls.length ? `${label} (${urls.length})\n  ${urls.join("\n  ")}` : `${label} (0)`;
-      return text(
-        [
-          line("queued — preparing now", result.queued),
-          line("ready — already cached", result.ready),
-          line("retired — no longer live", result.retired),
-        ].join("\n") +
-          (result.queued.length
-            ? "\n\nQueued clips are not usable until they finish preparing."
-            : ""),
       );
     },
   );
