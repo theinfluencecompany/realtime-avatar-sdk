@@ -14,6 +14,37 @@
  *    reports the method is missing, the mint did not grant it — the fix is server-side.
  */
 
+import { z } from "zod";
+
+export function defineAvatarTool<I extends z.ZodType, O extends z.ZodType>(definition: {
+  description: string;
+  inputSchema: I;
+  outputSchema: O;
+  execute: (input: z.output<I>, context: ToolContext) => z.input<O> | Promise<z.input<O>>;
+}) {
+  return {
+    description: definition.description,
+    parameters: z.toJSONSchema(definition.inputSchema, { io: "input" }),
+    async execute(input: unknown, context: ToolContext): Promise<z.output<O>> {
+      context.signal.throwIfAborted();
+      const args = definition.inputSchema.parse(input);
+      const result = await definition.execute(args, context);
+      context.signal.throwIfAborted();
+      return definition.outputSchema.parse(result);
+    },
+  };
+}
+
+const invocationSchema = z.object({
+  name: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+  args: z.string().max(8192),
+  call_id: z.string().min(1).max(128),
+}).strict();
+const registrationSchema = z.object({
+  accepted: z.array(z.string()),
+  rejected: z.array(z.object({ name: z.string(), reason: z.string() })).default([]),
+});
+
 /** Caps the wire enforces. Exceeding them is a rejection, not a truncation. */
 export const MAX_TOOLS = 32;
 export const MAX_MANIFEST_BYTES = 12_000;
@@ -67,12 +98,14 @@ export type RegisteredTool = {
 export interface ToolRegistration {
   accepted: string[];
   rejected: Array<{ name: string; reason: string }>;
+  dispose: () => void;
 }
 
 /** The subset of a LiveKit Room this needs — kept structural so it is trivial to fake. */
 interface RoomLike {
   localParticipant: {
-    registerRpcMethod(method: string, handler: (data: { payload: string }) => Promise<string>): void;
+    registerRpcMethod(method: string, handler: (data: { payload: string; callerIdentity?: string }) => Promise<string>): void;
+    unregisterRpcMethod?(method: string): void;
     performRpc(options: {
       destinationIdentity: string;
       method: string;
@@ -169,6 +202,8 @@ export async function attachAvatarTools(
   tools: Record<string, RegisteredTool>,
   options: {
     onInvoke?: (name: string, args: unknown) => void;
+    onResult?: (event: { name: string; callId: string; ok: boolean; error?: string }) => void;
+    signal?: AbortSignal;
     /** How long to keep waiting for the agent to arm its side. Default 8000ms. */
     timeoutMs?: number;
   } = {},
@@ -182,16 +217,31 @@ export async function attachAvatarTools(
     );
   }
 
-  // Answer invocations. Registered BEFORE the manifest so a fast first call cannot race us.
-  room.localParticipant.registerRpcMethod(INVOKE_METHOD, async ({ payload }) => {
+  options.signal?.throwIfAborted();
+  let disposed = false;
+  let activeCaller: string | undefined;
+  const inFlight = new Set<AbortController>();
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    room.localParticipant.unregisterRpcMethod?.(INVOKE_METHOD);
+    for (const call of inFlight) call.abort();
+    options.signal?.removeEventListener("abort", dispose);
+  };
+  options.signal?.addEventListener("abort", dispose, { once: true });
+
+  // Arm the handler before publishing the manifest; only its accepting worker may invoke it.
+  room.localParticipant.registerRpcMethod(INVOKE_METHOD, async ({ payload, callerIdentity }) => {
     let name = "", callId = "";
     try {
-      const req = JSON.parse(payload) as { name: string; args: string; call_id: string };
+      if (disposed) throw new Error("Tool registration was disposed");
+      if (callerIdentity && callerIdentity !== activeCaller) throw new Error("Unregistered tool caller");
+      const req = invocationSchema.parse(JSON.parse(payload));
       name = req.name;
       callId = req.call_id;
       const tool = tools[name];
       if (!tool) return JSON.stringify({ ok: false, call_id: callId, error: `no tool named ${name}` });
-      const args = req.args ? (JSON.parse(req.args) as Record<string, unknown>) : {};
+      const args = z.record(z.string(), z.unknown()).parse(req.args ? JSON.parse(req.args) : {});
       options.onInvoke?.(name, args);
       // The one unsafe step, isolated: the wire always hands us a parsed object, and the
       // registry type widened `execute` to accept it (see RegisteredTool).
@@ -204,11 +254,14 @@ export async function attachAvatarTools(
       // that ignores it can still finish late and commit a side effect — its RESULT just
       // cannot come back. Make slow side effects idempotent, or check the signal.
       const controller = new AbortController();
+      inFlight.add(controller);
       const timer = setTimeout(() => controller.abort(), TOOL_DEADLINE_MS);
       let result: unknown;
       try {
         result = await run(args, { signal: controller.signal, callId });
+        controller.signal.throwIfAborted();
       } finally {
+        inFlight.delete(controller);
         clearTimeout(timer);
       }
       const encoded = typeof result === "string" ? result : JSON.stringify(result ?? null);
@@ -219,8 +272,10 @@ export async function attachAvatarTools(
           error: `result was ${encoded.length} chars, over the ${MAX_RESULT_CHARS} limit`,
         });
       }
+      options.onResult?.({ name, callId, ok: true });
       return JSON.stringify({ ok: true, call_id: callId, result: encoded });
     } catch (error) {
+      options.onResult?.({ name, callId, ok: false, error: error instanceof Error ? error.message : "tool failed" });
       // Never throw out of an RPC handler: livekit's fallback is the literal string
       // "An internal error occurred", which she would then say out loud.
       return JSON.stringify({
@@ -238,21 +293,27 @@ export async function attachAvatarTools(
   let lastError: unknown = null;
   let sawCandidate = false;
 
+  try {
   for (;;) {
+    options.signal?.throwIfAborted();
     for (const identity of candidateIdentities(room)) {
       sawCandidate = true;
+      activeCaller = identity;
       try {
         const raw = await room.localParticipant.performRpc({
           destinationIdentity: identity,
           method: REGISTER_METHOD,
           payload,
         });
-        const result = JSON.parse(raw) as ToolRegistration;
+        options.signal?.throwIfAborted();
+        const result = registrationSchema.parse(JSON.parse(raw));
         return {
-          accepted: result.accepted ?? [],
-          rejected: [...rejected, ...(result.rejected ?? [])],
+          accepted: result.accepted,
+          rejected: [...rejected, ...result.rejected],
+          dispose,
         };
       } catch (error) {
+        activeCaller = undefined;
         lastError = error;
         // A real failure from the right participant is worth surfacing immediately; only
         // "the method is not there" earns another round.
@@ -273,4 +334,8 @@ export async function attachAvatarTools(
         (lastError instanceof Error ? ` (last error: ${lastError.message})` : "")
       : "no remote participant joined the room before the timeout — nothing to register with",
   );
+  } catch (error) {
+    dispose();
+    throw error;
+  }
 }

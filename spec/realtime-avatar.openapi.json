@@ -80,7 +80,7 @@
           "instructions": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 8000
+            "maxLength": 16000
           },
           "initial_context": {
             "default": [],
@@ -100,7 +100,7 @@
                 "content": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 4000
+                  "maxLength": 8000
                 }
               },
               "required": [
@@ -506,6 +506,90 @@
               ],
               "additionalProperties": false
             }
+          },
+          "clip_behavior": {
+            "type": "object",
+            "properties": {
+              "idle": {
+                "type": "object",
+                "properties": {
+                  "clips": {
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                    }
+                  },
+                  "weight": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  }
+                },
+                "required": [
+                  "clips"
+                ],
+                "additionalProperties": false
+              },
+              "on": {
+                "type": "object",
+                "properties": {
+                  "userSpeechStarted": {
+                    "type": "object",
+                    "properties": {
+                      "clips": {
+                        "minItems": 1,
+                        "maxItems": 32,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "clips"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "actions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "clips": {
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "description",
+                    "clips"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
           },
           "choreography": {
             "type": "object",
@@ -2157,14 +2241,6 @@
                 "clipId": {
                   "type": "string"
                 },
-                "role": {
-                  "type": "string",
-                  "enum": [
-                    "idle",
-                    "listen",
-                    "gesture"
-                  ]
-                },
                 "status": {
                   "type": "string",
                   "enum": [
@@ -2179,16 +2255,6 @@
                     {
                       "type": "string",
                       "format": "uri"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "whenHint": {
-                  "anyOf": [
-                    {
-                      "type": "string"
                     },
                     {
                       "type": "null"
@@ -2374,10 +2440,8 @@
               },
               "required": [
                 "clipId",
-                "role",
                 "status",
                 "url",
-                "whenHint",
                 "source",
                 "uploadAssetId",
                 "motionPrompt",
@@ -2447,6 +2511,100 @@
           },
           "clipLibraryEligible": {
             "type": "boolean"
+          },
+          "defaultSourceAssetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "behavior": {
+            "type": "object",
+            "properties": {
+              "idle": {
+                "type": "object",
+                "properties": {
+                  "clips": {
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                    }
+                  },
+                  "weight": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  }
+                },
+                "required": [
+                  "clips"
+                ],
+                "additionalProperties": false
+              },
+              "on": {
+                "type": "object",
+                "properties": {
+                  "userSpeechStarted": {
+                    "type": "object",
+                    "properties": {
+                      "clips": {
+                        "minItems": 1,
+                        "maxItems": 32,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "clips"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "actions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "clips": {
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "description",
+                    "clips"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
@@ -2455,7 +2613,9 @@
           "revision",
           "anchorVersion",
           "anchor",
-          "clipLibraryEligible"
+          "clipLibraryEligible",
+          "defaultSourceAssetId",
+          "behavior"
         ],
         "additionalProperties": false
       },
@@ -2469,32 +2629,30 @@
             "maximum": 9007199254740991
           },
           "clips": {
-            "maxItems": 20,
-            "type": "array",
-            "items": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "additionalProperties": {
               "type": "object",
               "properties": {
-                "clipId": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 64,
-                  "pattern": "^[a-z0-9][a-z0-9_-]*$"
-                },
-                "role": {
-                  "type": "string",
-                  "enum": [
-                    "idle",
-                    "listen",
-                    "gesture"
-                  ]
-                },
-                "whenHint": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 280
-                },
                 "source": {
                   "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "assetId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160
+                        }
+                      },
+                      "required": [
+                        "assetId"
+                      ],
+                      "additionalProperties": false
+                    },
                     {
                       "type": "object",
                       "properties": {
@@ -2502,47 +2660,108 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 1200
+                        },
+                        "durationSeconds": {
+                          "type": "integer",
+                          "minimum": 4,
+                          "maximum": 8
                         }
                       },
                       "required": [
                         "motionPrompt"
                       ],
                       "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "assetId": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      },
-                      "required": [
-                        "assetId"
-                      ],
-                      "additionalProperties": false
                     }
                   ]
-                },
-                "durationSeconds": {
-                  "type": "integer",
-                  "minimum": 4,
-                  "maximum": 8
-                },
-                "reroll": {
-                  "type": "boolean"
                 }
               },
               "required": [
-                "clipId",
-                "role",
                 "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "idle": {
+            "type": "object",
+            "properties": {
+              "clips": {
+                "minItems": 1,
+                "maxItems": 32,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                }
+              },
+              "weight": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "clips"
+            ],
+            "additionalProperties": false
+          },
+          "on": {
+            "type": "object",
+            "properties": {
+              "userSpeechStarted": {
+                "type": "object",
+                "properties": {
+                  "clips": {
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                    }
+                  }
+                },
+                "required": [
+                  "clips"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "actions": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "clips": {
+                  "minItems": 1,
+                  "maxItems": 32,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                  }
+                }
+              },
+              "required": [
+                "description",
+                "clips"
               ],
               "additionalProperties": false
             }
           }
         },
         "required": [
+          "expectedRevision",
           "clips"
         ],
         "additionalProperties": false
@@ -2559,14 +2778,6 @@
                 "clipId": {
                   "type": "string"
                 },
-                "role": {
-                  "type": "string",
-                  "enum": [
-                    "idle",
-                    "listen",
-                    "gesture"
-                  ]
-                },
                 "status": {
                   "type": "string",
                   "enum": [
@@ -2581,16 +2792,6 @@
                     {
                       "type": "string",
                       "format": "uri"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "whenHint": {
-                  "anyOf": [
-                    {
-                      "type": "string"
                     },
                     {
                       "type": "null"
@@ -2776,10 +2977,8 @@
               },
               "required": [
                 "clipId",
-                "role",
                 "status",
                 "url",
-                "whenHint",
                 "source",
                 "uploadAssetId",
                 "motionPrompt",
@@ -2849,6 +3048,100 @@
           },
           "clipLibraryEligible": {
             "type": "boolean"
+          },
+          "defaultSourceAssetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "behavior": {
+            "type": "object",
+            "properties": {
+              "idle": {
+                "type": "object",
+                "properties": {
+                  "clips": {
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                    }
+                  },
+                  "weight": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  }
+                },
+                "required": [
+                  "clips"
+                ],
+                "additionalProperties": false
+              },
+              "on": {
+                "type": "object",
+                "properties": {
+                  "userSpeechStarted": {
+                    "type": "object",
+                    "properties": {
+                      "clips": {
+                        "minItems": 1,
+                        "maxItems": 32,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "clips"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "actions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "clips": {
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "description",
+                    "clips"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
           },
           "plan": {
             "type": "object",
@@ -2887,6 +3180,8 @@
           "anchorVersion",
           "anchor",
           "clipLibraryEligible",
+          "defaultSourceAssetId",
+          "behavior",
           "plan"
         ],
         "additionalProperties": false
@@ -2941,54 +3236,6 @@
           "loopStatus",
           "motionPrompt",
           "servingUrl"
-        ],
-        "additionalProperties": false
-      },
-      "SyncAvatarClipsRequest": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "clipUrls": {
-            "maxItems": 32,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uri"
-            }
-          }
-        },
-        "required": [
-          "clipUrls"
-        ],
-        "additionalProperties": false
-      },
-      "SyncAvatarClipsResponse": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "queued": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "ready": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "retired": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "queued",
-          "ready",
-          "retired"
         ],
         "additionalProperties": false
       },
@@ -3742,80 +3989,6 @@
         "tags": [
           "Avatars"
         ]
-      },
-      "post": {
-        "operationId": "syncAvatarClips",
-        "deprecated": true,
-        "description": "DEPRECATED — do not build on this. Declare the full library with PUT /v1/avatars/{avatarId}/clips, using either source.motionPrompt or the assetId of a registered uploaded video. This legacy route only reconciles EXTERNALLY hosted clip URLs to the cache tier for grandfathered tenants; it bypasses pose validation and cannot add a clip to the declared library. It remains functional until measured sunset evidence permits a 410 retirement.\n\nRequires an API key with the `avatars:write` scope.",
-        "parameters": [
-          {
-            "name": "avatarId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SyncAvatarClipsRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Synced",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SyncAvatarClipsResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, malformed, revoked, or expired key.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The key lacks the scope for this operation, or the tenant is not active.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-required-scopes": [
-          "avatars:write"
-        ],
-        "summary": "Sync an externally hosted clip library",
-        "tags": [
-          "Avatars"
-        ]
       }
     },
     "/v1/avatars/{avatarId}/loop": {
@@ -4329,6 +4502,10 @@
         ]
       }
     }
+  },
+  "x-clip-contract": {
+    "source": "/character-motion.ts",
+    "sha256": "7438746be01863e378997b665ac32c8ba0244b4c05a17288e07cd590c02b3b63"
   },
   "tags": [
     {

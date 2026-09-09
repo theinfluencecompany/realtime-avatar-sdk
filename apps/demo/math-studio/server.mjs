@@ -51,8 +51,7 @@ const rta = new RealtimeAvatar({ apiKey, userAgent: "demo-math-studio" });
  * instead when there is no such file — see the /portrait route below. A character costs one
  * object; the picture is optional.
  *
- * `clips` is a state map: the character reads each `when` and switches herself between them.
- * Optional too — with none, the platform renders her without one.
+ * `clips` supplies the explicit --declare-clips import. Calls inherit the stored library.
  */
 const CAST = [
   {
@@ -117,38 +116,31 @@ function pickTeacher(slug) {
   return TEACHERS[slug] ?? Object.values(TEACHERS)[0];
 }
 
-/**
- * This studio is on the EXTERNAL clip tier: the clips are files it hosts itself, handed over as
- * URLs and resolved per call through `video.states`. That tier is deprecated — a new integration
- * should declare a library instead (`setClipLibrary`), which makes the clips a property of the
- * CHARACTER rather than of each call, has the platform render and host them, and pose-checks each
- * one against her anchor before it can serve.
- *
- * It is kept here because the tier is still live and this is what an integration that predates the
- * declare lane looks like; moving it over means uploading each clip as an asset first, and a clip
- * that does not splice against her anchor is REFUSED rather than served, which is a judgment this
- * demo's generated clips have never been put through.
- *
- * Clips are prepared once and cached by URL hash; the serve path only ever LOADS that cache, so a
- * clip that was never prepared does nothing at all on the first call after you add it — no error,
- * just an avatar that ignores its state map. `syncClips` is idempotent, which is why it belongs at
- * boot rather than behind a flag, and it is not fatal: a studio that cannot reach the sync endpoint
- * should still open, with her rendered the way an avatar with no state map is rendered.
- */
-async function syncClips() {
-  const withClips = Object.values(TEACHERS).filter((c) => c.clips);
-  if (!withClips.length) return;
-  console.log("  clips:");
-  for (const c of withClips) {
-    try {
-      await rta.syncClips(c.avatarId, Object.values(c.clips).map((s) => s.url));
-      console.log(`    ${c.slug.padEnd(7)} ${Object.keys(c.clips).length} states prepared`);
-    } catch (err) {
-      console.warn(`    ${c.slug.padEnd(7)} sync failed (${err?.message ?? err}) — `
-        + "she will render without her state map");
-      delete c.clips;
+if (process.argv.includes("--declare-clips")) {
+  for (const teacher of Object.values(TEACHERS).filter((c) => c.clips)) {
+    const library = await rta.listClips(teacher.avatarId);
+    const clips = {};
+    const actions = {};
+    for (const [id, source] of Object.entries(teacher.clips)) {
+      const asset = await rta.createRemoteAsset({ kind: "video", remoteUrl: source.url });
+      clips[id] = { source: { assetId: asset.id } };
+      actions[id] = { description: source.when, clips: [id] };
     }
+    await rta.setClipLibrary(teacher.avatarId, {
+      expectedRevision: library.revision,
+      clips,
+      actions,
+    });
+    const settled = await rta.waitForClips(teacher.avatarId);
+    const failed = settled.data.filter((clip) => clip.status === "failed");
+    if (failed.length) {
+      throw new Error(`${teacher.slug}: rejected clips ${failed.map((clip) =>
+        `${clip.clipId}: ${clip.poseCheck?.issues?.join(", ") || clip.error?.message || "render failed"}`
+      ).join("; ")}`);
+    }
+    console.log(`${teacher.slug}: declared ${settled.data.length} clips`);
   }
+  process.exit(0);
 }
 
 /** Drawn rather than fetched, for a cast with no picture beside it. Two letters and one hue. */
@@ -520,7 +512,6 @@ const server = createServer(async (req, res) => {
          * A visitor who could post a spec could post any JSON straight into the mint body.
          */
         ...(voice ? { voice } : {}),
-        ...(teacher.clips ? { video: { states: teacher.clips } } : {}),
         clientTools: true, // without this grant her worker never exposes tool registration
         maxSeconds: MAX_SECONDS,
         metadata: { surface: "math-studio", teacher: teacher.slug,
@@ -685,5 +676,4 @@ for (const c of Object.values(TEACHERS)) {
   console.log("      URL — in her preset, hear it in the lab picker, then take that preset's name");
   console.log("      out of VOICE_UNVERIFIED. Cartesia specs do not start the worker on this key.");
 }
-await syncClips();
 server.listen(PORT, () => console.log(`studio is open -> http://localhost:${PORT}`));

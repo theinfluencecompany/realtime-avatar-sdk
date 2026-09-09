@@ -2,6 +2,7 @@ export { RealtimeAvatar, type RealtimeAvatarOptions, type StartCallOptions } fro
 export { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
 export { verifyTranscript } from "./webhook.ts";
 export { isQueued } from "./types.ts";
+export { clipLibraryDeclarationSchema } from "./generated/clip-library-schema.ts";
 export type {
   Asset,
   AssetKind,
@@ -15,11 +16,11 @@ export type {
   CallQueued,
   ClipDeclaration,
   ClipLibrary,
+  ClipLibraryDeclaration,
   ClipLibraryPlan,
   ClipLibraryUpdate,
   LoopRedirect,
   ClipSource,
-  ClipSyncResult,
   ContextMessage,
   CreditBalance,
   EndCallOptions,
@@ -30,5 +31,4 @@ export type {
   UsageSession,
   UsageSessionPage,
   VideoPolicy,
-  VideoState,
 } from "./types.ts";

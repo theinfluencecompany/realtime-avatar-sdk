@@ -7,6 +7,7 @@ import {
   sleep,
 } from "./retry.ts";
 import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
+import { clipLibraryResponseSchema, clipLibraryUpdateSchema } from "./generated/clip-library-schema.ts";
 import type {
   Asset,
   ListSessionsOptions,
@@ -18,11 +19,10 @@ import type {
   AvatarUpdate,
   CallMode,
   CallPolicy,
-  ClipDeclaration,
+  ClipLibraryDeclaration,
   ClipLibrary,
   ClipLibraryUpdate,
   LoopRedirect,
-  ClipSyncResult,
   CreditBalance,
   EndCallOptions,
   StartCallResult,
@@ -31,7 +31,7 @@ import type {
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.9.1";
+export const SDK_VERSION = "0.10.0";
 
 
 
@@ -363,54 +363,24 @@ export class RealtimeAvatar {
     await this.#json(await this.#request("DELETE", `/avatars/${avatarId}`));
   }
 
-  // A clip envelope missing `revision` would silently drop `expectedRevision` from the
-  // next declare — CAS degrades to unconditional with zero signal — so it throws instead.
-  #clipEnvelope<T extends ClipLibrary>(out: T): T {
-    if (typeof out.revision !== "number" || !Array.isArray(out.data)) {
-      throw new RealtimeAvatarError("clip library response did not match the contract");
-    }
-    return out;
-  }
-
-  /**
-   * Declare the avatar's full desired clip library — a declaration, not a delta. The
-   * platform reconciles it against what exists: unchanged clips are `kept` (still
-   * serving), new or changed ones are `queued` to render, and clips you dropped are
-   * `retired`. The 202 is acceptance, not readiness — poll `listClips` until no row is
-   * `queued` or `generating`. A rejected upload settles `failed`, which is terminal, so
-   * waiting for all-`ready` waits forever. While a re-render is in flight the previous
-   * take keeps serving, so a declaration never blanks a live avatar.
-   *
-   * `expectedRevision` is compare-and-set: pass the `revision` you last read and a
-   * concurrent writer surfaces as a 409 instead of a lost update. Omit it to declare
-   * unconditionally.
-   *
-   * At most 20 clips: up to eight `idle`, up to two `listen`, the rest `gesture`. Several
-   * idles are a resting ROTATION she drifts between, not alternatives to one. An uploaded
-   * clip (`source: { assetId }`) must start AND end on the avatar's rest pose — pose
-   * validation rejects it otherwise (`status: "failed"`, the verdict in `poseCheck`),
-   * and the rest of the library is untouched.
-   */
+  /** Reconcile the complete source registry and behavior; 202 accepts work, not media readiness. */
   async setClipLibrary(
     avatarId: string,
-    library: { clips: readonly ClipDeclaration[]; expectedRevision?: number },
+    library: ClipLibraryDeclaration,
   ): Promise<ClipLibraryUpdate> {
-    const body: Record<string, unknown> = { clips: library.clips };
-    if (library.expectedRevision !== undefined) body.expectedRevision = library.expectedRevision;
-    return this.#clipEnvelope(
-      (await this.#json(
-        await this.#request("PUT", `/avatars/${avatarId}/clips`, { json: body }),
-      )) as ClipLibraryUpdate,
-    );
+    const response = clipLibraryUpdateSchema.safeParse(await this.#json(
+      await this.#request("PUT", `/avatars/${avatarId}/clips`, { json: library }),
+    ));
+    if (!response.success) throw new RealtimeAvatarError("clip library response did not match the contract");
+    return response.data;
   }
 
   /**
    * Re-direct the RESTING LOOP — the video she plays when nothing else is happening — from
    * a new one-sentence description.
    *
-   * Not a clip, and this is the distinction integrations get wrong: a clip with
-   * `role: "idle"` is a variant spliced OVER the loop, and declaring one never changes what
-   * she rests in. This is the only thing that does.
+   * This changes the stored source — the implicit rest state — not the declared idle
+   * variations or ordinary clip assets.
    *
    * `202`, because the render takes minutes. Three properties, all measured against a real
    * render rather than asserted:
@@ -506,33 +476,11 @@ export class RealtimeAvatar {
 
   /** The avatar's clip library: every non-retired clip, plus revision, anchor and eligibility. */
   async listClips(avatarId: string): Promise<ClipLibrary> {
-    return this.#clipEnvelope(
-      (await this.#json(
-        await this.#request("GET", `/avatars/${avatarId}/clips`),
-      )) as ClipLibrary,
-    );
-  }
-
-  /**
-   * Reconcile an avatar's clip set after it changes.
-   *
-   * Required, not optional: clips are prepared once and cached by URL hash, and the serve
-   * path only LOADS that cache. A clip that has never been prepared silently does nothing on
-   * the first call after you add it. Idempotent, so calling it on every write is cheap.
-   *
-   * **At most 32 URLs per call.** This is the whole set for the avatar, not a delta, and the
-   * endpoint rejects an oversize list rather than truncating it — so a library that outgrows
-   * 32 needs the set trimmed, not split across two calls.
-   *
-   * @deprecated The externally-hosted clip tier this serves is sunsetting. Declare the
-   * library with {@link setClipLibrary} instead — the platform renders and hosts the
-   * clips, and pose-validates uploads against the avatar's rest pose.
-   */
-  async syncClips(avatarId: string, clipUrls: readonly string[]): Promise<ClipSyncResult> {
-    const out = (await this.#json(
-      await this.#request("POST", `/avatars/${avatarId}/clips`, { json: { clipUrls } }),
-    )) as ClipSyncResult;
-    return { queued: out.queued ?? [], ready: out.ready ?? [], retired: out.retired ?? [] };
+    const response = clipLibraryResponseSchema.safeParse(await this.#json(
+      await this.#request("GET", `/avatars/${avatarId}/clips`),
+    ));
+    if (!response.success) throw new RealtimeAvatarError("clip library response did not match the contract");
+    return response.data;
   }
 
   // ── assets ───────────────────────────────────────────────────────────────
@@ -700,9 +648,6 @@ function videoToWire(video: NonNullable<CallPolicy["video"]>): Record<string, un
   // Nothing here may carry media for the call itself. A session names an avatar and reads
   // the media stored ON it, so top-level source keys are rejected rather than merged.
   const out: Record<string, unknown> = {};
-  // One option in, one sibling block out — the same mapping as the connect lane. NOT an
-  // early return: `states` still has to be mapped below, and returning here would drop
-  // clip_library for exactly the sessions using the newest feature.
   if (video.edits) {
     const edits: Record<string, unknown> = { instruction: video.edits.instruction };
     if (video.edits.referenceUrl !== undefined) edits.reference_url = video.edits.referenceUrl;
@@ -720,20 +665,6 @@ function videoToWire(video: NonNullable<CallPolicy["video"]>): Record<string, un
       edits.live_edit = live;
     }
     out.support_edits = edits;
-  }
-  if (video.states) {
-    out.clip_library = Object.entries(video.states).map(([id, state]) => {
-      const clip: Record<string, unknown> = {
-        clip_id: id,
-        source_video_url: state.url,
-        trigger: "directive",
-        // `when` is the public name for this cue. The wire also still accepts the older
-        // `hint`; send one name only, and prefer the one the docs and types use.
-        when: state.when,
-      };
-      if (state.weight !== undefined) clip.weight = state.weight;
-      return clip;
-    });
   }
   return out;
 }
