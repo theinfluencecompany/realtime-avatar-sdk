@@ -88,3 +88,46 @@ test("clean high openings and the default low-opening policy remain unchanged", 
   assert.equal(DEFAULT_GOVERNOR_CONFIG.openingCap, "low");
   assert.equal(recover(initGovernor(0), 1_000, 10_000).raisedAt, 5_000);
 });
+
+test("buffer growth alone cannot pin continuously smooth playback at low forever", () => {
+  let governor = step(initGovernor(0, "high"), { ...healthy, paused: true }, 1_000).governor;
+  let raisedAt: number | null = null;
+  for (let now = 2_000; now <= 20_000; now += 1_000) {
+    const result = step(governor, { ...healthy, jitterRising: true }, now);
+    governor = result.governor;
+    if (result.action?.setCap === "high") { raisedAt = now; break; }
+  }
+  assert.equal(raisedAt, 10_000, "require 8s of continuous smooth playback, not only the 3s clean window");
+  const failed = step(governor, { ...healthy, freezeMsInWindow: 120 }, 11_000);
+  assert.equal(failed.action?.setCap, "low", "a real freeze still ends probation immediately");
+  assert.equal(failed.governor.failures, 2);
+  governor = failed.governor;
+  for (let now = 12_000; now < 27_000; now += 1_000) {
+    const next = step(governor, { ...healthy, jitterRising: true }, now);
+    assert.equal(next.action, undefined, "buffer-only recovery cannot bypass the second-failure hold");
+    governor = next.governor;
+  }
+  assert.equal(step(governor, { ...healthy, jitterRising: true }, 27_000).action?.setCap, "high");
+});
+
+test("jitter-only recovery is reset by real congestion and hidden time", () => {
+  for (const interrupted of [
+    { ...healthy, freezeMsInWindow: 250 },
+    { ...healthy, paused: true },
+    { ...healthy, connectionQuality: "poor" as const },
+    { ...healthy, inhibited: true },
+  ]) {
+    let governor = step(initGovernor(0, "high"), { ...healthy, paused: true }, 1_000).governor;
+    for (let now = 2_000; now <= 8_000; now += 1_000) {
+      governor = step(governor, { ...healthy, jitterRising: true }, now).governor;
+    }
+    governor = step(governor, interrupted, 9_000).governor;
+    assert.equal(governor.playableSinceMs, null);
+    for (let now = 10_000; now < 18_000; now += 1_000) {
+      const next = step(governor, { ...healthy, jitterRising: true }, now);
+      assert.equal(next.action, undefined);
+      governor = next.governor;
+    }
+    assert.equal(step(governor, { ...healthy, jitterRising: true }, 18_000).action?.setCap, "high");
+  }
+});

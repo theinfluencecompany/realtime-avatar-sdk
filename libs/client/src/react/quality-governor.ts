@@ -168,6 +168,8 @@ export interface Governor {
   /** Wall-clock ms of the last healthy tick in the current low period (clean-window
    *  accumulation); null until the first healthy tick after entering low. */
   healthySinceMs: number | null;
+  /** Continuous unpaused, unfrozen playback at low, independent of buffer trends. */
+  playableSinceMs: number | null;
 }
 
 /** The initial governor. Default opening: cap=low — first impression is NEVER a
@@ -179,6 +181,7 @@ export const initGovernor = (nowMs: number, openingCap: QualityCap = "low"): Gov
   failures: 0,
   enteredAtMs: nowMs,
   healthySinceMs: null,
+  playableSinceMs: null,
 });
 
 /** A signal is a downgrade trigger from a stable/high cap (docs §2 Fix 3). */
@@ -191,13 +194,14 @@ const isDowngrade = (s: GovernorSignal, cfg: GovernorConfig): boolean =>
 const isProbationFail = (s: GovernorSignal, cfg: GovernorConfig): boolean =>
   s.paused || s.freezeMsInWindow >= cfg.probationFreezeMs;
 
-/** "Healthy right now": no freeze, no pause, jitter not rising, quality not poor/lost. */
-const isHealthy = (s: GovernorSignal): boolean =>
+const isPlayable = (s: GovernorSignal): boolean =>
   !s.paused &&
   s.freezeMsInWindow === 0 &&
-  !s.jitterRising &&
   s.connectionQuality !== "poor" &&
   s.connectionQuality !== "lost";
+
+/** Fast recovery requires a clean buffer trend as well as smooth playback. */
+const isHealthy = (s: GovernorSignal): boolean => isPlayable(s) && !s.jitterRising;
 
 /** The exponential dwell for the current failure count, capped. */
 const dwellMs = (failures: number, cfg: GovernorConfig): number =>
@@ -209,6 +213,7 @@ const enter = (g: Governor, state: GovernorState, cap: QualityCap, nowMs: number
   cap,
   enteredAtMs: nowMs,
   healthySinceMs: null,
+  playableSinceMs: cap === "low" && g.cap === "low" ? g.playableSinceMs : null,
 });
 
 /**
@@ -230,7 +235,11 @@ export const step = (
   // nothing (a downgrade can't fix a decode/paint bottleneck; our Dia-freeze lesson).
   if (s.inhibited) {
     // An unobserved interval cannot complete a continuously healthy window.
-    return { governor: g.healthySinceMs === null ? g : { ...g, healthySinceMs: null } };
+    return {
+      governor: g.healthySinceMs === null && g.playableSinceMs == null
+        ? g
+        : { ...g, healthySinceMs: null, playableSinceMs: null },
+    };
   }
 
   // AUTHORITATIVE INSTANT DOWNGRADE from any non-low cap. Paused is 0ms-bar; freeze
@@ -248,6 +257,22 @@ export const step = (
       action: { setCap: "low" },
     };
   }
+
+  const recovering = g.state === "cap_low_sticky" || g.state === "cap_low_eligible";
+  if (recovering) {
+    g = {
+      ...g,
+      playableSinceMs: isPlayable(s) ? (g.playableSinceMs ?? nowMs) : null,
+    };
+  }
+  // The receive buffer can sawtooth without any pause, native freeze, or poor
+  // connection. In production that reset cleanMs forever at the small rung.
+  // After a longer, continuously smooth window, allow one SFU-controlled probe.
+  // The normal dwell/backoff and strict high probation still apply.
+  const bufferOnlyRecovery = recovering && s.jitterRising &&
+    g.playableSinceMs !== null &&
+    nowMs - g.playableSinceMs >= Math.max(cfg.dwellBaseMs, cfg.cleanMs);
+  const recoveryHealthy = isHealthy(s) || bufferOnlyRecovery;
 
   switch (g.state) {
     case "opening_high": {
@@ -273,8 +298,10 @@ export const step = (
     case "cap_low_sticky": {
       // Reset the failure count if the link has been genuinely healthy for a long
       // window (network changed / improved) — prevents permanent low-pinning.
-      const healthy = isHealthy(s);
-      const healthySince = healthy ? (g.healthySinceMs ?? nowMs) : null;
+      const healthy = recoveryHealthy;
+      const healthySince = bufferOnlyRecovery
+        ? g.playableSinceMs
+        : healthy ? (g.healthySinceMs ?? nowMs) : null;
       const resetFailures =
         healthy && healthySince !== null && nowMs - healthySince >= cfg.healthyResetMs;
       const dwellDone = nowMs - g.enteredAtMs >= dwellMs(g.failures, cfg);
@@ -317,10 +344,10 @@ export const step = (
       // and on many prod sessions the event simply never fires, so treating a
       // MISSING reading as a block pinned those calls to the small rung for the
       // whole 30s connect window (measured: part of the 56% never-upgraded cohort).
-      if (!isHealthy(s)) {
+      if (!recoveryHealthy) {
         return { governor: { ...g, healthySinceMs: null } };
       }
-      const cleanSince = g.healthySinceMs ?? nowMs;
+      const cleanSince = (bufferOnlyRecovery ? g.playableSinceMs : g.healthySinceMs) ?? nowMs;
       if (nowMs - cleanSince >= cfg.cleanMs) {
         // UP-PROBE: raise the cap (permission, not delivery) and start probation.
         return {

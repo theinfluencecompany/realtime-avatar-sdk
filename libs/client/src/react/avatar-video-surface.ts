@@ -34,6 +34,13 @@ import { useAvatarAdaptivePlayoutDelay } from "./use-adaptive-playout";
 import { useAvatarQualityGovernor, type FreezeReadingFn } from "./use-quality-governor";
 import { DEFAULT_GOVERNOR_CONFIG, type QualityCap } from "./quality-governor";
 import { FrameRecovery, StallEscalation, firstFrameWaitFreezeMs } from "./frame-recovery";
+import {
+  FRAME_GAP_FREEZE_FLOOR_MS,
+  completedFrameGapMs,
+  ongoingFrameGapMs,
+  presentedVideoFrames,
+  scoreFrameGap,
+} from "./frame-progress";
 // The escalated hold is part of this surface's contract (see `frameStallMs`), so it is
 // re-exported from here beside DEFAULT_AVATAR_FRAME_STALL_MS.
 export { DEFAULT_AVATAR_UNSTABLE_STALL_MS } from "./frame-recovery";
@@ -53,7 +60,7 @@ export { DEFAULT_AVATAR_UNSTABLE_STALL_MS } from "./frame-recovery";
 export const DEFAULT_AVATAR_FRAME_STALL_MS = 2_000;
 
 /** Ignore ordinary 15-25fps presentation spacing when scoring a freeze. */
-export const AVATAR_FRAME_GAP_FREEZE_FLOOR_MS = 100;
+export const AVATAR_FRAME_GAP_FREEZE_FLOOR_MS = FRAME_GAP_FREEZE_FLOOR_MS;
 
 /** How the media is fit into the surface box. Mirrors CSS `object-fit`. */
 export type AvatarVideoFit = "contain" | "cover";
@@ -655,8 +662,7 @@ export function isFrameFlowingAt(snapshot: FrameFlowSnapshot): boolean {
 
 /** Convert a presented-frame gap into a governor freeze signal. */
 export function freezeMsFromFrameGap(gapMs: number): number {
-  if (!Number.isFinite(gapMs) || gapMs <= AVATAR_FRAME_GAP_FREEZE_FLOOR_MS) return 0;
-  return gapMs;
+  return scoreFrameGap(gapMs);
 }
 
 export type FrameFreezeInhibitSnapshot = {
@@ -706,9 +712,11 @@ function useLiveFrameFlow(
   const [flowing, setFlowing] = useState(false);
   const [seenFrame, setSeenFrame] = useState(false);
   const flowingRef = useRef(false);
+  const frameVideoRef = useRef<HTMLVideoElement | null>(null);
   const sampleRef = useRef<{
     seenFrame: boolean;
     lastFrameAtMs: number | null;
+    lastFrameCount: number | null;
     maxGapMs: number;
     resumePending: boolean;
     /** When the track began producing (this binding) — the clock the first-frame wait runs on. */
@@ -716,6 +724,7 @@ function useLiveFrameFlow(
   }>({
     seenFrame: false,
     lastFrameAtMs: null,
+    lastFrameCount: null,
     maxGapMs: 0,
     resumePending: false,
     producingSinceMs: null,
@@ -725,6 +734,7 @@ function useLiveFrameFlow(
     sampleRef.current = {
       seenFrame: false,
       lastFrameAtMs: null,
+      lastFrameCount: null,
       maxGapMs: 0,
       resumePending: document.visibilityState !== "visible",
       producingSinceMs: trackProducing ? Date.now() : null,
@@ -744,6 +754,7 @@ function useLiveFrameFlow(
     const markFrame = (): void => {
       const previous = sampleRef.current;
       const now = Date.now();
+      const frameCount = presentedVideoFrames(video);
       // A frame callback and the polling fallback can observe the same frame.
       // Advance both cursors together so a poll cannot extend a stopped burst.
       lastCurrentTime = video?.currentTime ?? lastCurrentTime;
@@ -752,13 +763,18 @@ function useLiveFrameFlow(
         producingSinceMs: previous.producingSinceMs,
         seenFrame: true,
         lastFrameAtMs: now,
+        lastFrameCount: frameCount,
         // A hidden tab/bfcache resume is a local scheduling gap, not network
         // congestion. The first fresh frame becomes the new baseline.
         maxGapMs: previous.resumePending
           ? 0
           : Math.max(
               previous.maxGapMs,
-              previous.lastFrameAtMs === null ? 0 : now - previous.lastFrameAtMs,
+              previous.lastFrameAtMs === null ? 0 : completedFrameGapMs(
+                now - previous.lastFrameAtMs,
+                previous.lastFrameCount,
+                frameCount,
+              ),
             ),
         resumePending: false,
       };
@@ -784,6 +800,7 @@ function useLiveFrameFlow(
       cancelFrameCallback();
       callbackGeneration += 1;
       video = next;
+      frameVideoRef.current = next;
       lastCurrentTime = next?.currentTime ?? -1;
       if (!next?.requestVideoFrameCallback) return;
       const generation = callbackGeneration;
@@ -849,6 +866,7 @@ function useLiveFrameFlow(
       window.removeEventListener("pageshow", onPageShow);
       stopObserving();
       cancelFrameCallback();
+      frameVideoRef.current = null;
     };
   // A full reconnect can replace the RemoteTrack while both publications remain
   // `live`. Reset the presentation clock so a new track whose currentTime starts at
@@ -877,7 +895,11 @@ function useLiveFrameFlow(
       sample.maxGapMs = 0;
       return { freezeMsInWindow: 0, inhibited: true };
     }
-    const ongoingGapMs = Math.max(0, Date.now() - lastFrameAtMs);
+    const ongoingGapMs = ongoingFrameGapMs(
+      Math.max(0, Date.now() - lastFrameAtMs),
+      sample.lastFrameCount,
+      presentedVideoFrames(frameVideoRef.current),
+    );
     const freezeMsInWindow = freezeMsFromFrameGap(Math.max(sample.maxGapMs, ongoingGapMs));
     // Consume recovered gaps once sampled; an ongoing stall remains observable via age.
     sample.maxGapMs = 0;

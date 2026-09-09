@@ -1,5 +1,84 @@
 # Quality ramp and receiver latency reproduction
 
+## Production browser evidence (2026-09-09)
+
+`scripts/eval-prod-video-recovery.mjs` drives the real Remy video-call UI on
+`prelulu.ai`, with metered test accounts and the production RTX6000 pool. It does
+not deploy anything. Both arms use the same captured production JavaScript;
+Playwright substitutes the draft reducer and frame observer only in the candidate
+browser. The adapter pins the deployed bundle SHA and fails if production changes.
+The candidate observer is compiled directly from `avatar-video-surface.ts`.
+
+The production traces exposed three additional reasons a recovered link stayed soft:
+
+- Delayed JavaScript observations were treated as frozen frames while the video
+  counter kept advancing. A completed multi-frame interval is now treated as
+  ambiguous, not a proven freeze. An ongoing stall with no counter progress and
+  native WebRTC freeze statistics remain actionable.
+- A 100ms callback gap was enough to keep restarting the clean window at the 20fps
+  lower layer. The callback floor is now 200ms, approximately the native WebRTC
+  freeze bar for 15–25fps. This tolerates short callback gaps; it does not change the
+  receive buffer, SFU pause response, or native freeze probation threshold.
+- Even with no new native freezes and excellent connection quality, the receive
+  buffer could repeatedly rise and drain. Eight uninterrupted seconds of unpaused,
+  unfrozen playback now permit a guarded probe despite that buffer-only signal.
+  Actual freezes, poor/lost quality, hidden time, and pauses clear this evidence.
+  Failed probes still back off exponentially.
+
+The test constrains actual WebRTC/P2P traffic using Chromium's
+[`Network.emulateNetworkConditionsByRule`](https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-emulateNetworkConditionsByRule),
+with a global empty URL pattern: 450kbps downstream for six seconds, then
+unrestricted. Received RTP bytes, decoded dimensions, presentation counters, native
+freezes, buffer time, and long tasks are recorded. An HTTP-only throttle is not
+used. The source is a live production avatar, not a fixture video.
+
+```sh
+# Only for an explicitly authorized, metered production evaluation.
+export RTA_PROD_EVAL=1 PROD_REPORT_DIR=/tmp/rta-prod-video-recovery
+PROD_ARM=before PROD_RUN=before-1 PROD_MEDIA_RECORD=1 node scripts/eval-prod-video-recovery.mjs
+PROD_ARM=after PROD_RUN=after-1 PROD_MEDIA_RECORD=1 node scripts/eval-prod-video-recovery.mjs
+PROD_ARM=after PROD_RUN=after-2 PROD_MEDIA_RECORD=1 node scripts/eval-prod-video-recovery.mjs
+PROD_ARM=before PROD_RUN=before-2 PROD_MEDIA_RECORD=1 node scripts/eval-prod-video-recovery.mjs
+python3 scripts/summarize-prod-video-recovery.py "$PROD_REPORT_DIR"
+```
+
+Each call ends in `finally`. Credentials/grants stay in the private output
+directory; never publish it. The page screenshots and received-track recordings
+contain only the test call. Screen recording is off by default because a large
+Playwright screencast substantially delayed callbacks on the shared runner.
+
+This is a small sequential comparison, not simultaneous subscribers to one room.
+Worker load and initial dispatch time can vary. Full resolution means the top
+declared layer actually presented for at least five seconds, not a HIGH request.
+Remy's ladder in these calls is 624×360 / 832×480. No 1080p, encoder-speed,
+dispatch-time, end-to-end latency, or device-specific mobile claim follows.
+The recordings re-encode the received track; dimensions come from browser frame
+metadata, not the recording's file header. Receive-to-display time excludes
+inference, encoding, and the trip to the browser.
+
+Final verification order was production → draft → draft → production. Both final
+draft runs used the same source hashes and all four used the same deployed bundle:
+
+| Run | Sustained top after bandwidth restored | Final 20s top share | Presented fps | Receive-to-display median |
+| --- | --- | --- | --- | --- |
+| Production 1 | Not sustained within 56.2s | 0% | 17.96 | 151ms |
+| Draft 1 | 29.02s | 100% | 24.37 | 272ms |
+| Draft 2 | 27.57s | 100% | 24.10 | 347ms |
+| Production 2 | Not sustained within 55.7s | 1.75% | 20.05 | 129ms |
+
+**Clarity recovery improved; the latency-first rollout gate is not met.** The draft
+had 1.49–2.99s of native reported freezes after restoration, versus 0–0.25s in the
+baselines. Both draft runs had no native freezes in the final 20s, but still had
+higher receive-to-display delay. This is a small sequential production sample,
+not proof that the client caused every delay difference. Initial dispatch and
+buffer spikes remain unresolved; do not describe it as an end-to-end latency win.
+
+[Production gallery and all attempts](https://drag-reader-dip-via.trycloudflare.com/video-startup-20260909/)
+includes the earlier failed candidates and the unsuccessful synthetic fixture.
+Private grants/accounts are excluded. The faster 5.61s result from an intermediate
+candidate is retained as historical evidence, not substituted for the final
+candidate's 27.57–29.02s results.
+
 ## Recovery after an opening bandwidth dip (2026-09-09)
 
 The additional regression cell starts HIGH, injects a pause at 1s, then restores a
