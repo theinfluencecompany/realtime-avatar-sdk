@@ -930,6 +930,11 @@ export interface components {
             /** @description Set when the failure is worth retrying as-is. */
             retryable?: boolean;
             /**
+             * Format: uuid
+             * @description Server-generated correlation ID, also returned in X-Request-ID on correlated failures. Quote this when contacting support. Detailed diagnostics require separate operational access.
+             */
+            requestId?: string;
+            /**
              * @description Present on `403 insufficient_scope` — the one scope this operation needed and the key did not carry. Repeated in the `WWW-Authenticate` challenge as `scope=`.
              * @enum {string}
              */

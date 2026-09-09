@@ -3270,6 +3270,12 @@
             "description": "Set when the failure is worth retrying as-is.",
             "type": "boolean"
           },
+          "requestId": {
+            "description": "Server-generated correlation ID, also returned in X-Request-ID on correlated failures. Quote this when contacting support. Detailed diagnostics require separate operational access.",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
           "requiredScope": {
             "description": "Present on `403 insufficient_scope` — the one scope this operation needed and the key did not carry. Repeated in the `WWW-Authenticate` challenge as `scope=`.",
             "type": "string",
