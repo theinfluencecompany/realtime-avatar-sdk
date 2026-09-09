@@ -139,14 +139,7 @@ export interface paths {
          *     Requires an API key with the `avatars:write` scope.
          */
         put: operations["putAvatarClips"];
-        /**
-         * Sync an externally hosted clip library
-         * @deprecated
-         * @description DEPRECATED — do not build on this. Declare the full library with PUT /v1/avatars/{avatarId}/clips, using either source.motionPrompt or the assetId of a registered uploaded video. This legacy route only reconciles EXTERNALLY hosted clip URLs to the cache tier for grandfathered tenants; it bypasses pose validation and cannot add a clip to the declared library. It remains functional until measured sunset evidence permits a 410 retirement.
-         *
-         *     Requires an API key with the `avatars:write` scope.
-         */
-        post: operations["syncAvatarClips"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -394,6 +387,23 @@ export interface components {
                 when?: string;
                 hint?: string;
             }[];
+            clip_behavior?: {
+                idle?: {
+                    clips: string[];
+                    weight?: number;
+                };
+                on?: {
+                    userSpeechStarted?: {
+                        clips: string[];
+                    };
+                };
+                actions?: {
+                    [key: string]: {
+                        description: string;
+                        clips: string[];
+                    };
+                };
+            };
             choreography?: {
                 idle_dwell_min_seconds?: number;
                 idle_dwell_max_seconds?: number;
@@ -739,11 +749,8 @@ export interface components {
             data: {
                 clipId: string;
                 /** @enum {string} */
-                role: "idle" | "listen" | "gesture";
-                /** @enum {string} */
                 status: "queued" | "generating" | "ready" | "failed";
                 url: string | null;
-                whenHint: string | null;
                 /** @enum {string} */
                 source: "generated" | "uploaded";
                 uploadAssetId: string | null;
@@ -782,32 +789,59 @@ export interface components {
                 timeMs: number | null;
             } | null;
             clipLibraryEligible: boolean;
+            defaultSourceAssetId: string | null;
+            behavior: {
+                idle?: {
+                    clips: string[];
+                    weight?: number;
+                };
+                on?: {
+                    userSpeechStarted?: {
+                        clips: string[];
+                    };
+                };
+                actions?: {
+                    [key: string]: {
+                        description: string;
+                        clips: string[];
+                    };
+                };
+            };
         };
         PutAvatarClipsRequest: {
-            expectedRevision?: number;
+            expectedRevision: number;
             clips: {
-                clipId: string;
-                /** @enum {string} */
-                role: "idle" | "listen" | "gesture";
-                whenHint?: string;
-                source: {
-                    motionPrompt: string;
-                } | {
-                    assetId: string;
+                [key: string]: {
+                    source: {
+                        assetId: string;
+                    } | {
+                        motionPrompt: string;
+                        durationSeconds?: number;
+                    };
                 };
-                durationSeconds?: number;
-                reroll?: boolean;
-            }[];
+            };
+            idle?: {
+                clips: string[];
+                weight?: number;
+            };
+            on?: {
+                userSpeechStarted?: {
+                    clips: string[];
+                };
+            };
+            actions?: {
+                [key: string]: {
+                    description: string;
+                    clips: string[];
+                };
+            };
         };
         PutAvatarClipsResponse: {
             data: {
                 clipId: string;
                 /** @enum {string} */
-                role: "idle" | "listen" | "gesture";
-                /** @enum {string} */
                 status: "queued" | "generating" | "ready" | "failed";
                 url: string | null;
-                whenHint: string | null;
                 /** @enum {string} */
                 source: "generated" | "uploaded";
                 uploadAssetId: string | null;
@@ -846,6 +880,24 @@ export interface components {
                 timeMs: number | null;
             } | null;
             clipLibraryEligible: boolean;
+            defaultSourceAssetId: string | null;
+            behavior: {
+                idle?: {
+                    clips: string[];
+                    weight?: number;
+                };
+                on?: {
+                    userSpeechStarted?: {
+                        clips: string[];
+                    };
+                };
+                actions?: {
+                    [key: string]: {
+                        description: string;
+                        clips: string[];
+                    };
+                };
+            };
             plan: {
                 kept: string[];
                 queued: string[];
@@ -861,14 +913,6 @@ export interface components {
             loopStatus: "generating" | "ready" | "failed";
             motionPrompt: string;
             servingUrl: string | null;
-        };
-        SyncAvatarClipsRequest: {
-            clipUrls: string[];
-        };
-        SyncAvatarClipsResponse: {
-            queued: string[];
-            ready: string[];
-            retired: string[];
         };
         OkResponse: {
             ok: boolean;
@@ -1399,59 +1443,6 @@ export interface operations {
                 };
             };
             /** @description The key lacks the scope for this operation, the tenant is not active, or the clip-library write is not yet enabled for the tenant — code "clip_library_not_enabled", a per-tenant rollout gate. Contact support to opt in; until then an avatar keeps the library its creation pipeline generated. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`. */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    syncAvatarClips: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                avatarId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SyncAvatarClipsRequest"];
-            };
-        };
-        responses: {
-            /** @description Synced */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SyncAvatarClipsResponse"];
-                };
-            };
-            /** @description Missing, malformed, revoked, or expired key. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The key lacks the scope for this operation, or the tenant is not active. */
             403: {
                 headers: {
                     [name: string]: unknown;

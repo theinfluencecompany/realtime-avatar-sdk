@@ -24,10 +24,8 @@
  *                         belongs upstream in the spec export, not here.
  *   TranscriptPayload     the transcript webhook body is not in the published contract at all.
  *                         Same upstream gap, bigger: nothing describes this shape publicly.
- *   VideoPolicy and its   deliberately NOT one-to-one with the wire. `{ loop, states, edits }`
- *   VideoState/VideoEdits is an SDK-designed surface over `clip_library`, `support_edits` and
- *                         `render_backend`. Deriving it would leak three wire concepts into one
- *                         product decision and make the ergonomics hostage to the transport.
+ *   VideoPolicy/VideoEdits curate renderer and look-editing options. Clip behavior is declared
+ *                         on the avatar, never translated from a second per-call state map.
  *
  * Everything else indexes into the contract, so `npm run check` is what catches a divergence.
  * Verified by mutation: renaming `participant_token` in the generated file fails the typecheck.
@@ -73,28 +71,7 @@ export type CallMode = NonNullable<Wire["LiveKitSessionRequest"]["mode"]>;
 export type ContextMessage = NonNullable<Wire["LiveKitSessionRequest"]["initial_context"]>[number];
 
 /**
- * DERIVATION: hand-written, and deliberately NOT one-to-one with the wire.
- *
- * The contract carries `clip_library`, `support_edits` and `render_backend` as three separate
- * concerns. `video` is one product decision layered over all three, so deriving it would leak
- * the transport's shape into the ergonomics and make this API hostage to how those three
- * happen to be spelled upstream.
- */
-/** One named state the character can rest in, and when she should be in it. */
-export interface VideoState {
-  /**
-   * A plain sentence — "when the user is happy". Read by the CHARACTER, not by a rules
-   * engine, so write it the way you would brief an actor. `sentiment > 0.7` does nothing.
-   */
-  when: string;
-  /** A closed-loop clip: first frame and last frame on the same rest pose. */
-  url: string;
-  /** Relative likelihood against sibling states. Default 1. */
-  weight?: number;
-}
-
-/** DERIVATION: hand-written. Part of the `video` surface — see {@link VideoState}. */
-/**
+ * DERIVATION: camelCase editing options curate the wire's snake_case support_edits fields.
  * Rewrite the clip instead of replaying it as shot: her loop, streamed through a video
  * editing model under a prose instruction, then lip-synced by the same path as an unedited
  * one. An OPTION on `looping`, not a third mode — the character, the voice, the lip-sync
@@ -146,8 +123,8 @@ export interface VideoEdits {
   };
 }
 
-/** DERIVATION: hand-written. The `video` surface itself — see {@link VideoState}. */
 /**
+ * DERIVATION: combines render_backend and support_edits into one exclusive product choice.
  * How the character is rendered.
  *
  * A union rather than optional fields: clips on a generative call is a contradiction, and
@@ -157,15 +134,6 @@ export interface VideoEdits {
 export type VideoPolicy =
   | {
       mode?: "looping";
-      /**
-       * Named states we compile into a state machine and switch between.
-       *
-       * The clip she RESTS in is not here, because it is not the call's to choose: a call
-       * identifies the character, and the character's stored source video is what she rests
-       * in. Upload it to the avatar once instead of supplying a URL per call — a call that
-       * carries its own media is rejected outright.
-       */
-      states?: Record<string, VideoState>;
       /** Rewrite the clip under a prose instruction — one clip, many worlds. */
       edits?: VideoEdits;
     }
@@ -393,22 +361,18 @@ export type CreditBalance = Pick<
 >;
 
 /**
- * Result of reconciling an avatar's clip set to the cache tier.
- * @deprecated The externally-hosted clip tier is sunsetting. Declare the library with
- * `setClipLibrary` instead — the platform renders and hosts the clips for you.
+ * Complete desired sources and behavior; expectedRevision protects concurrent edits.
+ *
+ * The avatar's stored source is the implicit rest state — never declared here, so "primary"
+ * is a reserved id. `idle.clips` are variations on resting, drawn uniformly and never twice
+ * running; `idle.weight` says how often a variation plays instead of resting. `actions` are
+ * requestable by description, never automatic.
  */
-export type ClipSyncResult = Wire["SyncAvatarClipsResponse"];
-
-/**
- * One desired clip in a library declaration: a `clipId` you choose, a role, and exactly ONE
- * source — a `motionPrompt` the platform renders from the avatar's rest-pose anchor, or the
- * `assetId` of a video you uploaded. `durationSeconds` (4–8, default 5) applies to generated
- * clips only; `reroll` is a write-only re-render nudge and is never echoed back by a read.
- */
-export type ClipDeclaration = Wire["PutAvatarClipsRequest"]["clips"][number];
+export type ClipLibraryDeclaration = Wire["PutAvatarClipsRequest"];
+export type ClipDeclaration = Wire["PutAvatarClipsRequest"]["clips"][string];
 
 /** The two ways a declared clip gets its pixels. Exactly one — an object carrying both is rejected. */
-export type ClipSource = Wire["PutAvatarClipsRequest"]["clips"][number]["source"];
+export type ClipSource = Wire["PutAvatarClipsRequest"]["clips"][string]["source"];
 
 /**
  * One clip row as the platform reports it. `status` is JOB state, not serveability: `url` is

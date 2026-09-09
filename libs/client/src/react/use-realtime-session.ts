@@ -141,7 +141,7 @@ export type UseRealtimeSessionInput<T extends LLMProvider = LLMProvider> = UseSe
   onEnded?: (e: EndedEvent) => void;
   /** The avatar's behavior changed (listening/thinking/idle/special clips). */
   onBehaviorChange?: (b: BehaviorSnapshot) => void;
-  /** A clip request was answered (also resolved on the performClip promise). */
+  /** A clip request was answered (also resolved on the performAction promise). */
   onClipResult?: (r: ClipResult) => void;
 };
 
@@ -190,14 +190,8 @@ export type RealtimeSessionApi = SessionLifecycleApi & {
   end: (reason?: EndReason) => void;
   /** The avatar's live nonverbal behavior, or null pre-choreo (see {@link BehaviorSnapshot}). */
   behavior: BehaviorSnapshot | null;
-  /**
-   * Ask the character to PERFORM a clip by id — a gesture arc plays once (e.g. the
-   * gift moment); a `special`-role clip pins for `holdSeconds` (3-20, default 8).
-   * Scheduled at the next seamless swap point, never a hard cut. Resolves with the
-   * worker's verdict (`accepted:false` + reason on refusal / not connected /
-   * timeout) — never rejects, so the app can always fall back to text-only behavior.
-   */
-  performClip: (clipId: string, opts?: { holdSeconds?: number; timeoutMs?: number }) => Promise<ClipResult>;
+  /** Request a declared semantic action; acceptance schedules it and does not prove playback. */
+  performAction: (actionId: string, opts?: { timeoutMs?: number }) => Promise<ClipResult>;
 
   // ── in-room sinks (wired by SessionLifecycleRoomBridge) ──
   /** Inbound `rta.lifecycle` frames (the bridge decodes RoomEvent.DataReceived). */
@@ -540,14 +534,14 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     lifecycle.reset();
   }, [lifecycle, requestGracefulClose]);
 
-  const performClip = useCallback(
+  const performAction = useCallback(
     (
-      clipId: string,
-      opts?: { holdSeconds?: number; timeoutMs?: number },
+      actionId: string,
+      opts?: { timeoutMs?: number },
     ): Promise<ClipResult> => {
       const requestId = newTurnId();
       const publish = dataPublisherRef.current;
-      const trimmed = clipId.trim();
+      const trimmed = actionId.trim();
       if (!publish || !trimmed) {
         const result = { requestId, accepted: false, reason: "not_connected" };
         cbRef.current.onClipResult?.(result);
@@ -562,10 +556,9 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
         }, opts?.timeoutMs ?? 5_000);
         pendingClipsRef.current.set(requestId, { resolve, timer });
         publish({
-          kind: "clip_request",
+          kind: "action_request",
           request_id: requestId,
-          clip_id: trimmed,
-          ...(typeof opts?.holdSeconds === "number" ? { hold_seconds: opts.holdSeconds } : {}),
+          action_id: trimmed,
         });
       });
     },
@@ -615,7 +608,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
       retryTurn,
       end,
       behavior,
-      performClip,
+      performAction,
       onLifecycleData,
       registerDataPublisher,
       registerTurnSender,
@@ -625,7 +618,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     }),
     [
       lifecycle, turn, clocks, endsAt, graceWindow, media, sendClosingTurn, requestGracefulClose,
-      extend, sendTurn, retryTurn, end, behavior, performClip, onLifecycleData, registerDataPublisher,
+      extend, sendTurn, retryTurn, end, behavior, performAction, onLifecycleData, registerDataPublisher,
       registerTurnSender, setTurnState, setMedia, reset,
     ],
   );
