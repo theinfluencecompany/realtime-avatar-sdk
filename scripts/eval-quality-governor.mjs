@@ -10,6 +10,7 @@ import { build } from "esbuild";
 
 const root = resolve(import.meta.dirname, "..");
 const baseline = process.argv.includes("--baseline");
+const sourceRef = process.env.QUALITY_SOURCE_REF;
 const packagePath = process.env.QUALITY_PACKAGE;
 const reportDir = process.env.QUALITY_REPORT_DIR;
 const modulePath = process.env.PLAYWRIGHT_MODULE || "playwright";
@@ -75,6 +76,10 @@ const bundled = await build({stdin:{contents:entry,resolveDir:root,loader:"tsx"}
       }
       if (baseline) b.onLoad({filter:/use-quality-governor\.ts$/},args=>({
         contents:execFileSync("git",["show","40b0b02850ff2a12ca349d40d11b34986aa51b6e:libs/client/src/react/use-quality-governor.ts"],{cwd:root,encoding:"utf8"}),
+        loader:"ts",resolveDir:resolve(args.path,".."),
+      }));
+      if (sourceRef) b.onLoad({filter:/(?:use-quality-governor|quality-governor)\.ts$/},args=>({
+        contents:execFileSync("git",["show",`${sourceRef}:libs/client/src/react/${args.path.split("/").at(-1)}`],{cwd:root,encoding:"utf8"}),
         loader:"ts",resolveDir:resolve(args.path,".."),
       }));
     },
@@ -151,8 +156,33 @@ try {
   await start({noTrack:true});await advance(6000);
   if (!baseline) assert.deepEqual(await read(),{history:[],listeners:0});
 
+  if (!baseline) {
+  // A real hook/timer replay: one transient opening pause, then a healthy link.
+  await start({config:{openingCap:"high"}});
+  await page.evaluate(()=>window.pause());await advance(1000);
+  await advance(22000);
+  const recovery=await record("opening pause recovery");
+  const recoveryActions=recovery.history;
+  recovery.recoveryMs=recoveryActions.length===3
+    ? recoveryActions[2].at-recoveryActions[1].at : null;
+  if (!baseline && !sourceRef) assert.equal(recovery.recoveryMs,8000);
+
+  // Fail the next unproven HIGH and make sure the repeated-failure penalty grows.
+  // Restart so that the second failure lands inside the probe's 10s probation.
+  await start({config:{openingCap:"high"}});
+  await page.evaluate(()=>window.pause());await advance(1000);
+  for(let tick=0;tick<45 && (await read()).history.length<3;tick++) await advance(1000);
+  assert.equal((await read()).history.length,3,"opening recovery must eventually raise HIGH");
+  await render({freeze:120});await advance(1000);await render({freeze:0});
+  await advance(40000);
+  const repeated=await record("repeated failed probe recovery");
+  repeated.recoveryMs=repeated.history.length===5
+    ? repeated.history[4].at-repeated.history[3].at : null;
+  if (!baseline && !sourceRef) assert.equal(repeated.recoveryMs,16000);
+  }
+
   assert.deepEqual(errors,[],"the hook must not throw into the call");
-  const report={arm:baseline?"baseline":"candidate",checks:10,results};
+  const report={arm:baseline||sourceRef?"baseline":"candidate",sourceRef:sourceRef??null,checks:baseline?10:12,results};
   if(reportDir){await mkdir(reportDir,{recursive:true});await writeFile(resolve(reportDir,`hook-${report.arm}.json`),JSON.stringify(report,null,2));}
   console.log(JSON.stringify(report,null,2));
 } finally {await browser?.close();await new Promise(r=>server.close(r));}

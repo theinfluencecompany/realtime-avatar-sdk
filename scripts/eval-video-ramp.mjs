@@ -30,9 +30,32 @@ const publisherPeerRoot=process.env.RAMP_PUBLISHER_PEER_ROOT || peerRoot;
 const lossEvery=Number(process.env.RAMP_LOSS_EVERY || 0);
 const lossStart=Number(process.env.RAMP_LOSS_START_MS || 5000);
 const lossEnd=Number(process.env.RAMP_LOSS_END_MS || 11000);
-const proxyPort=39082,serverUdpPort=38982;
+const recoveryMode=process.env.RAMP_RECOVERY==="1";
+const baselineRef=process.env.RAMP_BASELINE_REF || "2e0b323bd3ed87cef2167b2102754ff5c599f8d5";
+const bandwidthBps=Number(process.env.RAMP_BANDWIDTH_BPS || 0);
+const useRelay=Boolean(lossEvery || bandwidthBps);
+const proxyPort=Number(process.env.RAMP_PROXY_PORT || 39082);
+const serverUdpPort=Number(process.env.RAMP_SERVER_UDP_PORT || 38982);
 let activeSince=0,mediaPackets=0,droppedPackets=0,impairedMediaPackets=0;
+let shapedPackets=0,shapedBytes=0,shapingDrops=0;
+const wireFreeAt=new Map(),pendingSends=new Set();
 const relay=createSocket("udp4"),upstreams=new Map();
+const forwardDownstream=(packet,peer)=>{
+  const now=Date.now(),at=now-activeSince;
+  if(!bandwidthBps || at<lossStart || at>=lossEnd || packet[0]<128 || packet[0]>191){
+    relay.send(packet,peer.port,peer.address);return;
+  }
+  const id=peer.address+":"+peer.port,free=Math.max(now,wireFreeAt.get(id) || now);
+  const serializationMs=packet.length*8*1000/bandwidthBps;
+  // Finite 125ms access-link queue: shape actual downstream RTP/RTCP, then drop
+  // overflow. HTTP throttling never touches this UDP media path.
+  if(free+serializationMs-now>125){shapingDrops++;return;}
+  wireFreeAt.set(id,free+serializationMs);shapedPackets++;shapedBytes+=packet.length;
+  const handle=setTimeout(()=>{
+    pendingSends.delete(handle);relay.send(packet,peer.port,peer.address);
+  },free+serializationMs-now);
+  pendingSends.add(handle);
+};
 const shouldDrop=packet=>{
   if(!lossEvery || packet[0]<128 || packet[0]>191)return false;
   mediaPackets++;
@@ -47,12 +70,12 @@ relay.on("message",(packet,peer)=>{
   const id=peer.address+":"+peer.port;let upstream=upstreams.get(id);
   if(!upstream){
     upstream=createSocket("udp4");upstreams.set(id,upstream);
-    upstream.on("message",reply=>{if(!shouldDrop(reply))relay.send(reply,peer.port,peer.address);});
+    upstream.on("message",reply=>{if(!shouldDrop(reply))forwardDownstream(reply,peer);});
     upstream.on("error",error=>console.error("local UDP relay:",error.message));
   }
   if(!shouldDrop(packet))upstream.send(packet,serverUdpPort,"127.0.0.1");
 });
-if(lossEvery)await new Promise(r=>relay.bind(proxyPort,"127.0.0.1",r));
+if(useRelay)await new Promise(r=>relay.bind(proxyPort,"127.0.0.1",r));
 const modulePath=process.env.PLAYWRIGHT_MODULE || "playwright";
 const {chromium}=await import(modulePath.startsWith("/") ? pathToFileURL(modulePath).href : modulePath);
 const clip=await readFile(resolve(root,"apps/demo/live-shopping/characters/mira/1-SHIPPED-idle-6s-9x16.mp4"));
@@ -73,7 +96,7 @@ import {useAvatarQualityGovernor} from './libs/client/src/react/use-quality-gove
 import {DEFAULT_GOVERNOR_CONFIG} from './libs/client/src/react/quality-governor';
 import {useAvatarAdaptivePlayoutDelay} from './libs/client/src/react/use-adaptive-playout';
 const params=new URLSearchParams(location.search), role=params.get('role'), arm=params.get('arm');
-if(role==='viewer' && ${Boolean(lossEvery)}){
+if(role==='viewer' && ${useRelay}){
   const rewrite=s=>s.replace(/(candidate:[^\\r\\n]*? 127\\.0\\.0\\.1 )${serverUdpPort}( )/g,'$1${proxyPort}$2');
   const add=RTCPeerConnection.prototype.addIceCandidate;
   RTCPeerConnection.prototype.addIceCandidate=function(candidate,...args){
@@ -110,11 +133,11 @@ function App(){
   useEffect(()=>{const t=setInterval(()=>render(n=>n+1),500);return()=>clearInterval(t);},[]);
   const stable=useMemo(()=>({...DEFAULT_GOVERNOR_CONFIG,openingCap:'high'}),[]);
   const {videoTrack,audioTrack}=useVoiceAssistant();
-  useAvatarAdaptivePlayoutDelay(videoTrack,audioTrack,arm!=='before',fasterPlayout);
-  useAvatarQualityGovernor({enabled:arm==='before',freezeReading:smooth,
+  useAvatarAdaptivePlayoutDelay(videoTrack,audioTrack,${recoveryMode} || arm!=='before',fasterPlayout);
+  useAvatarQualityGovernor({enabled:!${recoveryMode} && arm==='before',freezeReading:smooth,
     config:arm==='before'?{...DEFAULT_GOVERNOR_CONFIG,openingCap:'high'}:stable});
   return <><AvatarVideoSurface data-testid='ramp-surface' idleVideoUrl='/clip.mp4' openingCap='high' adaptiveQuality
-    adaptivePlayout={arm==='before'} crossfadeMs={150} showLiveBadge={false} fit='cover'/><RoomAudioRenderer/></>;
+    adaptivePlayout={!${recoveryMode} && arm==='before'} crossfadeMs={150} showLiveBadge={false} fit='cover'/><RoomAudioRenderer/></>;
 }
 if(role==='publisher'){
   const source=document.createElement('video');source.src='/clip.mp4';source.muted=true;source.loop=true;source.playsInline=true;
@@ -209,7 +232,12 @@ for(const arm of [...arms,'publisher']){
         b.onResolve({filter:/^\.\/libs\/client\/src\/react\//},()=>({path:'sdk',namespace:'installed-sdk'}));
         b.onLoad({filter:/.*/,namespace:'installed-sdk'},()=>({contents:'export {AvatarVideoSurface,useAvatarQualityGovernor,DEFAULT_GOVERNOR_CONFIG,useAvatarAdaptivePlayoutDelay} from '+JSON.stringify(resolve(packagePath,'dist/react.js'))+';',resolveDir:root}));
       },
-    }]:arm==="after"?[]:[{
+    }]:arm==="after"||arm==="publisher"?[]:recoveryMode?[{
+      name:"recovery-baseline",setup(b){b.onLoad({filter:/[/\\]quality-governor\.ts$/},args=>({
+        contents:execFileSync("git",["show",`${baselineRef}:libs/client/src/react/quality-governor.ts`],{cwd:root,encoding:"utf8"}),
+        loader:"ts",resolveDir:resolve(args.path,".."),
+      }));},
+    }]:[{
       name:"baseline-governor",setup(b){b.onLoad({filter:/use-quality-governor\.ts$/},args=>({
         contents:execFileSync("git",["show","40b0b02850ff2a12ca349d40d11b34986aa51b6e:libs/client/src/react/use-quality-governor.ts"],{cwd:root,encoding:"utf8"}),
         loader:"ts",resolveDir:resolve(args.path,".."),
@@ -248,6 +276,7 @@ try{
       page.on("pageerror",e=>{errors.push(e.message);console.error(name+': '+e.message);});
       await page.bringToFront();
       activeSince=Date.now();mediaPackets=0;droppedPackets=0;impairedMediaPackets=0;
+      shapedPackets=0;shapedBytes=0;shapingDrops=0;wireFreeAt.clear();
       console.log(name+': receiver connecting');
       await page.goto(url("viewer"));await page.waitForFunction(()=>window.ready,{},{timeout:15000,polling:100});
       console.log(name+': measuring');
@@ -260,17 +289,29 @@ try{
       assert.equal(report.layout.visible,'visible');
       assert.deepEqual(report.layout.video,{x:0,y:0,width:360,height:640},'live video must fill the visible receiver viewport');
       report.trial=trial+1;report.errors=errors;report.browser=browser.version();
-      report.network={lossEvery,lossStart,lossEnd,mediaPackets,impairedMediaPackets,droppedPackets};
+      report.network={lossEvery,lossStart,lossEnd,mediaPackets,impairedMediaPackets,droppedPackets,
+        bandwidthBps,shapedPackets,shapedBytes,shapingDrops,queueMaxMs:125,
+        shapedPayloadBps:bandwidthBps?Math.round(shapedBytes*8000/(lossEnd-lossStart)):null};
+      if(recoveryMode){
+        const topBeforeImpairment=report.frames.some(f=>f.width>=720 && f.at<lossStart);
+        report.calibration={verdict:topBeforeImpairment?"PASS":"INCONCLUSIVE",
+          topBeforeImpairment,scope:"Publisher delivered the top layer before impairment; recovery is judged separately"};
+      }
       await page.screenshot({path:resolve(reportDir,name+".png"),timeout:15000});
       const video=page.video();await viewerContext.close();contexts.pop();
       if(video)await video.saveAs(resolve(reportDir,arm+".webm"));
       await writeFile(resolve(reportDir,name+".json"),JSON.stringify(report,null,2));reports.push(report);
       assert.equal(errors.length,0,name+" browser errors");assert.ok(report.frames.length>40,name+" must receive real frames");
       if(lossEvery){assert.ok(droppedPackets>0,"the relay must actually drop media");assert.ok(report.samples.some(s=>s.remotePort===proxyPort),"the selected ICE path must traverse the relay");}
+      if(bandwidthBps){
+        assert.ok(shapedPackets>0 && shapingDrops>0,"bandwidth cell must actually constrain media");
+        assert.ok(report.samples.some(s=>s.remotePort===proxyPort),"the selected ICE path must traverse the shaper");
+        assert.ok(report.network.shapedPayloadBps<=bandwidthBps*1.1,"shaped payload must fit the configured media budget");
+      }
       console.log(JSON.stringify({name,firstFrameMs:report.frames[0].at,
         first720pMs:report.frames.find(f=>f.width>=720)?.at ?? null,caps:report.caps.length,
         widths:[...new Set(report.frames.map(f=>f.width))],frames:report.frames.length}));
     }finally{for(const context of contexts.reverse())await context.close();}
   }
-  await writeFile(resolve(reportDir,"runs.json"),JSON.stringify({baselineRef:"40b0b02850ff2a12ca349d40d11b34986aa51b6e",packageBaseline,packageCandidate,peerRoot,publisherPeerRoot,trials,durationMs,reports},null,2));
-}finally{await browser?.close();await new Promise(r=>server.close(r));if(lossEvery){for(const socket of upstreams.values())socket.close();relay.close();}}
+  await writeFile(resolve(reportDir,"runs.json"),JSON.stringify({baselineRef:recoveryMode?baselineRef:"40b0b02850ff2a12ca349d40d11b34986aa51b6e",recoveryMode,packageBaseline,packageCandidate,peerRoot,publisherPeerRoot,trials,durationMs,reports},null,2));
+}finally{await browser?.close();await new Promise(r=>server.close(r));if(useRelay){for(const handle of pendingSends)clearTimeout(handle);for(const socket of upstreams.values())socket.close();relay.close();}}

@@ -1,5 +1,134 @@
 # Quality ramp and receiver latency reproduction
 
+## Production browser evidence (2026-09-09)
+
+The consumer's Playwright harness drives its real video-call UI, with metered test
+accounts and the production RTX6000 pool. This app-specific UI/account adapter is
+kept with the private integration evidence, outside the public SDK. It does not
+deploy anything. Both arms use the same captured production JavaScript;
+Playwright substitutes the draft reducer and frame observer only in the candidate
+browser. The adapter pins the deployed bundle SHA and fails if production changes.
+The candidate observer is compiled directly from `avatar-video-surface.ts`.
+
+The production traces exposed three additional reasons a recovered link stayed soft:
+
+- Delayed JavaScript observations were treated as frozen frames while the video
+  counter kept advancing. A completed multi-frame interval is now treated as
+  ambiguous, not a proven freeze. An ongoing stall with no counter progress and
+  native WebRTC freeze statistics remain actionable.
+- A 100ms callback gap was enough to keep restarting the clean window at the 20fps
+  lower layer. The callback floor is now 200ms, approximately the native WebRTC
+  freeze bar for 15–25fps. This tolerates short callback gaps; it does not change the
+  receive buffer, SFU pause response, or native freeze probation threshold.
+- Even with no new native freezes and excellent connection quality, the receive
+  buffer could repeatedly rise and drain. Eight uninterrupted seconds of unpaused,
+  unfrozen playback now permit a guarded probe despite that buffer-only signal.
+  Actual freezes, poor/lost quality, hidden time, and pauses clear this evidence.
+  Failed probes still back off exponentially.
+
+The test constrains actual WebRTC/P2P traffic using Chromium's
+[`Network.emulateNetworkConditionsByRule`](https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-emulateNetworkConditionsByRule),
+with a global empty URL pattern: 450kbps downstream for six seconds, then
+unrestricted. Received RTP bytes, decoded dimensions, presentation counters, native
+freezes, buffer time, and long tasks are recorded. An HTTP-only throttle is not
+used. The source is a live production avatar, not a fixture video.
+
+For an authorized production evaluation, the consumer adapter must:
+
+1. Pin the deployed JavaScript fingerprint and compile the candidate reducer and
+   frame observer directly from this source tree.
+2. Use identical observation adapters in production/draft/draft/production order,
+   record the source hashes and actual received dimensions, and end every call.
+3. Capture first-frame, throttle and restoration timestamps on the browser clock;
+   retain the raw frame/stat/cap timelines and all failed attempts.
+
+`scripts/summarize-prod-video-recovery.py <report-directory>` computes the
+per-window results from those captures.
+
+Each call ends in `finally`. Credentials/grants stay in the private output
+directory; never publish it. The page screenshots and received-track recordings
+contain only the test call. Screen recording is off by default because a large
+Playwright screencast substantially delayed callbacks on the shared runner.
+
+This is a small sequential comparison, not simultaneous subscribers to one room.
+Worker load and initial dispatch time can vary. Full resolution means the top
+declared layer actually presented for at least five seconds, not a HIGH request.
+The avatar's ladder in these calls is 624×360 / 832×480. No 1080p, encoder-speed,
+dispatch-time, end-to-end latency, or device-specific mobile claim follows.
+The recordings re-encode the received track and are approximately aligned to
+restoration; timing and dimensions come from browser frame metadata, not the
+recording's clock or file header. Receive-to-display time excludes
+inference, encoding, and the trip to the browser.
+
+Final verification order was production → draft → draft → production. Both final
+draft runs used the same source hashes and all four used the same deployed bundle:
+
+| Run | Sustained top after bandwidth restored | Final 20s top share | Presented fps | Receive-to-display median |
+| --- | --- | --- | --- | --- |
+| Production 1 | Not sustained within 56.2s | 0% | 17.96 | 151ms |
+| Draft 1 | 29.02s | 100% | 24.37 | 272ms |
+| Draft 2 | 27.57s | 100% | 24.10 | 347ms |
+| Production 2 | Not sustained within 55.7s | 1.75% | 20.05 | 129ms |
+
+**Clarity recovery improved; the latency-first rollout gate is not met.** The draft
+had 1.49–2.99s of native reported freezes after restoration, versus 0–0.25s in the
+baselines. Both draft runs had no native freezes in the final 20s, but still had
+higher receive-to-display delay. This is a small sequential production sample,
+not proof that the client caused every delay difference. Initial dispatch and
+buffer spikes remain unresolved; do not describe it as an end-to-end latency win.
+
+[Production gallery and all attempts](https://drag-reader-dip-via.trycloudflare.com/video-startup-20260909/)
+includes the earlier failed candidates and the unsuccessful synthetic fixture.
+Private grants/accounts are excluded. The faster 5.61s result from an intermediate
+candidate is retained as historical evidence, not substituted for the final
+candidate's 27.57–29.02s results.
+
+## Recovery after an opening bandwidth dip (2026-09-09)
+
+The additional regression cell starts HIGH, injects a pause at 1s, then restores a
+healthy link. Measure the time from the LOW action to permission to request HIGH.
+This is a controller measurement, not proof of delivered resolution or GPU speed.
+
+Before this change, the first failed opening increments `failures` to 1 and pays
+`8s * 2^1`, then starts a separate 3s clean window: **19s pinned below the top
+layer after a single transient**. The intended first-failure hold is the base 8s.
+Healthy observations during that hold should count toward the clean window.
+
+The gate also covers repeated failed upgrades (8/16/32/64/120s holds), congestion
+near the end of a hold, hidden/local-stall time, persistent poor quality, and
+unchanged clean HIGH/default LOW openings. An ongoing poor link must never pass
+this recovery gate. The SFU still decides which layer fits the actual bandwidth.
+
+```sh
+node --test --experimental-transform-types libs/client/test/quality-recovery.test.ts
+```
+
+The real React hook replay (`npm run eval:quality`) records 19s → 8s for the first
+failed opening and 35s → 16s for a repeated failed probe. Use
+`QUALITY_SOURCE_REF=2e0b323bd3ed87cef2167b2102754ff5c599f8d5` to replay the baseline
+through the same adapter, events, and virtual browser clock.
+
+The UDP fixture can also constrain downstream media to 450kbps during seconds
+5–11, with a finite 125ms queue and counted overflow drops:
+
+```sh
+RAMP_RECOVERY=1 RAMP_ARMS=before,after RAMP_TRIALS=2 \
+  RAMP_DURATION_MS=40000 RAMP_BANDWIDTH_BPS=450000 \
+  RAMP_REPORT_DIR=/tmp/video-recovery npm run eval:video-ramp
+```
+
+Recovery mode gives both arms one governor and identical playout settings; only
+the reducer differs. `RAMP_BASELINE_REF` selects the comparison revision.
+`RAMP_SERVER_UDP_PORT` and `RAMP_PROXY_PORT` select isolated fixture ports.
+Do not infer recovered resolution from a HIGH cap: each trial must first deliver
+the publisher's top layer on the clean link. The initial four runs on September 9
+were **INCONCLUSIVE as a paired recovery comparison**: before-1 and after-2 never
+delivered that layer, and long freezes persisted. The other runs and all failures
+are retained in the gallery. These runs do not establish a network performance
+improvement or qualify the tuning for production.
+
+## Opening policy and subscription identity (previous fix)
+
 `useAvatarQualityGovernor` initialized every subscription with LOW, even when the
 caller configured `openingCap: "high"`. Its effect also depended on config,
 freeze-getter, and TrackReference object identity. A consumer rendering a new
@@ -10,7 +139,8 @@ publication, and track. Equivalent policy values and replacement callbacks keep
 the controller alive. Actual policy/subscription changes rebind it. Per-binding
 stats cursors prevent an old asynchronous read from contaminating a replacement
 track. The existing downgrade thresholds, probation, default LOW opening, and
-recovery dwell are unchanged.
+recovery dwell were unchanged by that earlier fix; the recovery tuning above is
+a separate draft.
 
 This is a subscriber ceiling, not a request to bypass SFU congestion control:
 [LiveKit setVideoQuality](https://docs.livekit.io/reference/client-sdk-js/classes/RemoteTrackPublication.html#setVideoQuality).
