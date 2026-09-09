@@ -28,7 +28,7 @@ import {
   type Participant,
   type RemoteTrackPublication,
 } from "livekit-client";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import {
   DEFAULT_GOVERNOR_CONFIG,
@@ -90,26 +90,36 @@ const qualityToSignal = (q: ConnectionQuality): GovernorSignal["connectionQualit
  * useCallTelemetry). Mount it once inside the call body; it self-tears-down.
  */
 export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): void {
-  const { enabled, freezeReading, config = DEFAULT_GOVERNOR_CONFIG, tickMs = 1000 } = input;
+  const { enabled, freezeReading, config: policy = DEFAULT_GOVERNOR_CONFIG, tickMs = 1000 } = input;
   const room = useMaybeRoomContext();
   // The avatar's video publication rides the same voice-assistant participant the
   // rest of the SDK reads; reach its VIDEO track publication for setVideoQuality.
   const { videoTrack } = useVoiceAssistant();
 
-  // Mutable event-fed signals (read by the tick; never trigger React renders).
-  const pausedSinceTick = useRef(false);
-  const connQuality = useRef<GovernorSignal["connectionQuality"]>("unknown");
-  const lastFreezeStat = useRef<{ frozen: number; ts: number } | null>(null);
-  const jitterTrend = useRef<JitterBufferTrendState | null>(null);
+  // A transcript render may supply a fresh config/getter or TrackReference for the
+  // same subscription. Preserve probation and recovery until policy VALUES or the
+  // actual subscription change; an object-identity reset can pin a busy call LOW.
+  const { openingCap, downgradeFreezeMs, probationFreezeMs, openingDwellMs,
+    dwellBaseMs, dwellMaxMs, cleanMs, probeMs, healthyResetMs } = policy;
+  const config = useMemo<GovernorConfig>(() => ({
+    openingCap, downgradeFreezeMs, probationFreezeMs, openingDwellMs,
+    dwellBaseMs, dwellMaxMs, cleanMs, probeMs, healthyResetMs,
+  }), [openingCap, downgradeFreezeMs, probationFreezeMs, openingDwellMs,
+    dwellBaseMs, dwellMaxMs, cleanMs, probeMs, healthyResetMs]);
+  const freezeReadingRef = useRef(freezeReading);
+  freezeReadingRef.current = freezeReading;
+  const targetPublication = videoTrack?.publication as RemoteTrackPublication | undefined;
+  const targetParticipant = videoTrack?.participant;
+  const targetTrack = targetPublication?.track;
 
   useEffect(() => {
-    if (!enabled || !room) return;
-    const targetPublication = videoTrack?.publication as RemoteTrackPublication | undefined;
-    const targetParticipant = videoTrack?.participant;
-    pausedSinceTick.current = false;
-    lastFreezeStat.current = null;
-    jitterTrend.current = null;
-    connQuality.current = qualityToSignal(
+    if (!enabled || !room || !targetPublication || !targetParticipant) return;
+    // Binding-local state also fences an old asynchronous getStats read from the
+    // replacement track's counters after a reconnect.
+    let pausedSinceTick = false;
+    let lastFreezeStat: { frozen: number; ts: number } | null = null;
+    let jitterTrend: JitterBufferTrendState | null = null;
+    let connQuality = qualityToSignal(
       targetParticipant?.connectionQuality ?? ConnectionQuality.Unknown,
     );
 
@@ -118,13 +128,13 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
       pub: RemoteTrackPublication,
       streamState: Track.StreamState,
     ): void => {
-      if (targetPublication && pub !== targetPublication) return;
+      if (pub !== targetPublication) return;
       // Paused = the SFU congestion controller acted — the strongest downgrade signal.
-      if (streamState === Track.StreamState.Paused) pausedSinceTick.current = true;
+      if (streamState === Track.StreamState.Paused) pausedSinceTick = true;
     };
     const onQuality = (q: ConnectionQuality, participant: Participant): void => {
-      if (targetParticipant && participant.sid !== targetParticipant.sid) return;
-      connQuality.current = qualityToSignal(q);
+      if (participant.sid !== targetParticipant.sid) return;
+      connQuality = qualityToSignal(q);
     };
 
     try {
@@ -132,10 +142,14 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
       room.on(RoomEvent.ConnectionQualityChanged, onQuality);
     } catch {
       // A binding failure must never break the call — degrade to no governor.
+      try {
+        room.off(RoomEvent.TrackStreamStateChanged, onStreamState);
+        room.off(RoomEvent.ConnectionQualityChanged, onQuality);
+      } catch { /* teardown swallows */ }
       return;
     }
 
-    let gov: Governor = initGovernor(Date.now());
+    let gov: Governor = initGovernor(Date.now(), config.openingCap);
 
     const readGetStatsSignals = async (): Promise<{
       freezeMs: number;
@@ -169,13 +183,13 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
           }
         });
         const now = Date.now();
-        const prev = lastFreezeStat.current;
-        lastFreezeStat.current = { frozen: frozenTotalMs, ts: now };
-        const trend = stepJitterBufferTrend(jitterTrend.current, {
+        const prev = lastFreezeStat;
+        lastFreezeStat = { frozen: frozenTotalMs, ts: now };
+        const trend = stepJitterBufferTrend(jitterTrend, {
           delaySeconds: jitterDelaySeconds,
           emittedCount: jitterEmittedCount,
         });
-        jitterTrend.current = trend.state;
+        jitterTrend = trend.state;
         return {
           freezeMs: prev ? Math.max(0, frozenTotalMs - prev.frozen) : 0,
           jitterRising: trend.rising,
@@ -207,19 +221,19 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
       if (disposed || tickRunning) return;
       tickRunning = true;
       try {
-        const rvfc = freezeReading?.() ?? { freezeMsInWindow: 0, inhibited: false };
+        const rvfc = freezeReadingRef.current?.() ?? { freezeMsInWindow: 0, inhibited: false };
         const statsSignals = await readGetStatsSignals();
         // The effect may have rebound to a new publication while getStats was in
-        // flight. Never let a stale tick overwrite the new binding's initial LOW cap.
+        // flight. Never let a stale tick overwrite the new binding's opening cap.
         if (disposed) return;
         const signal: GovernorSignal = {
-          paused: pausedSinceTick.current,
+          paused: pausedSinceTick,
           freezeMsInWindow: Math.max(rvfc.freezeMsInWindow, statsSignals.freezeMs),
           jitterRising: statsSignals.jitterRising,
-          connectionQuality: connQuality.current,
+          connectionQuality: connQuality,
           inhibited: rvfc.inhibited,
         };
-        pausedSinceTick.current = false; // consume the edge
+        pausedSinceTick = false; // consume the edge
 
         const { governor, action } = step(gov, signal, Date.now(), config);
         gov = governor;
@@ -231,15 +245,9 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
       }
     };
 
-    // ACTUATE the initial sticky-low cap on every (re)bind. A FULL reconnect
-    // (RoomEvent.Reconnected) republishes the avatar track at the SFU-default HIGH
-    // layer, and the livekit-client SDK does NOT auto-restore a subscriber cap on a
-    // full reconnect (only a Resume re-sends it) — so the fresh publication would
-    // serve HIGH while the governor model believes low, and a real freeze in the
-    // first ~13s dwell wouldn't be corrected (the instant-downgrade branch only
-    // fires from cap==='high'). Re-asserting on the new publication matches LiveKit's
-    // documented TrackSubscribed-handler pattern; setVideoQuality is idempotent, so
-    // this only ever softens the picture, never fights the SFU's own BWE.
+    // Reassert the configured opening cap on a new subscription, including a full
+    // reconnect. HIGH is permission for the SFU to send its top layer, still under
+    // the governor's strict opening probation and the SFU's bandwidth controller.
     applyCap(gov.cap);
 
     const handle = setInterval(() => void tick(), tickMs);
@@ -254,8 +262,7 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
         /* teardown swallows */
       }
     };
-    // videoTrack identity changes across turns (publish/unpublish); re-bind then.
-  }, [enabled, room, videoTrack, freezeReading, config, tickMs]);
+  }, [enabled, room, targetPublication, targetParticipant, targetTrack, config, tickMs]);
 }
 
 // Re-export TrackEvent so a consumer that wants to observe raw track events has it

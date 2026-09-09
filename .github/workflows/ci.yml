@@ -76,6 +76,9 @@ jobs:
       - name: Interrupted frame delivery does not replay idle
         if: matrix.node == '22'
         run: npm run eval:web-stall
+      - name: Quality policy survives renders and reconnects
+        if: matrix.node == '22'
+        run: npm run eval:quality
       - uses: actions/upload-artifact@v4
         if: failure() && matrix.node == '22'
         with:
