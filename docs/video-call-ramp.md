@@ -2,9 +2,10 @@
 
 ## Production browser evidence (2026-09-09)
 
-`scripts/eval-prod-video-recovery.mjs` drives the real Remy video-call UI on
-`prelulu.ai`, with metered test accounts and the production RTX6000 pool. It does
-not deploy anything. Both arms use the same captured production JavaScript;
+The consumer's Playwright harness drives its real video-call UI, with metered test
+accounts and the production RTX6000 pool. This app-specific UI/account adapter is
+kept with the private integration evidence, outside the public SDK. It does not
+deploy anything. Both arms use the same captured production JavaScript;
 Playwright substitutes the draft reducer and frame observer only in the candidate
 browser. The adapter pins the deployed bundle SHA and fails if production changes.
 The candidate observer is compiled directly from `avatar-video-surface.ts`.
@@ -32,15 +33,17 @@ unrestricted. Received RTP bytes, decoded dimensions, presentation counters, nat
 freezes, buffer time, and long tasks are recorded. An HTTP-only throttle is not
 used. The source is a live production avatar, not a fixture video.
 
-```sh
-# Only for an explicitly authorized, metered production evaluation.
-export RTA_PROD_EVAL=1 PROD_REPORT_DIR=/tmp/rta-prod-video-recovery
-PROD_ARM=before PROD_RUN=before-1 PROD_MEDIA_RECORD=1 node scripts/eval-prod-video-recovery.mjs
-PROD_ARM=after PROD_RUN=after-1 PROD_MEDIA_RECORD=1 node scripts/eval-prod-video-recovery.mjs
-PROD_ARM=after PROD_RUN=after-2 PROD_MEDIA_RECORD=1 node scripts/eval-prod-video-recovery.mjs
-PROD_ARM=before PROD_RUN=before-2 PROD_MEDIA_RECORD=1 node scripts/eval-prod-video-recovery.mjs
-python3 scripts/summarize-prod-video-recovery.py "$PROD_REPORT_DIR"
-```
+For an authorized production evaluation, the consumer adapter must:
+
+1. Pin the deployed JavaScript fingerprint and compile the candidate reducer and
+   frame observer directly from this source tree.
+2. Use identical observation adapters in production/draft/draft/production order,
+   record the source hashes and actual received dimensions, and end every call.
+3. Capture first-frame, throttle and restoration timestamps on the browser clock;
+   retain the raw frame/stat/cap timelines and all failed attempts.
+
+`scripts/summarize-prod-video-recovery.py <report-directory>` computes the
+per-window results from those captures.
 
 Each call ends in `finally`. Credentials/grants stay in the private output
 directory; never publish it. The page screenshots and received-track recordings
@@ -50,10 +53,11 @@ Playwright screencast substantially delayed callbacks on the shared runner.
 This is a small sequential comparison, not simultaneous subscribers to one room.
 Worker load and initial dispatch time can vary. Full resolution means the top
 declared layer actually presented for at least five seconds, not a HIGH request.
-Remy's ladder in these calls is 624×360 / 832×480. No 1080p, encoder-speed,
+The avatar's ladder in these calls is 624×360 / 832×480. No 1080p, encoder-speed,
 dispatch-time, end-to-end latency, or device-specific mobile claim follows.
-The recordings re-encode the received track; dimensions come from browser frame
-metadata, not the recording's file header. Receive-to-display time excludes
+The recordings re-encode the received track and are approximately aligned to
+restoration; timing and dimensions come from browser frame metadata, not the
+recording's clock or file header. Receive-to-display time excludes
 inference, encoding, and the trip to the browser.
 
 Final verification order was production → draft → draft → production. Both final
