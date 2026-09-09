@@ -80,7 +80,7 @@
           "instructions": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 8000
+            "maxLength": 16000
           },
           "initial_context": {
             "default": [],
@@ -100,7 +100,7 @@
                 "content": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 4000
+                  "maxLength": 8000
                 }
               },
               "required": [
