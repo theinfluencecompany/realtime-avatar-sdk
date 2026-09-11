@@ -51,11 +51,74 @@ export interface GovernorSignal {
    *  the false-positive fence (our own Dia-freeze lesson). When true the machine is
    *  frozen: no signal is trusted, no transition fires. */
   inhibited: boolean;
+  /** TRANSPORT EVIDENCE for the trailing tick, from the receiver's inbound-rtp counters.
+   *
+   *  A freeze is a gap in PRESENTED frames. Three things produce one: the link dropped or
+   *  delayed packets, the SENDER never produced the frames (a render stall on the GPU
+   *  worker), or the local paint fell behind. Only the first is something a smaller rung
+   *  can fix. The two are told apart by the RTP sequence space: a link that loses packets
+   *  leaves sequence gaps (packetsLost, and the NACKs the receiver sends to fill them); a
+   *  sender that pauses leaves none. So a freeze tick with ZERO loss and ZERO NACKs is
+   *  sender-shaped and is not charged as a link freeze (see `isFreezeChargeable`).
+   *
+   *  `undefined` = the hook could not read the counters this tick (no getStats, or no
+   *  baseline yet). Unknown keeps today's behaviour: the freeze is charged. This is what
+   *  keeps every existing trace test byte-identical and Safari-without-stats unchanged.
+   *
+   *  Measured shape of the defect this addresses (prod rtx6000 pool, 2026-09-11): two
+   *  calls on one GPU showed per-chunk render medians of 351 ms against 60 ms solo, and
+   *  the client demoted 584x1024 -> 360x630 -> 180x316 within a minute with packetsLost
+   *  = 0 in every probe. The smaller rung did not shorten a single stall. */
+  transport?: {
+    /** inbound-rtp packetsLost delta since the previous tick (clamped at 0). */
+    packetsLostInWindow: number;
+    /** inbound-rtp nackCount delta since the previous tick (clamped at 0; 0 where the
+     *  browser does not report nackCount, so packetsLost alone still corroborates). */
+    nacksInWindow: number;
+    /** inbound-rtp framesDropped delta since the previous tick (clamped at 0). Frames that
+     *  ARRIVED and were dropped before decode or missed their display deadline: the one
+     *  failure a smaller rung can fix that the sequence space cannot see (a starving
+     *  client on a clean pipe, the case 0.11.2 #71 built the floor for). */
+    framesDroppedInWindow: number;
+  };
 }
+
+/** Dropped frames in one tick that mean the DECODER, not the link, is behind. One is the
+ *  ordinary noise of a late frame at a layer edge; two in a second is a client that cannot
+ *  keep up with the rung it is on. */
+export const LOCAL_STARVATION_DROPPED_FRAMES = 2;
 
 /** The side effect the hook must apply after a step (absent = leave the cap alone). */
 export interface GovernorAction {
   setCap: QualityCap;
+}
+
+/**
+ * One governor tick, as the hook saw and decided it. Emitted to `onTrace` when a caller
+ * asks for it; the reducer never reads it.
+ *
+ * Why it exists: the only visible trace of a demote in production is the decoded width
+ * changing, and a receiver-side stats corpus (8 probe calls, 2026-09-11) could not
+ * reproduce 11 of 18 observed demotes from inbound-rtp alone: decode steady at 25 fps,
+ * zero Chrome freezes, zero loss. The predicate that fired is not recoverable after the
+ * fact without the signal the reducer actually received. `tickLateMs` and
+ * `framesDecodedInWindow` ride along so a presented-frame gap can be classified as link
+ * (loss/NACK/pause), sender (decode stalled, no loss) or local (decode advanced, the tick
+ * itself was late) from one record.
+ */
+export interface GovernorTraceEvent {
+  /** Wall-clock ms of the tick. */
+  tMs: number;
+  /** How late the tick fired relative to its schedule: a proxy for a main-thread stall. */
+  tickLateMs: number;
+  /** inbound-rtp framesDecoded delta since the previous tick; undefined when unreadable. */
+  framesDecodedInWindow?: number;
+  signal: GovernorSignal;
+  /** Whether the tick's freeze was charged to the link (see `isFreezeChargeable`). */
+  chargeable: boolean;
+  before: Pick<Governor, "state" | "cap" | "failures" | "lowUnhealthy">;
+  after: Pick<Governor, "state" | "cap" | "failures" | "lowUnhealthy">;
+  action?: GovernorAction;
 }
 
 export interface GovernorConfig {
@@ -217,20 +280,43 @@ export const initGovernor = (nowMs: number, openingCap: QualityCap = "low"): Gov
   healthySinceMs: null,
 });
 
+/**
+ * Can this tick's freeze be charged to the LINK?
+ *
+ * Yes when the SFU paused us (it has already ruled), when transport evidence is
+ * unknown (today's behaviour, unchanged), or when the sequence space shows the link
+ * dropped something. No when the counters were read and show a clean pipe: the frames
+ * were never sent, and a demote cannot make a stalled sender faster. It only makes
+ * the picture smaller and then costs a layer switch on the way back.
+ */
+export const isFreezeChargeable = (s: GovernorSignal): boolean =>
+  s.paused ||
+  s.transport === undefined ||
+  s.transport.packetsLostInWindow > 0 ||
+  s.transport.nacksInWindow > 0 ||
+  s.transport.framesDroppedInWindow >= LOCAL_STARVATION_DROPPED_FRAMES;
+
+/** The freeze the governor actually reasons about: zero for a sender-shaped stall. */
+const chargedFreezeMs = (s: GovernorSignal): number =>
+  isFreezeChargeable(s) ? s.freezeMsInWindow : 0;
+
 /** A signal is a downgrade trigger from a stable/high cap (docs §2 Fix 3). */
 const isDowngrade = (s: GovernorSignal, cfg: GovernorConfig): boolean =>
   s.paused ||
-  s.freezeMsInWindow >= cfg.downgradeFreezeMs ||
-  (s.jitterRising && s.freezeMsInWindow > 0);
+  chargedFreezeMs(s) >= cfg.downgradeFreezeMs ||
+  (s.jitterRising && chargedFreezeMs(s) > 0);
 
 /** A signal fails an in-flight probation (stricter bar — kill a bad upgrade fast). */
 const isProbationFail = (s: GovernorSignal, cfg: GovernorConfig): boolean =>
-  s.paused || s.freezeMsInWindow >= cfg.probationFreezeMs;
+  s.paused || chargedFreezeMs(s) >= cfg.probationFreezeMs;
 
-/** "Healthy right now": no freeze, no pause, jitter not rising, quality not poor/lost. */
+/** "Healthy right now": no charged freeze, no pause, jitter not rising, quality not
+ *  poor/lost. A sender-shaped stall is not unhealthy LINK evidence, so it neither
+ *  restarts the clean window nor counts toward `lowUnhealthy` (the walk to the bottom
+ *  rung must be earned by the link, not by the worker's render queue). */
 const isHealthy = (s: GovernorSignal): boolean =>
   !s.paused &&
-  s.freezeMsInWindow === 0 &&
+  chargedFreezeMs(s) === 0 &&
   !s.jitterRising &&
   s.connectionQuality !== "poor" &&
   s.connectionQuality !== "lost";
