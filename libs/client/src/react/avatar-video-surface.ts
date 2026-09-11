@@ -32,7 +32,7 @@ import {
 import { useAvatarPlayoutDelay } from "./livekit";
 import { useAvatarAdaptivePlayoutDelay } from "./use-adaptive-playout";
 import { useAvatarQualityGovernor, type FreezeReadingFn } from "./use-quality-governor";
-import { DEFAULT_GOVERNOR_CONFIG, type QualityCap } from "./quality-governor";
+import type { GovernorConfig, GovernorTraceEvent, QualityCap } from "./quality-governor";
 import {
   FrameRecovery,
   StallEscalation,
@@ -114,6 +114,23 @@ export type AvatarVideoSurfaceProps = {
    * opening-cap-policy.ts); everything else keeps the soft-open.
    */
   openingCap?: QualityCap;
+  /**
+   * Governor overrides merged over `DEFAULT_GOVERNOR_CONFIG` by value (the `openingCap` prop
+   * wins over `governorConfig.openingCap`). This is the app's reach into the ONE governor the
+   * surface mounts: the kill switch (`linkEvidence: "optional"`), the recovery band, the
+   * bars. Before this prop the only way to tune the governor was to disable this one and
+   * mount a second, which is the two-governor trap prelulu #1698 fell into. A fresh object
+   * per render is fine: the hook memoises on field values, not identity.
+   */
+  governorConfig?: Partial<GovernorConfig>;
+  /**
+   * Per-tick governor observer for telemetry: the signal the reducer saw (both freeze
+   * inputs, transport evidence, the decoded rung), whether the freeze was charged to the
+   * link, and the cap action if any. Unset costs nothing. Exists because the only visible
+   * trace of a demote in production was the decoded width changing, and a receiver-side
+   * stats corpus could not reproduce 11 of 18 observed demotes after the fact.
+   */
+  onGovernorTrace?: (event: GovernorTraceEvent) => void;
   /** `object-fit` for BOTH layers. Both layers always use the SAME fit + box so
    *  the front (live) fully covers the back (idle) — no peek-through. */
   fit?: AvatarVideoFit;
@@ -226,6 +243,8 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     live = true,
     adaptiveQuality = true,
     openingCap,
+    governorConfig,
+    onGovernorTrace,
     fit = "contain",
     aspectRatio,
     idleReturnDelayMs = 700,
@@ -290,23 +309,17 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     videoTrack?.publication?.track,
     frameStallMs,
   );
-  // Referentially STABLE across renders (memoized on the only field the surface
-  // overrides). The adapter keys its effect on config IDENTITY and re-inits the
-  // governor when it changes — a fresh object each render would wipe the governor's
-  // learned state (re-actuating the opening cap) on every re-render.
-  const governorConfig = useMemo(
-    () => ({
-      ...DEFAULT_GOVERNOR_CONFIG,
-      openingCap: openingCap ?? DEFAULT_GOVERNOR_CONFIG.openingCap,
-    }),
-    [openingCap],
-  );
+  // The app's overrides, with the `openingCap` prop winning. Identity is NOT what keeps the
+  // governor alive across renders: the hook memoises its config on field VALUES
+  // (GOVERNOR_CONFIG_MEMO_KEYS), so this may be a fresh object every render without wiping
+  // the governor's learned state. One source of truth for that rule, in the hook.
   useAvatarQualityGovernor({
     // Keep the governor alive across presentation-intent changes; resetting it on
     // every turn would re-apply LOW and a normal short turn could never earn HIGH.
     enabled: adaptiveQuality,
     freezeReading: frameFlow.freezeReading,
-    config: governorConfig,
+    config: { ...governorConfig, ...(openingCap !== undefined ? { openingCap } : {}) },
+    onTrace: onGovernorTrace,
   });
   // Is the room genuinely GONE (disconnected)? A dead room is never held — it
   // reverts to the idle floor IMMEDIATELY, bypassing the turn-end debounce.

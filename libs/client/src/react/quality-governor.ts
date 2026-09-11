@@ -313,21 +313,23 @@ type UnlistedGovernorConfigKey = Exclude<keyof GovernorConfig, (typeof GOVERNOR_
 const _everyGovernorConfigKeyIsListed: [UnlistedGovernorConfigKey] extends [never] ? true : never = true;
 void _everyGovernorConfigKeyIsListed;
 
-/** A fresh GovernorConfig holding only the listed fields, by value. */
-export const pickGovernorConfig = (p: GovernorConfig): GovernorConfig => ({
-  openingCap: p.openingCap,
-  downgradeFreezeMs: p.downgradeFreezeMs,
-  probationFreezeMs: p.probationFreezeMs,
-  openingDwellMs: p.openingDwellMs,
-  dwellBaseMs: p.dwellBaseMs,
-  dwellMaxMs: p.dwellMaxMs,
-  cleanMs: p.cleanMs,
-  probeMs: p.probeMs,
-  healthyResetMs: p.healthyResetMs,
-  linkEvidence: p.linkEvidence,
-  healthyFreezeToleranceMs: p.healthyFreezeToleranceMs,
-  lowUnhealthyWindowMs: p.lowUnhealthyWindowMs,
-});
+const assignDefined = <K extends keyof GovernorConfig>(
+  target: GovernorConfig,
+  source: Partial<GovernorConfig>,
+  key: K,
+): void => {
+  const value = source[key];
+  if (value !== undefined) target[key] = value;
+};
+
+/** A fresh GovernorConfig: the defaults with every DEFINED override applied, by value. Only
+ *  the listed fields survive, so an unknown or `undefined` property can neither leak in nor
+ *  erase a default. */
+export const resolveGovernorConfig = (overrides: Partial<GovernorConfig> = {}): GovernorConfig => {
+  const resolved: GovernorConfig = { ...DEFAULT_GOVERNOR_CONFIG };
+  for (const key of GOVERNOR_CONFIG_MEMO_KEYS) assignDefined(resolved, overrides, key);
+  return resolved;
+};
 
 /** Minimum interval-average jitter-buffer increase treated as a real trend. */
 export const JITTER_BUFFER_RISE_THRESHOLD_MS = 25;

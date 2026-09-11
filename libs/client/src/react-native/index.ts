@@ -153,13 +153,27 @@ export {
 } from "../react/grace-window";
 export {
   DEFAULT_GOVERNOR_CONFIG,
+  GOVERNOR_CONFIG_MEMO_KEYS,
+  chargedFreezeMs,
+  isFreezeChargeable,
+  resolveGovernorConfig,
+  transportFromInboundRows,
   type Governor,
   type GovernorAction,
   type GovernorConfig,
   type GovernorSignal,
   type GovernorState,
+  type GovernorTraceEvent,
+  type InboundRtpLike,
   type QualityCap,
+  type TransportCursor,
 } from "../react/quality-governor";
+export {
+  AVATAR_SETTLE_FRAMES,
+  initialFrameSample,
+  nextFrameSample,
+  type FrameSample,
+} from "../react/frame-recovery";
 export {
   useAvatarQualityGovernor,
   type FreezeReadingFn,

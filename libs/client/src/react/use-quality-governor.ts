@@ -31,7 +31,6 @@ import {
 import { useEffect, useMemo, useRef } from "react";
 
 import {
-  DEFAULT_GOVERNOR_CONFIG,
   GOVERNOR_CONFIG_MEMO_KEYS,
   type Governor,
   type GovernorConfig,
@@ -43,7 +42,7 @@ import {
   chargedFreezeMs,
   initGovernor,
   isFreezeChargeable,
-  pickGovernorConfig,
+  resolveGovernorConfig,
   resolveLowCapQuality,
   step,
   stepJitterBufferTrend,
@@ -70,8 +69,9 @@ export interface UseAvatarQualityGovernorInput {
    *  it the governor still reacts to Paused + getStats freezes, just without the
    *  cross-browser rVFC signal. */
   freezeReading?: FreezeReadingFn;
-  /** Governor timing overrides (tests / tuning). Defaults are the grounded constants. */
-  config?: GovernorConfig;
+  /** Governor overrides (tests / tuning), merged over DEFAULT_GOVERNOR_CONFIG by value. A full
+   *  GovernorConfig is accepted unchanged. */
+  config?: Partial<GovernorConfig>;
   /** Poll cadence (ms). Default 1000 — the governor tick. */
   tickMs?: number;
   /** Per-tick observer for telemetry: the signal the reducer saw, the state it left in, and
@@ -103,7 +103,7 @@ const qualityToSignal = (q: ConnectionQuality): GovernorSignal["connectionQualit
  * useCallTelemetry). Mount it once inside the call body; it self-tears-down.
  */
 export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): void {
-  const { enabled, freezeReading, config: policy = DEFAULT_GOVERNOR_CONFIG, tickMs = 1000, onTrace } = input;
+  const { enabled, freezeReading, config: overrides, tickMs = 1000, onTrace } = input;
   const onTraceRef = useRef(onTrace);
   onTraceRef.current = onTrace;
   const room = useMaybeRoomContext();
@@ -116,10 +116,12 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
   // actual subscription change; an object-identity reset can pin a busy call LOW.
   // The dependency list is the field list itself (constant length), so a config field
   // added to GovernorConfig cannot be silently dropped from the memo: see
-  // GOVERNOR_CONFIG_MEMO_KEYS.
+  // GOVERNOR_CONFIG_MEMO_KEYS. Resolving first is what lets a caller pass a fresh partial
+  // object every render and still keep one governor.
+  const resolved = resolveGovernorConfig(overrides);
   const config = useMemo<GovernorConfig>(
-    () => pickGovernorConfig(policy),
-    GOVERNOR_CONFIG_MEMO_KEYS.map((key) => policy[key]),
+    () => resolved,
+    GOVERNOR_CONFIG_MEMO_KEYS.map((key) => resolved[key]),
   );
   const freezeReadingRef = useRef(freezeReading);
   freezeReadingRef.current = freezeReading;
