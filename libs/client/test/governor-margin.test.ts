@@ -175,3 +175,36 @@ test("sitting on the low rung while it keeps freezing DOES reach the bottom", ()
   assert.ok(g.lowUnhealthy >= LOW_CAP_STEP_AFTER_UNHEALTHY);
   assert.equal(resolveLowCapQuality([0, 1, 2], g.lowUnhealthy), 0);
 });
+
+// ---------------------------------------------------------------------------
+// A LAYER SWITCH MUST NOT BE CHARGED TO THE LINK.
+//
+// Changing simulcast layer costs a decoder reconfigure plus a wait for the new layer's
+// keyframe. That is a real gap in presented frames with ZERO packets lost. Charging it as
+// a freeze made the governor punish the stream for the cost of its own decision, and the
+// punishment was another switch.
+//
+// Measured on production (Valko, 2026-09-11, zero loss): the top rung arrived at t=10.98s,
+// was demoted 0.43s later, and did not come back for 21.8s. One second of a sharp face,
+// then twenty of a blurry one.
+// ---------------------------------------------------------------------------
+test("the gap across a decoded-size change is not charged as a freeze", () => {
+  const SRC = readFileSync(new URL("../src/react/avatar-video-surface.ts", import.meta.url), "utf8");
+  // The reset must be driven by a SIZE change, and must sit on the same branch as the
+  // bfcache resume, which is the same class of event: real, local, not the network.
+  assert.match(SRC, /const sizeKey = `\$\{video\?\.videoWidth \?\? 0\}x\$\{video\?\.videoHeight \?\? 0\}`/);
+  assert.match(SRC, /const layerSwitched =\s*previous\.lastSizeKey !== null && sizeKey !== previous\.lastSizeKey/);
+  assert.match(SRC, /previous\.resumePending \|\| layerSwitched\s*\n?\s*\? 0/);
+  // And the very first frame must NOT count as a switch, or every session would start by
+  // discarding a baseline it never had.
+  assert.match(SRC, /previous\.lastSizeKey !== null &&/);
+});
+
+test("a demote that follows a switch would have cost 21.8s, which is the dwell arithmetic", () => {
+  // Pinning the cost so the saving is legible: one opening-probation failure books
+  // failures=1, and the climb back is dwellBase * 2^1 plus the clean window.
+  const demoted = step(at("opening_high", "high", 0), gap(FLOOR + CFG.probationFreezeMs + 1), 11_410, CFG).governor;
+  assert.equal(demoted.cap, "low");
+  assert.equal(demoted.failures, 1);
+  assert.equal(Math.min(CFG.dwellBaseMs * 2 ** demoted.failures, CFG.dwellMaxMs) + CFG.cleanMs, 19_000);
+});
