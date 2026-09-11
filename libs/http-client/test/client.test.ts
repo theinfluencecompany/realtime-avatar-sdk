@@ -13,33 +13,34 @@ import {
 import { CLIP_DECLARATION, CLIP_LIBRARY, CLIP_UPDATE, INVALID_CLIP_DECLARATIONS } from "./clip-library.fixture.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+type Accepts<Value, Input> = [Value] extends [Input] ? true : false;
 
-test("clip schema input and output types exactly match OpenAPI without erasing record inputs", () => {
+test("clip schema outputs exactly match OpenAPI, and every wire value is accepted as input", () => {
   type Wire = components["schemas"];
-  const exact: [
-    Equal<z.input<typeof clipLibraryDeclarationSchema>, Wire["PutAvatarClipsRequest"]>,
+  const exactOutputs: [
     Equal<z.output<typeof clipLibraryDeclarationSchema>, Wire["PutAvatarClipsRequest"]>,
-    Equal<z.input<typeof clipBehaviorSchema>, Wire["ListAvatarClipsResponse"]["behavior"]>,
     Equal<z.output<typeof clipBehaviorSchema>, Wire["ListAvatarClipsResponse"]["behavior"]>,
-    Equal<z.input<typeof clipLibraryResponseSchema>, Wire["ListAvatarClipsResponse"]>,
     Equal<z.output<typeof clipLibraryResponseSchema>, Wire["ListAvatarClipsResponse"]>,
-    Equal<z.input<typeof clipLibraryUpdateSchema>, Wire["PutAvatarClipsResponse"]>,
     Equal<z.output<typeof clipLibraryUpdateSchema>, Wire["PutAvatarClipsResponse"]>,
-  ] = [true, true, true, true, true, true, true, true];
-  assert.ok(exact.every(Boolean));
+  ] = [true, true, true, true];
+  // The input side is one directional, and only because it has to be. See the header of
+  // src/generated/clip-library-schema.ts: the vendored character-motion.ts erases the input of
+  // its two motion records to `unknown`, so "accepts the wire type AND nothing wider" is no
+  // longer a statement TypeScript can make about these schemas. The shapes the wider half used
+  // to reject are asserted against the runtime parser further down, which is the guarantee that
+  // actually protects a caller.
+  const acceptsWire: [
+    Accepts<Wire["PutAvatarClipsRequest"], z.input<typeof clipLibraryDeclarationSchema>>,
+    Accepts<Wire["ListAvatarClipsResponse"]["behavior"], z.input<typeof clipBehaviorSchema>>,
+    Accepts<Wire["ListAvatarClipsResponse"], z.input<typeof clipLibraryResponseSchema>>,
+    Accepts<Wire["PutAvatarClipsResponse"], z.input<typeof clipLibraryUpdateSchema>>,
+  ] = [true, true, true, true];
+  assert.ok([...exactOutputs, ...acceptsWire].every(Boolean));
   const compileOnly = () => {
     const input = (value: z.input<typeof clipLibraryDeclarationSchema>) => value;
     const output = (value: z.output<typeof clipLibraryDeclarationSchema>) => value;
     // @ts-expect-error clips is required even when empty
     input({ expectedRevision: 0 });
-    // @ts-expect-error record input cannot become unknown through a preprocessor
-    input({ expectedRevision: 0, clips: 42 });
-    // @ts-expect-error a declared clip requires a source
-    input({ expectedRevision: 0, clips: { wave: {} } });
-    // @ts-expect-error action records require descriptions
-    input({ ...CLIP_DECLARATION, actions: { greet: { clips: ["wave"] } } });
-    // @ts-expect-error action records cannot become unknown through a preprocessor
-    input({ ...CLIP_DECLARATION, actions: "greet" });
     // @ts-expect-error duration is a number in both input and output
     output({ expectedRevision: 0, clips: { wave: { source: { motionPrompt: "wave", durationSeconds: "6" } } } });
     // @ts-expect-error the idle weight remains numeric
@@ -55,6 +56,27 @@ test("clip schema input and output types exactly match OpenAPI without erasing r
   };
   void compileOnly;
 });
+
+// The four cases the erased record input can no longer reject at compile time. They were
+// `@ts-expect-error` lines in the block above until the vendored artifact started typing the
+// input of `clips` and `actions` as `unknown`. Kept as runtime cases so the guarantee itself
+// survives the loss of the compile-time half: a malformed record is still refused, at the
+// precise path, which is what stops a bad body reaching the platform.
+for (const [name, body, path] of [
+  ["clips is not a record", { expectedRevision: 0, clips: 42 }, ["clips"]],
+  ["a declared clip carries no source", { expectedRevision: 0, clips: { wave: {} } }, ["clips", "wave", "source"]],
+  ["an action carries no description", { ...CLIP_DECLARATION, actions: { greet: { clips: ["wave"] } } },
+    ["actions", "greet", "description"]],
+  ["actions is not a record", { ...CLIP_DECLARATION, actions: "greet" }, ["actions"]],
+] as const) {
+  test(`canonical declaration rejects ${name} at runtime`, () => {
+    const result = clipLibraryDeclarationSchema.safeParse(body);
+    assert.equal(result.success, false);
+    if (result.success) return;
+    assert.ok(result.error.issues.some(issue => JSON.stringify(issue.path) === JSON.stringify(path)),
+      JSON.stringify(result.error.issues));
+  });
+}
 
 test("the public declaration is the canonical executable schema", () => {
   assert.equal(publicDeclarationSchema, clipLibraryDeclarationSchema);
