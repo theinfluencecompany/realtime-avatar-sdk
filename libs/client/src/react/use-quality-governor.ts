@@ -38,10 +38,13 @@ import {
   type GovernorTraceEvent,
   type InboundRtpLike,
   type JitterBufferTrendState,
-  type TransportCursor,
+  type PauseLevel,
+  type TransportReadState,
   chargedFreezeMs,
   initGovernor,
+  initialTransportRead,
   isFreezeChargeable,
+  pausedForTick,
   resolveGovernorConfig,
   resolveLowCapQuality,
   step,
@@ -136,10 +139,11 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     let pausedSinceTick = false;
     let lastFreezeStat: { frozen: number; ts: number } | null = null;
     let jitterTrend: JitterBufferTrendState | null = null;
-    // Transport cursors (inbound-rtp packetsLost / nackCount) and the decoded frame size
-    // as the RECEIVER reports it. Both are per-binding for the same reason as the freeze
-    // cursor: a replacement track must never be judged against the retired track's totals.
-    let lastTransport: TransportCursor | null = null;
+    // Transport reader (inbound-rtp packetsLost / nackCount, plus the join-window clock) and
+    // the decoded frame size as the RECEIVER reports it. Both are per-binding for the same
+    // reason as the freeze cursor: a replacement track must never be judged against the
+    // retired track's totals.
+    let transportRead: TransportReadState = initialTransportRead();
     let lastFramesDecoded: number | null = null;
     let lastTickAtMs: number | null = null;
     let lastStatsSizeKey: string | null = null;
@@ -154,7 +158,31 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     ): void => {
       if (pub !== targetPublication) return;
       // Paused = the SFU congestion controller acted — the strongest downgrade signal.
+      // This EDGE is only the fast path for a pause that starts and ends between two ticks;
+      // the authoritative reading is the LEVEL below. See `pausedForTick`.
       if (streamState === Track.StreamState.Paused) pausedSinceTick = true;
+    };
+    /** The SFU pause as it stands RIGHT NOW, translated off the vendor enum so the pure core
+     *  never sees a LiveKit type.
+     *
+     *  This IS the same state the event carries: livekit-client's StreamStateUpdate handler
+     *  calls `pub.track.setStreamState(...)` and only then emits TrackStreamStateChanged, and
+     *  it emits only when the value CHANGES — which is exactly why an edge cannot stand in
+     *  for the level. `unknown` (no track bound yet, or a runtime without the getter) leaves
+     *  the edge as the only evidence, which is the behaviour that shipped. */
+    const readPauseLevel = (): PauseLevel => {
+      try {
+        switch (targetPublication?.track?.streamState) {
+          case Track.StreamState.Paused:
+            return "paused";
+          case Track.StreamState.Active:
+            return "active";
+          default:
+            return "unknown";
+        }
+      } catch {
+        return "unknown";
+      }
     };
     const onQuality = (q: ConnectionQuality, participant: Participant): void => {
       if (participant.sid !== targetParticipant.sid) return;
@@ -173,18 +201,12 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
       return;
     }
 
-    // FAIL-OPEN, like every other fault here: a config that violates the reducer's startup
-    // invariant (see initGovernor) leaves the cap to the SFU instead of throwing into React.
-    let gov: Governor;
-    try {
-      gov = initGovernor(Date.now(), config.openingCap, config);
-    } catch {
-      try {
-        room.off(RoomEvent.TrackStreamStateChanged, onStreamState);
-        room.off(RoomEvent.ConnectionQualityChanged, onQuality);
-      } catch { /* teardown swallows */ }
-      return;
-    }
+    // NO FAIL-OPEN BRANCH HERE, because there is nothing left to fail: `initGovernor` is
+    // total for every input, and an out-of-range config is clamped where it is read
+    // (`healthyToleranceMs`) rather than refused. The branch that used to be here caught a
+    // RangeError by unsubscribing BEFORE `applyCap` ran, so a mistyped config opened the call
+    // at the TOP rung with no governor at all — strictly worse than no config.
+    let gov: Governor = initGovernor(Date.now(), config.openingCap, config);
 
     const readGetStatsSignals = async (): Promise<{
       freezeMs: number;
@@ -256,10 +278,11 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
         const prevSizeKey = lastStatsSizeKey;
         lastStatsSizeKey = sizeKey ?? lastStatsSizeKey;
         const layerSwitched = prevSizeKey !== null && sizeKey !== null && sizeKey !== prevSizeKey;
-        // Transport provenance (no row = clean, row without counters = unknown, first read
-        // = baseline only) lives in the pure `transportFromInboundRows`; see its doc.
-        const provenance = transportFromInboundRows(inboundVideoRows, lastTransport);
-        lastTransport = provenance.cursor;
+        // Transport provenance (no row = clean for the join window only, row without counters
+        // = unknown, first read = baseline only) lives in the pure `transportFromInboundRows`;
+        // see its doc. `now` is the same clock the join window is measured against.
+        const provenance = transportFromInboundRows(inboundVideoRows, transportRead, now);
+        transportRead = provenance.state;
         const transport = provenance.transport;
         const prevDecoded = lastFramesDecoded;
         lastFramesDecoded = decodedTotal;
@@ -310,7 +333,10 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
         // flight. Never let a stale tick overwrite the new binding's opening cap.
         if (disposed) return;
         const signal: GovernorSignal = {
-          paused: pausedSinceTick,
+          // LEVEL first, edge as the fast path: a pause that is still in force must read as
+          // paused on every tick it is in force, or the governor probes up into a track the
+          // SFU has already refused to forward (see `pausedForTick`).
+          paused: pausedForTick(readPauseLevel(), pausedSinceTick),
           freezeMsInWindow: Math.max(rvfc.freezeMsInWindow, statsSignals.freezeMs),
           jitterRising: statsSignals.jitterRising,
           connectionQuality: connQuality,

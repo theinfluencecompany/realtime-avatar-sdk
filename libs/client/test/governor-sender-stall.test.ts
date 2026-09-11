@@ -4,9 +4,11 @@ import {
   DEFAULT_GOVERNOR_CONFIG as CFG,
   LOW_CAP_STEP_AFTER_UNHEALTHY,
   isFreezeChargeable,
+  initialTransportRead,
   LOCAL_STARVATION_DROPPED_FRAMES,
   resolveLowCapQuality,
   step,
+  TRANSPORT_CLEAN_ASSUMPTION_MS,
   transportFromInboundRows,
   type Governor,
   type GovernorSignal,
@@ -191,28 +193,58 @@ test("a starving client keeps walking lowUnhealthy toward the bottom rung; a sen
 // ---------------------------------------------------------------------------
 test("a report with NO inbound-rtp video row is a receiver that has received nothing: a clean pipe", () => {
   // The join-time first-frame wait: nothing has arrived, so nothing was lost.
-  const { transport, cursor } = transportFromInboundRows([], null);
+  const { transport, state } = transportFromInboundRows([], initialTransportRead(), 0);
   assert.deepEqual(transport, cleanPipe);
-  assert.equal(cursor, null, "no baseline is stored from an empty report");
-  const audioOnly = transportFromInboundRows([{ kind: "audio", packetsLost: 40 }], null);
+  assert.equal(state.cursor, null, "no baseline is stored from an empty report");
+  const audioOnly = transportFromInboundRows([{ kind: "audio", packetsLost: 40 }], initialTransportRead(), 0);
   assert.deepEqual(audioOnly.transport, cleanPipe, "an audio row is not our pipe");
 });
 
+test("but only for the JOIN WINDOW: a runtime that never emits a row cannot fence forever", () => {
+  // "No row yet" is a claim about the first seconds of a subscription, not a licence to
+  // treat a runtime with no inbound-rtp support as a permanently clean pipe. Measured first
+  // frames on the rtx6000 pool ran 2.4 s to 28 s, so the assumption is capped just past that
+  // and then degrades to UNKNOWN, which charges the freeze exactly as 0.11.5 did.
+  let state = initialTransportRead();
+  const read = (nowMs: number) => {
+    const r = transportFromInboundRows([], state, nowMs);
+    state = r.state;
+    return r.transport;
+  };
+  assert.deepEqual(read(0), cleanPipe, "the first read starts the clock");
+  assert.deepEqual(read(TRANSPORT_CLEAN_ASSUMPTION_MS), cleanPipe, "still inside the window");
+  assert.equal(read(TRANSPORT_CLEAN_ASSUMPTION_MS + 1), undefined, "past it, the reading is unknown, not clean");
+  assert.ok(TRANSPORT_CLEAN_ASSUMPTION_MS >= 30_000, "and the window covers the measured first-frame spread");
+  // A freeze read at that point is charged, so the governor behaves as it did before the fence.
+  assert.equal(isFreezeChargeable({ ...CLEAN, freezeMsInWindow: 500 }), true);
+});
+
+test("a row that VANISHES mid-call is unknown too, never a clean pipe", () => {
+  // The receiver went away (a rebind in flight, a torn-down transceiver). Once rows have been
+  // seen, their absence says nothing about the link, so it must not be read as good news.
+  const first = transportFromInboundRows([{ kind: "video", packetsLost: 10 }], initialTransportRead(), 1_000);
+  assert.equal(first.state.sawRow, true);
+  const gone = transportFromInboundRows([], first.state, 2_000);
+  assert.equal(gone.transport, undefined, "inside the join window, but a row has already been seen");
+  assert.deepEqual(gone.state.cursor, first.state.cursor, "and the baseline is kept for the rebind");
+});
+
 test("a row WITHOUT packetsLost is unknown transport, so the freeze is charged as 0.11.5 did", () => {
-  const { transport, cursor } = transportFromInboundRows([{ kind: "video", nackCount: 3 }], null);
+  const { transport, state } = transportFromInboundRows([{ kind: "video", nackCount: 3 }], initialTransportRead(), 0);
   assert.equal(transport, undefined);
-  assert.equal(cursor, null);
+  assert.equal(state.cursor, null);
+  assert.equal(state.sawRow, true, "the row existed; only its counters did not");
   assert.equal(isFreezeChargeable({ ...CLEAN, freezeMsInWindow: 500 }), true);
 });
 
 test("the first read of a binding is baseline-only; the second yields deltas", () => {
-  const first = transportFromInboundRows([{ kind: "video", packetsLost: 120, nackCount: 30, framesDropped: 4 }], null);
+  const first = transportFromInboundRows([{ kind: "video", packetsLost: 120, nackCount: 30, framesDropped: 4 }], initialTransportRead(), 0);
   assert.deepEqual(first.transport, cleanPipe, "a rebind onto a receiver with history must not charge its lifetime loss");
-  assert.deepEqual(first.cursor, { lost: 120, nack: 30, dropped: 4 });
-  const second = transportFromInboundRows([{ kind: "video", packetsLost: 123, nackCount: 30 }], first.cursor);
+  assert.deepEqual(first.state.cursor, { lost: 120, nack: 30, dropped: 4 });
+  const second = transportFromInboundRows([{ kind: "video", packetsLost: 123, nackCount: 30 }], first.state, 1_000);
   assert.deepEqual(second.transport, { packetsLostInWindow: 3, nacksInWindow: 0, framesDroppedInWindow: 0 });
-  assert.deepEqual(second.cursor, { lost: 123, nack: 30, dropped: 0 }, "nackCount / framesDropped default to 0 when absent");
+  assert.deepEqual(second.state.cursor, { lost: 123, nack: 30, dropped: 0 }, "nackCount / framesDropped default to 0 when absent");
   // Counters that go backwards (a receiver reset) never produce a negative window.
-  const reset = transportFromInboundRows([{ kind: "video", packetsLost: 0 }], second.cursor);
+  const reset = transportFromInboundRows([{ kind: "video", packetsLost: 0 }], second.state, 2_000);
   assert.deepEqual(reset.transport, cleanPipe);
 });

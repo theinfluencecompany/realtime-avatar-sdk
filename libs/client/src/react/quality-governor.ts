@@ -83,9 +83,24 @@ export interface GovernorSignal {
   };
 }
 
-/** Dropped frames in one tick that mean the DECODER, not the link, is behind. One is the
- *  ordinary noise of a late frame at a layer edge; two in a second is a client that cannot
- *  keep up with the rung it is on. */
+/**
+ * Dropped frames in one tick that mean the DECODER, not the link, is behind.
+ *
+ * HONEST PROVENANCE: this number is a judgement, not a measurement. The 2026-09-11 probe
+ * corpus carries no framesDropped column at all (the replay hardcodes it to 0, which is the
+ * fence's most permissive reading), so nothing in this repo has ever observed the constant
+ * bite. It is kept rather than removed because removing it removes the ONLY path by which a
+ * starving client on a clean pipe can still reach its floor — the case 0.11.2 #71 built the
+ * floor for — and that case is real even though this corpus does not contain it.
+ *
+ * The reasoning behind 2: framesDropped counts frames that ARRIVED and then missed their
+ * deadline. At the 15-25 fps the deployed rungs declare, one drop in a one-second tick is
+ * 4-7 % of that tick's frames, which is the ordinary noise of a late frame at a layer edge;
+ * two is a deficit the decoder is not recovering from inside the tick. What would change it:
+ * a corpus with framesDropped sampled on calls that were and were not visibly stuttering.
+ * Until then the conservative direction is the one taken here — a HIGHER bar refuses more
+ * freezes, and refusing is the behaviour this whole file is arguing for.
+ */
 export const LOCAL_STARVATION_DROPPED_FRAMES = 2;
 
 /** The inbound-rtp VIDEO rows of one getStats report, narrowed to the counters the
@@ -104,18 +119,55 @@ export interface TransportCursor {
   dropped: number;
 }
 
+/** Everything one binding's transport reader remembers between ticks. */
+export interface TransportReadState {
+  /** Cumulative totals at the previous COUNTED read; null before the first one. */
+  cursor: TransportCursor | null;
+  /** Wall-clock ms of the first read on this binding: the clock the join window runs on.
+   *  Null until that first read, so the state can be built without a clock. */
+  firstReadAtMs: number | null;
+  /** True once ANY inbound-rtp video row has been seen on this binding. */
+  sawRow: boolean;
+}
+
+/** A fresh reader for a new binding (reconnect, track replacement). */
+export const initialTransportRead = (): TransportReadState => ({
+  cursor: null,
+  firstReadAtMs: null,
+  sawRow: false,
+});
+
+/**
+ * How long "no inbound-rtp row yet" may be read as a CLEAN pipe rather than as an unreadable
+ * one. Bounded because the two are indistinguishable from one report: a subscription whose
+ * first frame has not landed and a runtime that never reports inbound-rtp at all look exactly
+ * the same. The first is over in seconds; the second lasts the whole call, and treating it as
+ * clean forever would fence every freeze on that runtime permanently — a silent, unfixable
+ * "the governor stopped working here".
+ *
+ * 30 s covers the measured first-frame spread on the rtx6000 pool with margin (2.4 s to 28 s
+ * on prod, 2026-09-09/11). Past it the reading degrades to UNKNOWN, which is 0.11.5: the
+ * freeze is charged. The failure direction is deliberate — an unreadable runtime falls back to
+ * the behaviour that shipped, never to a new one.
+ */
+export const TRANSPORT_CLEAN_ASSUMPTION_MS = 30_000;
+
 /**
  * Translate one getStats report's inbound-rtp rows into the tick's transport evidence.
  *
  * Provenance rules, in order:
- *  1. NO inbound-rtp video row: a receiver that has received nothing has lost nothing. This
- *     is the join-time first-frame wait (the worker's primary cache load, 1-21 s on the
- *     rtx6000 pool), which a smaller rung cannot shorten. Reads as a clean pipe; the cursor
- *     is untouched.
- *  2. A row exists but `packetsLost` is not a number: the runtime does not expose the
- *     sequence space (Safari / RN without counters). Transport is UNKNOWN and the reducer
- *     charges the freeze exactly as 0.11.5 did. The cursor is untouched.
- *  3. A row with `packetsLost` (nackCount / framesDropped default to 0 where absent):
+ *  1. NO inbound-rtp video row AND none has ever been seen AND we are still inside
+ *     `joinWindowMs` of the first read: a receiver that has received nothing has lost
+ *     nothing. This is the join-time first-frame wait (the worker's primary cache load,
+ *     1-21 s on the rtx6000 pool), which a smaller rung cannot shorten. Reads as a clean
+ *     pipe; the cursor is untouched.
+ *  2. NO row in any other case — past the join window, or after rows have been seen and then
+ *     stopped (a receiver torn down mid-call): UNKNOWN. Nothing is being claimed about a pipe
+ *     that cannot be read, so the reducer charges the freeze exactly as 0.11.5 did.
+ *  3. A row exists but `packetsLost` is not a number: the runtime does not expose the
+ *     sequence space (Safari / RN without counters). UNKNOWN, same as above. The cursor is
+ *     untouched, and the row is remembered so rule 1 can never apply again.
+ *  4. A row with `packetsLost` (nackCount / framesDropped default to 0 where absent):
  *     the FIRST read of a binding only stores the baseline and reports a clean window.
  *     The totals of a fresh RTCRtpReceiver start at zero, but a REBIND onto a receiver
  *     that already carried traffic does not, and charging its lifetime loss to one tick
@@ -125,29 +177,61 @@ export interface TransportCursor {
  */
 export const transportFromInboundRows = (
   rows: readonly InboundRtpLike[],
-  cursor: TransportCursor | null,
-): { transport: GovernorSignal["transport"]; cursor: TransportCursor | null } => {
+  state: TransportReadState,
+  nowMs: number,
+  joinWindowMs: number = TRANSPORT_CLEAN_ASSUMPTION_MS,
+): { transport: GovernorSignal["transport"]; state: TransportReadState } => {
   const clean = { packetsLostInWindow: 0, nacksInWindow: 0, framesDroppedInWindow: 0 };
+  const firstReadAtMs = state.firstReadAtMs ?? nowMs;
   const video = rows.filter((r) => r.kind === undefined || r.kind === "video");
-  if (video.length === 0) return { transport: clean, cursor };
+  if (video.length === 0) {
+    const joining = !state.sawRow && nowMs - firstReadAtMs <= joinWindowMs;
+    return { transport: joining ? clean : undefined, state: { ...state, firstReadAtMs } };
+  }
+  const seen: TransportReadState = { ...state, firstReadAtMs, sawRow: true };
   const counted = video.filter((r) => typeof r.packetsLost === "number");
-  if (counted.length === 0) return { transport: undefined, cursor };
+  if (counted.length === 0) return { transport: undefined, state: seen };
   const totals: TransportCursor = { lost: 0, nack: 0, dropped: 0 };
   for (const r of counted) {
     totals.lost += r.packetsLost ?? 0;
     totals.nack += r.nackCount ?? 0;
     totals.dropped += r.framesDropped ?? 0;
   }
-  if (cursor === null) return { transport: clean, cursor: totals };
+  if (seen.cursor === null) return { transport: clean, state: { ...seen, cursor: totals } };
   return {
     transport: {
-      packetsLostInWindow: Math.max(0, totals.lost - cursor.lost),
-      nacksInWindow: Math.max(0, totals.nack - cursor.nack),
-      framesDroppedInWindow: Math.max(0, totals.dropped - cursor.dropped),
+      packetsLostInWindow: Math.max(0, totals.lost - seen.cursor.lost),
+      nacksInWindow: Math.max(0, totals.nack - seen.cursor.nack),
+      framesDroppedInWindow: Math.max(0, totals.dropped - seen.cursor.dropped),
     },
-    cursor: totals,
+    state: { ...seen, cursor: totals },
   };
 };
+
+/**
+ * The SFU pause as the hook can present it at TICK TIME: the subscribed track's stream state
+ * (the values of LiveKit's `Track.StreamState`, translated at the adapter so the core stays
+ * vendor-free), plus whether a Paused EVENT landed since the previous tick.
+ */
+export type PauseLevel = "active" | "paused" | "unknown";
+
+/**
+ * Is this tick paused?
+ *
+ * READ THE LEVEL, NOT THE EDGE. `TrackStreamStateChanged` fires once when the SFU's
+ * congestion controller pauses the track and once when it resumes. The hook latched that
+ * event and consumed it after one tick, so from tick 2 of a pause that is STILL IN FORCE the
+ * signal read clean: a paused sender loses no packets, so the transport fence charges
+ * nothing, every tick is healthy, and the governor walks its clean window and PROBES UP into
+ * a track the SFU has already refused to forward.
+ *
+ * The event is kept as a fast path rather than dropped, because it is the only evidence of a
+ * pause that both started and ended between two ticks, and an "unknown" level (no track bound
+ * yet, a runtime without the getter) must degrade to the old behaviour rather than to
+ * "never paused".
+ */
+export const pausedForTick = (level: PauseLevel, edgeSinceLastTick: boolean): boolean =>
+  level === "paused" || edgeSinceLastTick;
 
 /** The side effect the hook must apply after a step (absent = leave the cap alone). */
 export interface GovernorAction {
@@ -227,27 +311,46 @@ export interface GovernorConfig {
   probeMs: number; // 10_000  (≈ Meet full-recovery window)
   /** Sustained-healthy-at-low duration that resets the failure count (link improved). */
   healthyResetMs: number; // 120_000
-  /** KILL SWITCH for the transport fence. "required" (default): a freeze is charged to the
-   *  link only with link evidence (SFU pause, loss, NACKs, decoder starvation) or when the
-   *  runtime exposes no counters at all; see `isFreezeChargeable`. "optional": every freeze
-   *  is charged regardless of transport, which is the 0.11.5 predicate byte for byte (the
-   *  unknown-transport branch IS that predicate). Exists so the fence can be turned off from
-   *  app config without a release if it ever hides a real link failure. */
+  /** THE KILL SWITCH, and it is a FULL revert.
+   *
+   *  "required" (default): everything this file learned on 2026-09-11 is live — the transport
+   *  fence (`isFreezeChargeable`), the healthy band, the jitter clause, the lowUnhealthy
+   *  decay and the delay-only demote path.
+   *
+   *  "optional": the reducer is 0.11.5, byte for byte — every freeze charged regardless of
+   *  transport, `freezeMsInWindow === 0` required for health, a bare `!jitterRising` clause,
+   *  no decay and no delay-only path. Not "the fence off with the new recovery rules still
+   *  running": that would be a reducer that never shipped, and a switch whose OFF position is
+   *  a third behaviour cannot answer the question it exists for. Proven by running the live
+   *  reducer against a frozen verbatim copy of 0.11.5 over a trace corpus
+   *  (test/fixtures/governor-0-11-5.ts, governor-kill-switch.test.ts).
+   *
+   *  Exists so the whole change can be turned off from app config without a release. */
   linkEvidence: "required" | "optional"; // "required"
-  /** A tick is HEALTHY while its link-charged freeze is within this many ms. 67 = one frame
-   *  interval at 15 fps, the slowest declared rung on the three-layer ladder (the 180x316
-   *  layer), so ordinary presentation spacing on the lowest rung can be judged healthy and
-   *  the climb back happens inside the designed dwell + clean window. 0.11.5 demanded
-   *  exactly 0 and measured 10-46 s of low-rung dwell against a designed 15 s (2026-09-11).
-   *  MUST stay below `probationFreezeMs` so the band can never mask a demote; `initGovernor`
-   *  refuses a config that breaks this. */
+  /** A tick is HEALTHY while its link-charged freeze is within this many ms.
+   *
+   *  67 = one frame interval at 15 fps, the slowest declared rung on the three-layer ladder
+   *  (the 180x316 layer). NOTE WHAT THIS IS MEASURED AGAINST: the surface has already
+   *  subtracted `AVATAR_FRAME_GAP_FREEZE_FLOOR_MS` (100) before the reading reaches here, so
+   *  a 67 ms charged freeze is a 167 ms PRESENTED gap — two frame intervals at 15 fps, or
+   *  three at 20. The band forgives ordinary presentation spacing on the lowest rung so the
+   *  climb back happens inside the designed dwell + clean window. 0.11.5 demanded exactly 0
+   *  and measured 10-46 s of low-rung dwell against a designed 15 s (2026-09-11).
+   *
+   *  MUST stay below `probationFreezeMs` or one tick could be "healthy" and "a demote" at
+   *  once. An out-of-range value is CLAMPED, never thrown (see `healthyToleranceMs`). */
   healthyFreezeToleranceMs: number; // 67
   /** Two link-charged unhealthy ticks on the low cap arm the BOTTOM rung
-   *  (LOW_CAP_STEP_AFTER_UNHEALTHY) only if they land within this window of each other.
+   *  (LOW_CAP_STEP_AFTER_UNHEALTHY) only if they land within this window of each other, and
+   *  the pair must still be inside it at the demote that SPENDS it (`decayLowUnhealthy`).
    *  10 s = probeMs, so one failed probation cycle still counts as "recent"; a decoder that
    *  drops one frame every 15 s stays on the middle rung, which is the intended floor
    *  behaviour. 0.11.5 counted any two ticks anywhere in the call. */
   lowUnhealthyWindowMs: number; // 10_000
+  /** Consecutive ticks of RISING jitter (each with a presented gap) that demote a high cap
+   *  even though the sequence space is clean. See `isDelayOnlyCongestion` for the whole
+   *  argument; 3 is the deliberate trade between 0.11.5's one tick and the fence's never. */
+  jitterRisingTicksToDemote: number; // 3
 }
 
 /** The grounded defaults (Meet <10s recovery + GCC +5%/−15% step asymmetry). */
@@ -284,6 +387,7 @@ export const DEFAULT_GOVERNOR_CONFIG: GovernorConfig = {
   linkEvidence: "required",
   healthyFreezeToleranceMs: 67,
   lowUnhealthyWindowMs: 10_000,
+  jitterRisingTicksToDemote: 3,
 };
 
 /**
@@ -306,6 +410,7 @@ export const GOVERNOR_CONFIG_MEMO_KEYS = [
   "linkEvidence",
   "healthyFreezeToleranceMs",
   "lowUnhealthyWindowMs",
+  "jitterRisingTicksToDemote",
 ] as const satisfies readonly (keyof GovernorConfig)[];
 
 type UnlistedGovernorConfigKey = Exclude<keyof GovernorConfig, (typeof GOVERNOR_CONFIG_MEMO_KEYS)[number]>;
@@ -322,12 +427,49 @@ const assignDefined = <K extends keyof GovernorConfig>(
   if (value !== undefined) target[key] = value;
 };
 
-/** A fresh GovernorConfig: the defaults with every DEFINED override applied, by value. Only
- *  the listed fields survive, so an unknown or `undefined` property can neither leak in nor
- *  erase a default. */
+/**
+ * The healthy band, clamped into the only range in which it means anything: at or above the
+ * probation bar it would make one tick "healthy" and "a demote" at the same time, and below
+ * zero it is not a duration.
+ *
+ * WHY CLAMPED AND NOT REFUSED. `initGovernor` used to throw a RangeError on an out-of-range
+ * band, and the hook's fail-open path caught that by unsubscribing BEFORE it ever applied a
+ * cap — so a one-line typo in app config produced the worst reachable outcome: the call
+ * opened at the TOP rung with no governor at all, on every link, with no way down. A
+ * misconfiguration must never be worse than no configuration. Clamping keeps the invariant
+ * the throw was defending while keeping the governor running, and it holds for hand-built
+ * configs that never passed through `resolveGovernorConfig`.
+ */
+export const clampHealthyToleranceMs = (rawMs: number, probationFreezeMs: number): number => {
+  const bar = Number.isFinite(probationFreezeMs) ? probationFreezeMs : DEFAULT_GOVERNOR_CONFIG.probationFreezeMs;
+  const raw = Number.isFinite(rawMs) ? rawMs : 0;
+  return Math.max(0, Math.min(raw, bar - 1));
+};
+
+/** Logged once per module instance: the hook resolves its config on every render, and a
+ *  warning on every render of every call is noise nobody reads. */
+let warnedAboutToleranceClamp = false;
+
+/** A fresh GovernorConfig: the defaults with every DEFINED override applied, by value, with
+ *  the healthy band clamped to the range it can actually be applied in. Only the listed
+ *  fields survive, so an unknown or `undefined` property can neither leak in nor erase a
+ *  default. */
 export const resolveGovernorConfig = (overrides: Partial<GovernorConfig> = {}): GovernorConfig => {
   const resolved: GovernorConfig = { ...DEFAULT_GOVERNOR_CONFIG };
   for (const key of GOVERNOR_CONFIG_MEMO_KEYS) assignDefined(resolved, overrides, key);
+  const clamped = clampHealthyToleranceMs(resolved.healthyFreezeToleranceMs, resolved.probationFreezeMs);
+  if (clamped !== resolved.healthyFreezeToleranceMs) {
+    if (!warnedAboutToleranceClamp && typeof console !== "undefined") {
+      warnedAboutToleranceClamp = true;
+      console.warn(
+        `[realtime-avatar] governor config: healthyFreezeToleranceMs ${resolved.healthyFreezeToleranceMs} is outside ` +
+          `[0, probationFreezeMs) and was clamped to ${clamped}. The healthy band must stay below the probation bar.`,
+      );
+    }
+    // The RESOLVED config carries the value that will actually be applied, so telemetry and
+    // the hook's memo agree with the reducer.
+    resolved.healthyFreezeToleranceMs = clamped;
+  }
   return resolved;
 };
 
@@ -406,6 +548,10 @@ export interface Governor {
    *  (see `bumpLowUnhealthy`). Optional rather than nullable so a Governor literal without
    *  it (every pre-existing trace test) is a valid "no recent evidence" state. */
   lowUnhealthyAtMs?: number;
+  /** Consecutive ticks on which `jitterRising` held, for the delay-only demote path (see
+   *  `isDelayOnlyCongestion`). Absent until the first such tick, and never present at all in
+   *  legacy mode (`linkEvidence: "optional"`), so a 0.11.5 state stays a 0.11.5 state. */
+  jitterRisingTicks?: number;
   /** Wall-clock ms the current state was entered (for dwell/clean/probe timing). */
   enteredAtMs: number;
   /** Wall-clock ms of the last healthy tick in the current low period (clean-window
@@ -419,25 +565,33 @@ export interface Governor {
 export const initGovernor = (
   nowMs: number,
   openingCap: QualityCap = "low",
-  cfg: GovernorConfig = DEFAULT_GOVERNOR_CONFIG,
-): Governor => {
-  // STARTUP INVARIANT. The healthy band only touches recovery; if it reached the probation
-  // bar a freeze could be "healthy" and "a demote" at once, and the two bars would disagree
-  // about the same tick. Refuse the config rather than reason about that state.
-  if (!(cfg.healthyFreezeToleranceMs < cfg.probationFreezeMs)) {
-    throw new RangeError(
-      `healthyFreezeToleranceMs (${cfg.healthyFreezeToleranceMs}) must be below probationFreezeMs (${cfg.probationFreezeMs})`,
-    );
-  }
-  return {
-    state: openingCap === "high" ? "opening_high" : "opening",
-    cap: openingCap,
-    failures: 0,
-    lowUnhealthy: 0,
-    enteredAtMs: nowMs,
-    healthySinceMs: null,
-  };
-};
+  // Accepted so the signature reads like the rest of the module and so a future startup
+  // concern has a home. TOTAL BY CONSTRUCTION: this function cannot throw for any input.
+  // The one startup invariant it used to enforce (the healthy band below the probation bar)
+  // is now enforced where the band is READ, by clamping — see `healthyToleranceMs`. A
+  // governor that refuses to exist is strictly worse than one running on a clamped number:
+  // the hook's fail-open path caught the throw by leaving the call with no governor at all.
+  _cfg: GovernorConfig = DEFAULT_GOVERNOR_CONFIG,
+): Governor => ({
+  state: openingCap === "high" ? "opening_high" : "opening",
+  cap: openingCap,
+  failures: 0,
+  lowUnhealthy: 0,
+  enteredAtMs: nowMs,
+  healthySinceMs: null,
+});
+
+/**
+ * Is the reducer in 0.11.5 mode? ONE predicate, read by every behaviour this change added, so
+ * "the kill switch restores 0.11.5" is a property of the code rather than a promise in a
+ * comment. Adding a behaviour without consulting this is the bug finding 2 caught.
+ */
+const isLegacyGovernor = (cfg: GovernorConfig): boolean => cfg.linkEvidence === "optional";
+
+/** The healthy band the reducer APPLIES: 0 in legacy mode, otherwise the configured band
+ *  clamped below the probation bar (see `clampHealthyToleranceMs`). */
+export const healthyToleranceMs = (cfg: GovernorConfig): number =>
+  isLegacyGovernor(cfg) ? 0 : clampHealthyToleranceMs(cfg.healthyFreezeToleranceMs, cfg.probationFreezeMs);
 
 /**
  * Can this tick's freeze be charged to the LINK?
@@ -458,7 +612,42 @@ export const isFreezeChargeable = (s: GovernorSignal): boolean =>
 /** The freeze the governor actually reasons about: zero for a sender-shaped stall, the
  *  whole reading when the fence is switched off (`linkEvidence: "optional"`). */
 export const chargedFreezeMs = (s: GovernorSignal, cfg: GovernorConfig): number =>
-  cfg.linkEvidence === "optional" || isFreezeChargeable(s) ? s.freezeMsInWindow : 0;
+  isLegacyGovernor(cfg) || isFreezeChargeable(s) ? s.freezeMsInWindow : 0;
+
+/**
+ * DELAY-ONLY CONGESTION: the one failure class the transport fence cannot see.
+ *
+ * A link that degrades by DELAY alone — a bloated buffer, a shaped uplink — delivers every
+ * packet, late. No loss, no NACKs, no framesDropped, and the SFU may never pause us, so
+ * `isFreezeChargeable` refuses every one of its freezes and a governor with only the fence
+ * would ride out the whole call on the top rung while the picture stutters. That is a real
+ * regression against 0.11.5, where any freeze demoted.
+ *
+ * The bounded path back, and why each half is load-bearing:
+ *  - `jitterRisingTicks >= N`: a RUN, not a flicker. The app's own adaptive playout hint
+ *    moves the jitter-buffer interval average, so a single rise must never demote — that is
+ *    the recovery bug measured on 2026-09-11.
+ *  - `freezeMsInWindow > 0`: frames are actually being missed. Rising jitter with a perfect
+ *    presentation clock is a buffer doing its job.
+ *  - the RAW freeze, not the charged one: this class is by definition not chargeable, so
+ *    reading the charged value would make the clause dead code.
+ *
+ * THE TRADE, stated plainly: at 1 s ticks this costs about N seconds of stutter before the
+ * cap moves, against 0.11.5's one tick. It is a DELAY, not a refusal, and it is the price of
+ * refusing the sender-stall demotes that make up 12 of 12 wire-captured rung changes.
+ */
+const isDelayOnlyCongestion = (g: Governor, s: GovernorSignal, cfg: GovernorConfig): boolean =>
+  !isLegacyGovernor(cfg) &&
+  (g.jitterRisingTicks ?? 0) >= cfg.jitterRisingTicksToDemote &&
+  s.freezeMsInWindow > 0;
+
+/** Advance the consecutive-rising-jitter run. Returns the SAME governor when the count does
+ *  not move, so a call without jitter never grows the state object (and legacy mode, which
+ *  never calls this, keeps the exact 0.11.5 shape). */
+const stepJitterRun = (g: Governor, rising: boolean): Governor => {
+  const next = rising ? (g.jitterRisingTicks ?? 0) + 1 : 0;
+  return next === (g.jitterRisingTicks ?? 0) ? g : { ...g, jitterRisingTicks: next };
+};
 
 /** A signal is a downgrade trigger from a stable/high cap (docs §2 Fix 3). */
 const isDowngrade = (s: GovernorSignal, cfg: GovernorConfig): boolean =>
@@ -471,11 +660,13 @@ const isProbationFail = (s: GovernorSignal, cfg: GovernorConfig): boolean =>
   s.paused || chargedFreezeMs(s, cfg) >= cfg.probationFreezeMs;
 
 /**
- * "Healthy right now": the SFU has not paused the track, the LINK-CHARGED freeze is within
- * one frame interval of the slowest rung, jitter is not rising WHILE a charged freeze
- * exists, and the avatar participant's quality is not poor/lost.
+ * "Healthy right now": the SFU has not paused the track, the LINK-CHARGED freeze is inside
+ * the band (67 ms charged = a 167 ms presented gap, because the surface has already
+ * subtracted the 100 ms floor), jitter is not rising WHILE a charged freeze exists, and the
+ * avatar participant's quality is not poor/lost.
  *
- * Two deliberate departures from 0.11.5. First, the band (`healthyFreezeToleranceMs`)
+ * Two deliberate departures from 0.11.5, BOTH reverted by `linkEvidence: "optional"`.
+ * First, the band (`healthyFreezeToleranceMs`)
  * replaces `=== 0`: a 124 ms presented gap on the 15 fps rung was resetting the 3 s clean
  * window forever while never being large enough to demote, so the cap could not come back
  * (measured: 4 of 7 probe calls never recovered). Second, the bare `!jitterRising` clause is
@@ -487,10 +678,13 @@ const isProbationFail = (s: GovernorSignal, cfg: GovernorConfig): boolean =>
  */
 const isHealthy = (s: GovernorSignal, cfg: GovernorConfig): boolean => {
   const charged = chargedFreezeMs(s, cfg);
+  // BOTH departures are gated on the same kill switch as the fence. Leaving them live under
+  // `linkEvidence: "optional"` made the OFF position a third behaviour that never shipped.
+  const jitterUnhealthy = isLegacyGovernor(cfg) ? s.jitterRising : s.jitterRising && charged > 0;
   return (
     !s.paused &&
-    charged <= cfg.healthyFreezeToleranceMs &&
-    !(s.jitterRising && charged > 0) &&
+    charged <= healthyToleranceMs(cfg) &&
+    !jitterUnhealthy &&
     s.connectionQuality !== "poor" &&
     s.connectionQuality !== "lost"
   );
@@ -506,15 +700,46 @@ const dwellMs = (failures: number, cfg: GovernorConfig): number =>
  *  arming the bottom rung on the next demote (0.11.5 replay: lowUnhealthy 29 after 58 s of
  *  a 124 ms gap every 2 s, then straight to 180x316). */
 const bumpLowUnhealthy = (g: Governor, nowMs: number, cfg: GovernorConfig): Pick<Governor, "lowUnhealthy" | "lowUnhealthyAtMs"> => {
+  // 0.11.5 had no clock here at all, and no field to put one in.
+  if (isLegacyGovernor(cfg)) return { lowUnhealthy: g.lowUnhealthy + 1 };
   const recent = typeof g.lowUnhealthyAtMs === "number" && nowMs - g.lowUnhealthyAtMs <= cfg.lowUnhealthyWindowMs;
   return { lowUnhealthy: recent ? g.lowUnhealthy + 1 : 1, lowUnhealthyAtMs: nowMs };
 };
 
-/** `lowUnhealthy` and its clock, cleared together. */
-const NO_LOW_UNHEALTHY: Pick<Governor, "lowUnhealthy" | "lowUnhealthyAtMs"> = { lowUnhealthy: 0, lowUnhealthyAtMs: undefined };
+/**
+ * The low-rung evidence carried INTO a demote, decayed on the way.
+ *
+ * `lowUnhealthy` is not bookkeeping: the hook hands it to `resolveLowCapQuality`, so it is
+ * what CHOOSES the rung a demote lands on. Decaying it only when the next unhealthy tick
+ * arrives left the decay doing nothing at the one moment the count is SPENT — a pair of ticks
+ * from an episode 18 s earlier still selected the bottom rung, exactly as 0.11.5 did. The
+ * same window governs both ends.
+ */
+const decayLowUnhealthy = (g: Governor, nowMs: number, cfg: GovernorConfig): Pick<Governor, "lowUnhealthy" | "lowUnhealthyAtMs"> => {
+  if (isLegacyGovernor(cfg)) return { lowUnhealthy: g.lowUnhealthy };
+  const fresh = typeof g.lowUnhealthyAtMs === "number" && nowMs - g.lowUnhealthyAtMs <= cfg.lowUnhealthyWindowMs;
+  return fresh
+    ? { lowUnhealthy: g.lowUnhealthy, lowUnhealthyAtMs: g.lowUnhealthyAtMs }
+    : clearedLowUnhealthy(cfg);
+};
+
+/** `lowUnhealthy` and its clock, cleared together. In legacy mode the clock field is not
+ *  introduced at all: a 0.11.5 state has exactly six keys and must keep them. */
+const clearedLowUnhealthy = (cfg: GovernorConfig): Pick<Governor, "lowUnhealthy" | "lowUnhealthyAtMs"> =>
+  isLegacyGovernor(cfg) ? { lowUnhealthy: 0 } : { lowUnhealthy: 0, lowUnhealthyAtMs: undefined };
+
+/** `lowUnhealthy` carried forward unchanged, with the same legacy shape rule. */
+const keepLowUnhealthy = (g: Governor, cfg: GovernorConfig): Pick<Governor, "lowUnhealthy" | "lowUnhealthyAtMs"> =>
+  isLegacyGovernor(cfg)
+    ? { lowUnhealthy: g.lowUnhealthy }
+    : { lowUnhealthy: g.lowUnhealthy, lowUnhealthyAtMs: g.lowUnhealthyAtMs };
 
 const enter = (g: Governor, state: GovernorState, cap: QualityCap, nowMs: number): Governor => ({
   ...g,
+  // The jitter run is evidence about the rung we were ON. Carrying it across a transition
+  // would let a probation be killed by ticks that predate the probe, so each state judges
+  // the link on its own N ticks. The conditional keeps a legacy state exactly six keys wide.
+  ...(g.jitterRisingTicks === undefined ? {} : { jitterRisingTicks: 0 }),
   state,
   cap,
   enteredAtMs: nowMs,
@@ -531,22 +756,31 @@ const enter = (g: Governor, state: GovernorState, cap: QualityCap, nowMs: number
  * simultaneously "dwell elapsed" and "freezing" always falls, never rises.
  */
 export const step = (
-  g: Governor,
+  g0: Governor,
   s: GovernorSignal,
   nowMs: number,
   cfg: GovernorConfig = DEFAULT_GOVERNOR_CONFIG,
 ): { governor: Governor; action?: GovernorAction } => {
+  const legacy = isLegacyGovernor(cfg);
   // FALSE-POSITIVE FENCE: hidden tab / muted / local-CPU freeze — trust nothing, do
   // nothing (a downgrade can't fix a decode/paint bottleneck; our Dia-freeze lesson).
+  // The one thing that does move: a tick carrying no trustworthy signal cannot be part of a
+  // CONSECUTIVE run of evidence, so it breaks the jitter run instead of being skipped over
+  // (otherwise a hidden tab would splice a run together across minutes of not looking).
   if (s.inhibited) {
-    return { governor: g };
+    return { governor: legacy ? g0 : stepJitterRun(g0, false) };
   }
+
+  // The ONLY state this tick carries before any decision: the consecutive-jitter run.
+  const g = legacy ? g0 : stepJitterRun(g0, s.jitterRising);
 
   // AUTHORITATIVE INSTANT DOWNGRADE from any non-low cap. Paused is 0ms-bar; freeze
   // uses the (stricter) probation bar while probing OR during the high opening —
-  // both are unproven bets, so both are judged hard and lose fast.
+  // both are unproven bets, so both are judged hard and lose fast. The delay-only path is
+  // the third trigger: no sequence evidence, but a sustained jitter trend with real gaps.
   const onProbation = g.state === "probing_up" || g.state === "opening_high";
-  const downgradeNow = onProbation ? isProbationFail(s, cfg) : isDowngrade(s, cfg);
+  const downgradeNow =
+    (onProbation ? isProbationFail(s, cfg) : isDowngrade(s, cfg)) || isDelayOnlyCongestion(g, s, cfg);
   if (g.cap === "high" && downgradeNow) {
     // Losing an UNPROVEN high counts as a failure; losing a PROVEN one does not.
     //
@@ -565,6 +799,9 @@ export const step = (
       governor: {
         ...enter(g, "cap_low_sticky", "low", nowMs),
         failures: failed ? g.failures + 1 : g.failures,
+        // The rung this demote lands on is chosen from `lowUnhealthy`, so stale evidence is
+        // dropped HERE, where it is spent, not only where it is added.
+        ...decayLowUnhealthy(g, nowMs, cfg),
       },
       action: { setCap: "low" },
     };
@@ -600,9 +837,9 @@ export const step = (
         healthy && healthySince !== null && nowMs - healthySince >= cfg.healthyResetMs;
       // Evidence about the LOW rung, gathered while sitting on it (time-decayed).
       const lowEvidence = resetFailures
-        ? NO_LOW_UNHEALTHY
+        ? clearedLowUnhealthy(cfg)
         : healthy
-          ? { lowUnhealthy: g.lowUnhealthy, lowUnhealthyAtMs: g.lowUnhealthyAtMs }
+          ? keepLowUnhealthy(g, cfg)
           : bumpLowUnhealthy(g, nowMs, cfg);
       const dwellDone = nowMs - g.enteredAtMs >= dwellMs(g.failures, cfg);
       if (dwellDone && healthy) {
@@ -651,7 +888,7 @@ export const step = (
       // Survived the probation window with no pause/freeze → commit to high.
       if (nowMs - g.enteredAtMs >= cfg.probeMs) {
         return {
-          governor: { ...enter(g, "cap_high_stable", "high", nowMs), failures: 0, ...NO_LOW_UNHEALTHY },
+          governor: { ...enter(g, "cap_high_stable", "high", nowMs), failures: 0, ...clearedLowUnhealthy(cfg) },
         };
       }
       return { governor: g };

@@ -9,13 +9,28 @@ import {
   type GovernorConfig,
   type GovernorSignal,
 } from "../src/react/quality-governor.ts";
+import {
+  DEFAULT_GOVERNOR_CONFIG as LEGACY_DEFAULTS,
+  initGovernor as legacyInit,
+  step as legacyStep,
+  type LegacySignal,
+} from "./fixtures/governor-0-11-5.ts";
 import { ticksOf, type Probe } from "../../../scripts/replay-governor-probes.ts";
 
 // ---------------------------------------------------------------------------
-// THE KILL SWITCH IS BYTE-IDENTICAL TO "NO EVIDENCE". `linkEvidence: "optional"` must make
-// the reducer ignore transport exactly as it ignores a signal that never carried any. The
-// unknown-transport branch is 0.11.5 by construction, so this pins that the switch has one
-// meaning and that the two recovery knobs never touch a demote decision.
+// THE KILL SWITCH IS A FULL REVERT, NOT A PARTIAL ONE.
+//
+// `linkEvidence: "optional"` is documented as restoring 0.11.5 so the fence can be turned
+// off from app config without a release. The first prototype reverted only the CHARGING
+// predicate: the 67 ms healthy band and the deleted bare `!jitterRising` clause stayed live,
+// so "optional" was a reducer that had never shipped and the switch could not answer the
+// question it exists for ("is the new code doing this?").
+//
+// This test compares the live reducer under "optional" against a FROZEN VERBATIM COPY of the
+// 0.11.5 reducer (fixtures/governor-0-11-5.ts, extracted from origin/main 2a878ba), field by
+// field, tick by tick, on synthetic timelines and on the recorded probe corpus. Expressing
+// 0.11.5 as a config of the current reducer would prove nothing — it inherits by construction
+// whatever the current reducer does that 0.11.5 did not.
 // ---------------------------------------------------------------------------
 
 const OPTIONAL: GovernorConfig = { ...CFG, linkEvidence: "optional" };
@@ -23,13 +38,23 @@ const cleanPipe = { packetsLostInWindow: 0, nacksInWindow: 0, framesDroppedInWin
 const lossy = { packetsLostInWindow: 4, nacksInWindow: 1, framesDroppedInWindow: 0 };
 const base: GovernorSignal = { paused: false, freezeMsInWindow: 0, jitterRising: false, connectionQuality: "excellent", inhibited: false };
 
-type Snapshot = { state: Governor["state"]; cap: Governor["cap"]; action: string; failures: number; lowUnhealthy: number };
-const run = (timeline: GovernorSignal[], cfg: GovernorConfig, openingCap: "high" | "low", tickMs = 1_000): Snapshot[] => {
+type Snapshot = { governor: Governor; action: string };
+const run = (timeline: GovernorSignal[], cfg: GovernorConfig, openingCap: "high" | "low"): Snapshot[] => {
   let g = initGovernor(0, openingCap, cfg);
   return timeline.map((s, i) => {
-    const r = step(g, s, (i + 1) * tickMs, cfg);
+    const r = step(g, s, (i + 1) * 1_000, cfg);
     g = r.governor;
-    return { state: g.state, cap: g.cap, action: r.action?.setCap ?? "-", failures: g.failures, lowUnhealthy: g.lowUnhealthy };
+    return { governor: g, action: r.action?.setCap ?? "-" };
+  });
+};
+/** The same timeline through the frozen 0.11.5 reducer. Transport is DELETED, because the
+ *  field did not exist there; that is the point of the comparison. */
+const runLegacy = (timeline: GovernorSignal[], openingCap: "high" | "low"): Snapshot[] => {
+  let g = legacyInit(0, openingCap);
+  return timeline.map(({ transport: _t, ...s }, i) => {
+    const r = legacyStep(g, s satisfies LegacySignal, (i + 1) * 1_000, CFG);
+    g = r.governor;
+    return { governor: g, action: r.action?.setCap ?? "-" };
   });
 };
 const withoutTransport = (timeline: GovernorSignal[]): GovernorSignal[] =>
@@ -49,6 +74,15 @@ const timelines: Record<string, GovernorSignal[]> = {
     jitterRising: i % 7 === 0,
     transport: i % 4 === 0 ? { ...cleanPipe, packetsLostInWindow: 1 } : cleanPipe,
   })),
+  // Inside the healthy band on every tick, with jitter rising in long RUNS: the three
+  // behaviours the switch must also revert (the band, the bare jitter clause, and the
+  // delay-only demote) all live here.
+  bandAndJitterRuns: Array.from({ length: 90 }, (_, i) => ({
+    ...base,
+    freezeMsInWindow: i % 2 === 0 ? 40 : 0,
+    jitterRising: i % 20 < 8,
+    transport: cleanPipe,
+  })),
   firstFrameWaitThenClean: Array.from({ length: 40 }, (_, i) => ({
     ...base, freezeMsInWindow: i < 9 ? Math.max(0, (i + 1) * 1_000 - 1_000) : 0, transport: cleanPipe,
   })),
@@ -59,6 +93,13 @@ const timelines: Record<string, GovernorSignal[]> = {
     jitterRising: i % 11 === 0,
     connectionQuality: i % 50 === 25 ? "poor" : "good",
     transport: i % 3 === 0 ? lossy : cleanPipe,
+  })),
+  inhibitedBursts: Array.from({ length: 60 }, (_, i) => ({
+    ...base,
+    inhibited: i % 9 === 3,
+    freezeMsInWindow: i % 5 === 0 ? 90 : 0,
+    jitterRising: i % 6 < 4,
+    transport: i % 2 === 0 ? cleanPipe : lossy,
   })),
 };
 
@@ -75,16 +116,28 @@ for (const p of probes) {
   }));
 }
 
-test("linkEvidence: optional == transport deleted, on every timeline and both openings", () => {
+test("the frozen reference carries the 0.11.5 defaults this reducer still ships", () => {
+  for (const key of Object.keys(LEGACY_DEFAULTS) as (keyof typeof LEGACY_DEFAULTS)[]) {
+    assert.equal(CFG[key], LEGACY_DEFAULTS[key], `default ${key} drifted from 0.11.5`);
+  }
+});
+
+test("linkEvidence: optional is BYTE-IDENTICAL to the frozen 0.11.5 reducer", () => {
+  let ticks = 0;
   for (const [name, timeline] of Object.entries(timelines)) {
     for (const opening of ["high", "low"] as const) {
+      assert.deepEqual(run(timeline, OPTIONAL, opening), runLegacy(timeline, opening), `${name} / opening ${opening}`);
+      // ...and deleting transport changes nothing under the switch, which is what makes the
+      // claim "the unknown-transport branch IS the 0.11.5 predicate" true.
       assert.deepEqual(
-        run(timeline, OPTIONAL, opening),
-        run(withoutTransport(timeline), CFG, opening),
-        `${name} / opening ${opening}`,
+        run(withoutTransport(timeline), OPTIONAL, opening),
+        runLegacy(timeline, opening),
+        `${name} / opening ${opening} / transport deleted`,
       );
+      ticks += timeline.length * 2;
     }
   }
+  assert.ok(ticks > 3_000, `${ticks} ticks compared`);
 });
 
 test("the kill switch really switches: on a sender-stall timeline the two arms differ", () => {
@@ -93,6 +146,21 @@ test("the kill switch really switches: on a sender-stall timeline the two arms d
   const off = run(t, OPTIONAL, "high").filter((s) => s.action === "low").length;
   assert.equal(fenced, 0);
   assert.ok(off >= 5, `kill switch off demotes ${off} times`);
+});
+
+test("the band and the jitter clause are part of the switch, not separate knobs", () => {
+  // Under "required" a 40 ms charged gap is inside the healthy band and a jitter flicker
+  // alone is not unhealthy; under "optional" neither is true, which is 0.11.5.
+  const eligible: Governor = { state: "cap_low_eligible", cap: "low", failures: 1, lowUnhealthy: 0, enteredAtMs: 0, healthySinceMs: 0 };
+  const smallGap: GovernorSignal = { ...base, freezeMsInWindow: 40, transport: lossy };
+  const flicker: GovernorSignal = { ...base, jitterRising: true, transport: lossy };
+  assert.equal(step(eligible, smallGap, 1_000, CFG).governor.healthySinceMs, 0, "inside the band");
+  assert.equal(step(eligible, smallGap, 1_000, OPTIONAL).governor.healthySinceMs, null, "0.11.5 required exactly 0");
+  assert.equal(step(eligible, flicker, 1_000, CFG).governor.healthySinceMs, 0, "a jitter flicker alone is healthy");
+  assert.equal(step(eligible, flicker, 1_000, OPTIONAL).governor.healthySinceMs, null, "0.11.5 restarted the window");
+  // The switch does not add fields to the state either: a 0.11.5 governor has five.
+  const legacyShape = step(eligible, smallGap, 1_000, OPTIONAL).governor;
+  assert.deepEqual(Object.keys(legacyShape).sort(), ["cap", "enteredAtMs", "failures", "healthySinceMs", "lowUnhealthy", "state"]);
 });
 
 test("healthyFreezeToleranceMs and lowUnhealthyWindowMs never change a demote decision", () => {

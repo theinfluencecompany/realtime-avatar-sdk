@@ -138,8 +138,69 @@ test("the SFU pause still demotes on both bars with a clean pipe and zero freeze
   assert.equal(step(at("cap_high_stable", "high"), paused, 5_000, CFG).action?.setCap, "low");
 });
 
-test("initGovernor refuses a tolerance that could mask the probation bar", () => {
-  assert.throws(() => initGovernor(0, "low", { ...CFG, healthyFreezeToleranceMs: CFG.probationFreezeMs }), RangeError);
-  assert.doesNotThrow(() => initGovernor(0, "high", { ...CFG, healthyFreezeToleranceMs: CFG.probationFreezeMs - 1 }));
+test("the band can never mask the probation bar, and a bad number is clamped rather than thrown", () => {
+  // initGovernor used to throw a RangeError here, and the hook's catch then ran the call with
+  // NO governor at all — see governor-config-clamp.test.ts for the whole argument and for the
+  // clamp's own tests. What matters here is that the invariant itself still holds.
+  assert.doesNotThrow(() => initGovernor(0, "low", { ...CFG, healthyFreezeToleranceMs: CFG.probationFreezeMs }));
+  const masked: GovernorConfig = { ...CFG, healthyFreezeToleranceMs: CFG.probationFreezeMs + 50 };
+  const atBar: GovernorSignal = { ...CLEAN, freezeMsInWindow: CFG.probationFreezeMs, transport: lossy(1) };
+  assert.equal(step(at("probing_up", "high"), atBar, 1_000, masked).action?.setCap, "low");
   assert.equal(initGovernor(0, "high").state, "opening_high", "the two-argument form still works");
+});
+
+// ---------------------------------------------------------------------------
+// THE EVIDENCE MUST DECAY AT THE DEMOTE THAT CONSUMES IT.
+//
+// `lowUnhealthy` is not bookkeeping: the hook hands it straight to `resolveLowCapQuality`,
+// so it is what CHOOSES the rung the demote lands on. The time decay only ran when the next
+// unhealthy tick arrived, which is the one moment the count is about to grow anyway. At the
+// moment it is actually SPENT — the demote — a pair of ticks from an episode 18 s earlier
+// still selected the bottom rung, exactly as 0.11.5 did. Decaying on read fixes the half of
+// the rule that was doing nothing.
+// ---------------------------------------------------------------------------
+test("a demote 18 s after the last unhealthy tick lands on the middle rung, not the bottom", () => {
+  const unhealthy: GovernorSignal = { ...CLEAN, freezeMsInWindow: 500, transport: lossy(2) };
+  const clean: GovernorSignal = { ...CLEAN, transport: cleanPipe };
+  // Two unhealthy ticks on the low cap, then a long clean run that walks dwell → eligible →
+  // probe, and a demote during the probation that follows.
+  let g: Governor = at("cap_low_sticky", "low", 2, 0);
+  g = step(g, unhealthy, 1_000, CFG).governor;
+  g = step(g, unhealthy, 2_000, CFG).governor;
+  assert.equal(g.lowUnhealthy, LOW_CAP_STEP_AFTER_UNHEALTHY, "the pair is on record");
+  let raisedAtMs: number | null = null;
+  for (let t = 3_000; t <= 19_000; t += 1_000) {
+    const r = step(g, clean, t, CFG);
+    g = r.governor;
+    if (r.action?.setCap === "high" && raisedAtMs === null) raisedAtMs = t;
+  }
+  assert.ok(raisedAtMs !== null, "the clean run re-raised the cap");
+  assert.equal(g.state, "probing_up", "still unproven, so the pair has not been reset by a commit");
+  assert.equal(g.cap, "high");
+  const demote = step(g, unhealthy, 20_000, CFG);
+  assert.equal(demote.action?.setCap, "low");
+  assert.equal(
+    demote.governor.lowUnhealthy,
+    0,
+    "18 s is far outside lowUnhealthyWindowMs: that evidence is not about this episode",
+  );
+  assert.equal(resolveLowCapQuality([0, 1, 2], demote.governor.lowUnhealthy), 1, "so the demote lands on the middle rung");
+  // 0.11.5 (and the first prototype) spent the stale pair and went to the bottom.
+  const stale = step(g, unhealthy, 20_000, SHIPPED);
+  assert.equal(stale.governor.lowUnhealthy, LOW_CAP_STEP_AFTER_UNHEALTHY);
+  assert.equal(resolveLowCapQuality([0, 1, 2], stale.governor.lowUnhealthy), 0);
+});
+
+test("a demote inside the window still spends the evidence it was given", () => {
+  const unhealthy: GovernorSignal = { ...CLEAN, freezeMsInWindow: 500, transport: lossy(2) };
+  let g: Governor = at("cap_low_sticky", "low", 1, 0);
+  g = step(g, unhealthy, 1_000, CFG).governor;
+  g = step(g, unhealthy, 2_000, CFG).governor;
+  // Straight back to a high cap (a rebind, or a probe we did not simulate) and a demote 4 s
+  // later: the pair is still this episode's, so the bottom rung stays reachable.
+  const onHigh: Governor = { ...g, state: "cap_high_stable", cap: "high", enteredAtMs: 2_000 };
+  const demote = step(onHigh, unhealthy, 6_000, CFG);
+  assert.equal(demote.action?.setCap, "low");
+  assert.equal(demote.governor.lowUnhealthy, LOW_CAP_STEP_AFTER_UNHEALTHY);
+  assert.equal(resolveLowCapQuality([0, 1, 2], demote.governor.lowUnhealthy), 0);
 });

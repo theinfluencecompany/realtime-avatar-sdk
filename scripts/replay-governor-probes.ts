@@ -16,8 +16,10 @@
 //   - rVFC freeze   = estimated from decode gaps: a 250 ms bucket with 0 decoded frames is a
 //                     gap of at least 250 ms; consecutive empty buckets add up. Lower bound on
 //                     the presented gap (paint can lag decode); blind to gaps under a bucket.
-//   - transport     = packetsLost delta; NACKs unknown (treated as 0, the fenced arm's most
-//                     permissive reading, so the fenced arm is an UPPER bound on refusals).
+//   - transport     = packetsLost delta; NACKs and framesDropped are NOT in the corpus and
+//                     are treated as 0, which is the fenced arm's most permissive reading, so
+//                     the fenced arm is an UPPER bound on refusals. Nothing here can exercise
+//                     LOCAL_STARVATION_DROPPED_FRAMES; the synthetic tests do.
 //   - paused, jitterRising, connectionQuality = unknown (false / "unknown").
 //   - a width change in the trace is treated as a layer switch and the gap straddling it is
 //     not charged (the 0.11.4 rule), in all arms.
@@ -44,9 +46,11 @@ const freezeFromGap = (gapMs: number): number => (gapMs <= FLOOR_MS ? 0 : gapMs 
 const LADDER = [0, 1, 2];
 
 /**
- * The 0.11.5 reducer expressed as a config of the current one: the fence off, no recovery
- * tolerance, no lowUnhealthy decay. The one non-configurable difference is the deleted bare
- * `!jitterRising` clause in isHealthy, which this corpus cannot exercise (jitter unknown).
+ * THE 0.11.5 REDUCER, via its own kill switch. `linkEvidence: "optional"` is a full revert —
+ * the fence, the healthy band, the jitter clause, the lowUnhealthy decay and the delay-only
+ * path all come off together — and that claim is proven byte for byte against a frozen
+ * verbatim copy of 0.11.5 in governor-kill-switch.test.ts. The two knobs are pinned here
+ * anyway so this arm reads as what it is, not as "whatever the switch happens to do today".
  */
 export const SHIPPED_0_11_5_CFG: GovernorConfig = {
   ...CFG,
@@ -55,7 +59,9 @@ export const SHIPPED_0_11_5_CFG: GovernorConfig = {
   lowUnhealthyWindowMs: Number.POSITIVE_INFINITY,
 };
 
-/** The fence alone, on the 0.11.5 recovery rules. */
+/** The fence alone, on the 0.11.5 recovery rules: the switch is on, so the band and the
+ *  jitter clause are live, and the two knobs above are set back to their 0.11.5 values by
+ *  hand. This arm isolates what the FENCE did, which is what the corpus is evidence about. */
 export const FENCED_ONLY_CFG: GovernorConfig = { ...SHIPPED_0_11_5_CFG, linkEvidence: "required" };
 
 export type Arm = "shipped" | "fenced" | "tolerance";

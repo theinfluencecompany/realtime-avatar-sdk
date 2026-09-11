@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DEFAULT_GOVERNOR_CONFIG as CFG,
+  chargedFreezeMs,
   initGovernor,
   step,
   type GovernorConfig,
@@ -115,15 +116,40 @@ test("an outage whose loss counters land one tick late demotes at most 1 s after
   assert.ok(fenced.tMs - shipped.tMs <= 1_000);
 });
 
-// T9e
-test("transport unknown on every one of these timelines is identical to the fence being off", () => {
+// T9e. NOTE WHAT THIS CLAIMS, AND WHAT IT NO LONGER CLAIMS. It used to compare unknown
+// transport against `linkEvidence: "optional"` and call them identical. That is no longer
+// true, and should not be: the kill switch is now a FULL revert to 0.11.5 (the band, the
+// jitter clause and the decay come off with the fence), while unknown transport is an
+// ordinary reading that the CURRENT reducer judges with the current recovery rules. Safari
+// without counters gets the recovery fix like everyone else.
+//
+// What survives, and is the only thing the fence ever promised about unknown transport: the
+// CHARGING is untouched. A signal the fence cannot read is charged exactly like one it reads
+// as lossy, and neither is ever refused.
+test("transport unknown is charged exactly like an evidenced link, on every one of these timelines", () => {
   const make = (): GovernorSignal[][] => [
     Array.from({ length: 120 }, (_, i) => ({ ...base, freezeMsInWindow: (i + 1) % 10 === 0 ? 400 : 0, transport: cleanPipe })),
     Array.from({ length: 30 }, () => ({ ...base, freezeMsInWindow: 300, transport: lossy(9) })),
     Array.from({ length: 12 }, (_, i) => ({ ...base, freezeMsInWindow: firstFrameWaitFreezeMs((i + 1) * 1_000), transport: cleanPipe })),
   ];
-  const OFF: GovernorConfig = { ...CFG, linkEvidence: "optional" };
   for (const t of make()) {
-    assert.deepEqual(run(stripTransport(t), CFG), run(t, OFF));
+    const evidenced = t.map((s) => ({ ...s, transport: lossy(1) }));
+    assert.deepEqual(run(stripTransport(t), CFG), run(evidenced, CFG));
+    // And chargedFreezeMs says the same thing directly, for every config.
+    for (const s of t) {
+      const { transport: _drop, ...unknown } = s;
+      for (const cfg of [CFG, SHIPPED]) {
+        assert.equal(chargedFreezeMs(unknown, cfg), s.freezeMsInWindow);
+      }
+    }
   }
+});
+
+// The whole-reducer identity that replaces the old reading of T9e lives in
+// governor-kill-switch.test.ts, against a frozen verbatim copy of 0.11.5.
+test("the kill switch reverts these timelines to 0.11.5, fence and recovery together", () => {
+  const OFF: GovernorConfig = { ...CFG, linkEvidence: "optional" };
+  const senderStalls = Array.from({ length: 120 }, (_, i) => ({ ...base, freezeMsInWindow: (i + 1) % 10 === 0 ? 400 : 0, transport: cleanPipe }));
+  assert.deepEqual(run(senderStalls, CFG).actions, [], "fenced: the sender stalls are refused");
+  assert.ok(demotes(run(senderStalls, OFF)).length >= 5, "switched off: 0.11.5 demotes on every one of them");
 });
