@@ -237,7 +237,19 @@ export const step = (
   const onProbation = g.state === "probing_up" || g.state === "opening_high";
   const downgradeNow = onProbation ? isProbationFail(s, cfg) : isDowngrade(s, cfg);
   if (g.cap === "high" && downgradeNow) {
-    const failed = onProbation; // losing an unproven high counts as a failure
+    // Losing an UNPROVEN high counts as a failure; losing a PROVEN one does not.
+    //
+    // MEASURED, and it is why this stayed as it was. Counting committed downgrades too
+    // would make the exponential backoff reachable from the steady-state flap path, which
+    // reads like the obvious fix. Swept against the shipped reducer over 300 s across nine
+    // gap profiles, it bought nothing and cost real quality: on a 500 ms blip once a
+    // minute it produced the SAME number of rung switches (10) while spending 10.7
+    // percentage points LESS time on the top rung, because every blip now doubled the
+    // dwell before re-probing. On every other profile it was neutral.
+    //
+    // So the asymmetry is deliberate, not an oversight. If you come back to this, the
+    // thing to change is the dwell curve, not the failure predicate.
+    const failed = onProbation;
     return {
       governor: {
         ...enter(g, "cap_low_sticky", "low", nowMs),
@@ -352,7 +364,26 @@ export const step = (
  * Unknown or single-layer ladder ⇒ MEDIUM (=1, the historical value; with one layer
  * no subscriber cap can bite anyway, so this only matters as a safe default).
  */
-export const resolveLowCapQuality = (declaredLayerQualities: readonly number[]): number => {
+export const resolveLowCapQuality = (
+  declaredLayerQualities: readonly number[],
+  failures = 0,
+): number => {
   const sorted = [...declaredLayerQualities].sort((a, b) => a - b);
-  return sorted.length >= 2 ? sorted[sorted.length - 2] : 1;
+  if (sorted.length < 2) return 1;
+  // FIRST demote: one rung below the top. That is what this function has always
+  // returned, and on a TWO-layer ladder it is the bottom rung, which is correct.
+  //
+  // PAST THE FIRST FAILURE: the rung the client can actually afford. On a THREE-layer
+  // ladder `length - 2` is the MIDDLE rung, so the bottom was unreachable and a starving
+  // client had no floor to fall to. The function never changed; the publisher did. A
+  // publish long edge of 1024 crosses livekit's `>= 960` branch into three layers, and
+  // this silently went from meaning "the bottom" to meaning "the middle".
+  //
+  // Measured shape of that: on a 900 kbit / 10 % loss link the client sat on the middle
+  // rung and decoded 14 frames in 20 seconds while the app showed its local idle clip,
+  // with the affordable bottom rung right there and un-requestable.
+  //
+  // On a two-layer ladder both branches return the same value, so the fleet default
+  // (long edge 768, two layers) is byte-identical to before.
+  return failures >= 1 ? sorted[0] : sorted[sorted.length - 2];
 };

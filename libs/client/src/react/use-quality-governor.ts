@@ -199,15 +199,19 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
       }
     };
 
-    const applyCap = (cap: "low" | "high"): void => {
+    const applyCap = (cap: "low" | "high", failures = 0): void => {
       try {
         // The governor's "low" cap = ONE RUNG BELOW the top DECLARED layer, derived
         // from the publisher's actual ladder (resolveLowCapQuality — see its doc for
         // why the historical hardcoded MEDIUM was silently inert on the real 2-layer
         // ladder). "high" stays VideoQuality.HIGH: it is the max enum value, so it
         // releases the ceiling regardless of how the ladder is labeled.
+        // `failures` steps the floor: the first demote goes one rung below the top, a
+        // repeat failure goes to the bottom rung. Without it a three-layer ladder pins a
+        // starving client on the middle rung it has already proven it cannot hold.
         const lowCap = resolveLowCapQuality(
           (targetPublication?.trackInfo?.layers ?? []).map((l) => l.quality as number),
+          failures,
         ) as unknown as VideoQuality;
         targetPublication?.setVideoQuality?.(cap === "low" ? lowCap : VideoQuality.HIGH);
       } catch {
@@ -237,7 +241,7 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
 
         const { governor, action } = step(gov, signal, Date.now(), config);
         gov = governor;
-        if (action) applyCap(action.setCap);
+        if (action) applyCap(action.setCap, gov.failures);
       } catch {
         // A tick fault must never kill the loop or the call.
       } finally {
@@ -248,7 +252,11 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     // Reassert the configured opening cap on a new subscription, including a full
     // reconnect. HIGH is permission for the SFU to send its top layer, still under
     // the governor's strict opening probation and the SFU's bandwidth controller.
-    applyCap(gov.cap);
+    //
+    // `failures` rides along so a rebind mid-call re-asserts the floor the governor has
+    // already earned. Without it, a client that had stepped down to the bottom rung would
+    // be put back on the middle rung it has already proven it cannot hold.
+    applyCap(gov.cap, gov.failures);
 
     const handle = setInterval(() => void tick(), tickMs);
 

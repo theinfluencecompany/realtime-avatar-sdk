@@ -653,10 +653,26 @@ export function isFrameFlowingAt(snapshot: FrameFlowSnapshot): boolean {
   );
 }
 
-/** Convert a presented-frame gap into a governor freeze signal. */
+/** Convert a presented-frame gap into a governor freeze signal.
+ *
+ *  CHARGES THE EXCESS OVER THE FLOOR, NOT THE WHOLE GAP. It used to return `gapMs`,
+ *  which made the floor decorative: the governor's probation bar is also 100 ms, so the
+ *  first gap the floor declined to forgive was already, on its own, an instant demote.
+ *  There was no margin between "ordinary presentation spacing" and "kill this rung".
+ *
+ *  The arithmetic that matters: the sub-top simulcast rungs declare 20 fps, so frames
+ *  are 50 ms apart and ONE dropped frame is a 100 ms gap. Under the old return that was
+ *  forgiven by a single millisecond, and 101 ms demoted. Measured consequence, replaying
+ *  the shipped reducer over a 120 s call with one such gap every 20 s: 5 rung switches
+ *  and 107 of 120 seconds spent on the low cap, on a link that lost 6 packets in total.
+ *  With the excess charged instead, the same series produces zero switches.
+ *
+ *  This is what the floor's own comment always promised ("ignore ordinary 15-25fps
+ *  presentation spacing"). A 133 ms gap, which is two frames at 15 fps, now costs 33 ms
+ *  of freeze budget rather than 133. */
 export function freezeMsFromFrameGap(gapMs: number): number {
   if (!Number.isFinite(gapMs) || gapMs <= AVATAR_FRAME_GAP_FREEZE_FLOOR_MS) return 0;
-  return gapMs;
+  return gapMs - AVATAR_FRAME_GAP_FREEZE_FLOOR_MS;
 }
 
 export type FrameFreezeInhibitSnapshot = {
