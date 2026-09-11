@@ -199,19 +199,20 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
       }
     };
 
-    const applyCap = (cap: "low" | "high", failures = 0): void => {
+    const applyCap = (cap: "low" | "high", lowUnhealthy = 0): void => {
       try {
         // The governor's "low" cap = ONE RUNG BELOW the top DECLARED layer, derived
         // from the publisher's actual ladder (resolveLowCapQuality — see its doc for
         // why the historical hardcoded MEDIUM was silently inert on the real 2-layer
         // ladder). "high" stays VideoQuality.HIGH: it is the max enum value, so it
         // releases the ceiling regardless of how the ladder is labeled.
-        // `failures` steps the floor: the first demote goes one rung below the top, a
-        // repeat failure goes to the bottom rung. Without it a three-layer ladder pins a
-        // starving client on the middle rung it has already proven it cannot hold.
+        // The floor steps on evidence gathered ON the low rung, never on `failures`.
+        // `failures` counts failed attempts to reach HIGH, and a starved opening books one
+        // of those before the link has carried anything, so keying the step on it sent the
+        // first demote straight to the bottom rung. See Governor.lowUnhealthy.
         const lowCap = resolveLowCapQuality(
           (targetPublication?.trackInfo?.layers ?? []).map((l) => l.quality as number),
-          failures,
+          lowUnhealthy,
         ) as unknown as VideoQuality;
         targetPublication?.setVideoQuality?.(cap === "low" ? lowCap : VideoQuality.HIGH);
       } catch {
@@ -241,7 +242,7 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
 
         const { governor, action } = step(gov, signal, Date.now(), config);
         gov = governor;
-        if (action) applyCap(action.setCap, gov.failures);
+        if (action) applyCap(action.setCap, gov.lowUnhealthy);
       } catch {
         // A tick fault must never kill the loop or the call.
       } finally {
@@ -253,10 +254,10 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     // reconnect. HIGH is permission for the SFU to send its top layer, still under
     // the governor's strict opening probation and the SFU's bandwidth controller.
     //
-    // `failures` rides along so a rebind mid-call re-asserts the floor the governor has
-    // already earned. Without it, a client that had stepped down to the bottom rung would
-    // be put back on the middle rung it has already proven it cannot hold.
-    applyCap(gov.cap, gov.failures);
+    // The low-rung evidence rides along so a rebind mid-call re-asserts the floor the
+    // governor has already earned, rather than putting a starving client back on a rung it
+    // has already proven it cannot hold.
+    applyCap(gov.cap, gov.lowUnhealthy);
 
     const handle = setInterval(() => void tick(), tickMs);
 

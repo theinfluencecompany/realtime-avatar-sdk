@@ -160,8 +160,24 @@ export function stepJitterBufferTrend(
 export interface Governor {
   state: GovernorState;
   cap: QualityCap;
-  /** Consecutive failed up-probes — drives the exponential dwell backoff. */
+  /** Consecutive failed up-probes. Drives the exponential dwell backoff.
+   *
+   *  NOT a signal about the low rung. It counts attempts to reach HIGH that did not
+   *  survive, which says nothing about whether the rung below HIGH is holdable. Using it
+   *  to pick WHICH rung "low" means was a real regression: see `lowUnhealthy`. */
   failures: number;
+  /** Unhealthy ticks observed while ALREADY on the low cap.
+   *
+   *  This is the only honest evidence that the low rung itself is not affordable, and it
+   *  is what steps the cap down to the bottom of the ladder. It exists because `failures`
+   *  looked like it would do the job and does not: a starved OPENING reports the wait for
+   *  the first frame as a freeze (`firstFrameWaitFreezeMs`), so any session whose first
+   *  frame is slower than about a second fails its opening probation and lands on
+   *  `failures = 1` before the link has been asked to carry anything. Measured on prod,
+   *  first frames ran 2.4 s to 28 s, i.e. essentially every call. Keying the rung step on
+   *  `failures` therefore sent the FIRST demote straight to the bottom rung, including on
+   *  a call that recorded zero freezes. Reset whenever the cap returns to high. */
+  lowUnhealthy: number;
   /** Wall-clock ms the current state was entered (for dwell/clean/probe timing). */
   enteredAtMs: number;
   /** Wall-clock ms of the last healthy tick in the current low period (clean-window
@@ -176,6 +192,7 @@ export const initGovernor = (nowMs: number, openingCap: QualityCap = "low"): Gov
   state: openingCap === "high" ? "opening_high" : "opening",
   cap: openingCap,
   failures: 0,
+  lowUnhealthy: 0,
   enteredAtMs: nowMs,
   healthySinceMs: null,
 });
@@ -287,12 +304,15 @@ export const step = (
       const healthySince = healthy ? (g.healthySinceMs ?? nowMs) : null;
       const resetFailures =
         healthy && healthySince !== null && nowMs - healthySince >= cfg.healthyResetMs;
+      // Evidence about the LOW rung, gathered while sitting on it.
+      const lowUnhealthy = healthy ? g.lowUnhealthy : g.lowUnhealthy + 1;
       const dwellDone = nowMs - g.enteredAtMs >= dwellMs(g.failures, cfg);
       if (dwellDone && healthy) {
         return {
           governor: {
             ...enter(g, "cap_low_eligible", "low", nowMs),
             failures: resetFailures ? 0 : g.failures,
+            lowUnhealthy: resetFailures ? 0 : lowUnhealthy,
             healthySinceMs: nowMs,
           },
         };
@@ -302,6 +322,7 @@ export const step = (
           ...g,
           healthySinceMs: healthySince,
           failures: resetFailures ? 0 : g.failures,
+          lowUnhealthy: resetFailures ? 0 : lowUnhealthy,
         },
       };
     }
@@ -315,7 +336,7 @@ export const step = (
       // MISSING reading as a block pinned those calls to the small rung for the
       // whole 30s connect window (measured: part of the 56% never-upgraded cohort).
       if (!isHealthy(s)) {
-        return { governor: { ...g, healthySinceMs: null } };
+        return { governor: { ...g, healthySinceMs: null, lowUnhealthy: g.lowUnhealthy + 1 } };
       }
       const cleanSince = g.healthySinceMs ?? nowMs;
       if (nowMs - cleanSince >= cfg.cleanMs) {
@@ -331,7 +352,9 @@ export const step = (
     case "probing_up": {
       // Survived the probation window with no pause/freeze → commit to high.
       if (nowMs - g.enteredAtMs >= cfg.probeMs) {
-        return { governor: { ...enter(g, "cap_high_stable", "high", nowMs), failures: 0 } };
+        return {
+          governor: { ...enter(g, "cap_high_stable", "high", nowMs), failures: 0, lowUnhealthy: 0 },
+        };
       }
       return { governor: g };
     }
@@ -364,16 +387,20 @@ export const step = (
  * Unknown or single-layer ladder ⇒ MEDIUM (=1, the historical value; with one layer
  * no subscriber cap can bite anyway, so this only matters as a safe default).
  */
+/** Two unhealthy ticks on the low rung, not one. A single tick is the ordinary noise the
+ *  freeze floor already forgives elsewhere, and the bottom rung is a real quality cost. */
+export const LOW_CAP_STEP_AFTER_UNHEALTHY = 2;
+
 export const resolveLowCapQuality = (
   declaredLayerQualities: readonly number[],
-  failures = 0,
+  lowUnhealthy = 0,
 ): number => {
   const sorted = [...declaredLayerQualities].sort((a, b) => a - b);
   if (sorted.length < 2) return 1;
   // FIRST demote: one rung below the top. That is what this function has always
   // returned, and on a TWO-layer ladder it is the bottom rung, which is correct.
   //
-  // PAST THE FIRST FAILURE: the rung the client can actually afford. On a THREE-layer
+  // ONCE THE LOW RUNG HAS ITSELF FAILED: the rung the client can actually afford. On a THREE-layer
   // ladder `length - 2` is the MIDDLE rung, so the bottom was unreachable and a starving
   // client had no floor to fall to. The function never changed; the publisher did. A
   // publish long edge of 1024 crosses livekit's `>= 960` branch into three layers, and
@@ -385,5 +412,5 @@ export const resolveLowCapQuality = (
   //
   // On a two-layer ladder both branches return the same value, so the fleet default
   // (long edge 768, two layers) is byte-identical to before.
-  return failures >= 1 ? sorted[0] : sorted[sorted.length - 2];
+  return lowUnhealthy >= LOW_CAP_STEP_AFTER_UNHEALTHY ? sorted[0] : sorted[sorted.length - 2];
 };
