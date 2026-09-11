@@ -729,12 +729,17 @@ function useLiveFrameFlow(
     resumePending: boolean;
     /** When the track began producing (this binding) — the clock the first-frame wait runs on. */
     producingSinceMs: number | null;
+    /** Decoded size of the previous frame, as "WxH". A CHANGE here means the SFU moved us to a
+     *  different simulcast layer, which costs a decoder reconfigure and a wait for that layer's
+     *  keyframe. See `markFrame` for why that gap must not be charged to the link. */
+    lastSizeKey: string | null;
   }>({
     seenFrame: false,
     lastFrameAtMs: null,
     maxGapMs: 0,
     resumePending: false,
     producingSinceMs: null,
+    lastSizeKey: null,
   });
 
   useEffect(() => {
@@ -744,6 +749,7 @@ function useLiveFrameFlow(
       maxGapMs: 0,
       resumePending: document.visibilityState !== "visible",
       producingSinceMs: trackProducing ? Date.now() : null,
+      lastSizeKey: null,
     };
     flowingRef.current = false;
     setSeenFrame(false);
@@ -764,19 +770,36 @@ function useLiveFrameFlow(
       // Advance both cursors together so a poll cannot extend a stopped burst.
       lastCurrentTime = video?.currentTime ?? lastCurrentTime;
       const firstFrame = !previous.seenFrame;
+      // A CHANGE OF DECODED SIZE IS A SIMULCAST LAYER SWITCH, and the gap that straddles it is
+      // the switch's own cost: the decoder reconfigures and then waits for the new layer's
+      // keyframe. Nothing was lost, it simply had not been sent yet.
+      //
+      // Charging that gap to the link made the governor punish the stream for the cost of its
+      // own decision, and the punishment was another switch. Measured on production: the top
+      // rung arrived at t=10.98s and was demoted 0.43s later with ZERO packets lost, then took
+      // 21.8s to come back (dwellBase 8s x 2^1 for the failure, plus the clean window). From the
+      // viewer's side that is one second of a sharp face and then twenty of a blurry one.
+      //
+      // Treated exactly like a bfcache resume, which is the same class of event: a gap that is
+      // real, local, and says nothing about the network. The first frame at the new size becomes
+      // the new baseline.
+      const sizeKey = `${video?.videoWidth ?? 0}x${video?.videoHeight ?? 0}`;
+      const layerSwitched = previous.lastSizeKey !== null && sizeKey !== previous.lastSizeKey;
       sampleRef.current = {
         producingSinceMs: previous.producingSinceMs,
         seenFrame: true,
         lastFrameAtMs: now,
         // A hidden tab/bfcache resume is a local scheduling gap, not network
         // congestion. The first fresh frame becomes the new baseline.
-        maxGapMs: previous.resumePending
-          ? 0
-          : Math.max(
-              previous.maxGapMs,
-              previous.lastFrameAtMs === null ? 0 : now - previous.lastFrameAtMs,
-            ),
+        maxGapMs:
+          previous.resumePending || layerSwitched
+            ? 0
+            : Math.max(
+                previous.maxGapMs,
+                previous.lastFrameAtMs === null ? 0 : now - previous.lastFrameAtMs,
+              ),
         resumePending: false,
+        lastSizeKey: sizeKey,
       };
       if (firstFrame) setSeenFrame(true);
       // The recovery's own gap detector must agree with the watchdog's threshold, or a
