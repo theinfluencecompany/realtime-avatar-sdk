@@ -83,6 +83,38 @@ export function firstFrameWaitFreezeMs(waitedMs: number): number {
  */
 export const AVATAR_SETTLE_FRAMES = 5;
 
+/**
+ * And the settle is bounded in TIME as well as in frames, because warm-up is.
+ *
+ * A frames-only settle is unbounded: `framesSeen` advances only when a frame ARRIVES, so a
+ * binding that presents four frames and then stops sits under the exemption for the rest of
+ * the call and reads as a perfect link. That is strictly worse than the opening demote the
+ * settle exists to remove — a dead track that never demotes and never recovers, on every
+ * mid-call rebind, because `initialFrameSample` starts the count again.
+ *
+ * The bound is the first-frame grace (`AVATAR_FIRST_FRAME_GRACE_MS`), and deliberately the
+ * same number: the two exempt the same thing, a decoder that has not produced its first
+ * steady frames yet. A gap longer than the wait we already forgive before frame one is not
+ * warm-up any more, whatever the frame count says.
+ */
+export const AVATAR_SETTLE_MAX_GAP_MS = AVATAR_FIRST_FRAME_GRACE_MS;
+
+/** How the settle is applied, so a caller can turn it off. `linkEvidence: "optional"` is
+ *  documented as a full revert to the pre-settle governor, and a revert that stops at the
+ *  reducer is not one: the settle zeroes the signal BEFORE it reaches `step()`. */
+export interface SettleOptions {
+  /** Frames exempt from gap accounting on a fresh binding. 0 disables the settle. */
+  settleFrames?: number;
+  /** Longest single gap the settle will exempt. */
+  settleMaxGapMs?: number;
+}
+
+const settleExempts = (framesSeen: number, gapMs: number, opts?: SettleOptions): boolean => {
+  const frames = opts?.settleFrames ?? AVATAR_SETTLE_FRAMES;
+  const maxGap = opts?.settleMaxGapMs ?? AVATAR_SETTLE_MAX_GAP_MS;
+  return framesSeen < frames && gapMs <= maxGap;
+};
+
 /** The surface's presented-frame ledger for ONE track binding. */
 export interface FrameSample {
   seenFrame: boolean;
@@ -133,9 +165,15 @@ export const initialFrameSample = (producingSinceMs: number | null, hidden: bool
  * switch (`lastSizeKey === null`), or every session would start by discarding a baseline
  * it never had.
  */
-export const nextFrameSample = (previous: FrameSample, nowMs: number, sizeKey: string): FrameSample => {
+export const nextFrameSample = (
+  previous: FrameSample,
+  nowMs: number,
+  sizeKey: string,
+  opts?: SettleOptions,
+): FrameSample => {
   const layerSwitched = previous.lastSizeKey !== null && sizeKey !== previous.lastSizeKey;
-  const settling = previous.framesSeen < AVATAR_SETTLE_FRAMES;
+  const recordedGapMs = previous.lastFrameAtMs === null ? 0 : nowMs - previous.lastFrameAtMs;
+  const settling = settleExempts(previous.framesSeen, recordedGapMs, opts);
   return {
     producingSinceMs: previous.producingSinceMs,
     seenFrame: true,
@@ -145,7 +183,7 @@ export const nextFrameSample = (previous: FrameSample, nowMs: number, sizeKey: s
     maxGapMs:
       previous.resumePending || layerSwitched || settling
         ? 0
-        : Math.max(previous.maxGapMs, previous.lastFrameAtMs === null ? 0 : nowMs - previous.lastFrameAtMs),
+        : Math.max(previous.maxGapMs, recordedGapMs),
     resumePending: false,
     lastSizeKey: sizeKey,
     framesSeen: previous.framesSeen + 1,
@@ -281,6 +319,7 @@ export const readFreezeFromSample = (
   sample: FrameSample,
   nowMs: number,
   env: FrameEnvironment,
+  opts?: SettleOptions,
 ): { reading: { freezeMsInWindow: number; inhibited: boolean }; sample: FrameSample } => {
   if (!env.hidden && !sample.resumePending && env.trackProducing && !sample.seenFrame && sample.producingSinceMs !== null) {
     return {
@@ -297,10 +336,10 @@ export const readFreezeFromSample = (
   // reads is the one still OPEN, and during the opening it is made of exactly the same
   // decoder warm-up. Splitting the rule across the two paths is how it ended up applying to
   // only one of them.
-  if (sample.framesSeen < AVATAR_SETTLE_FRAMES) {
+  const ongoingGapMs = Math.max(0, nowMs - sample.lastFrameAtMs);
+  if (settleExempts(sample.framesSeen, Math.max(sample.maxGapMs, ongoingGapMs), opts)) {
     return { reading: { freezeMsInWindow: 0, inhibited: false }, sample: consumed };
   }
-  const ongoingGapMs = Math.max(0, nowMs - sample.lastFrameAtMs);
   return {
     reading: { freezeMsInWindow: freezeMsFromFrameGap(Math.max(sample.maxGapMs, ongoingGapMs)), inhibited: false },
     sample: consumed,

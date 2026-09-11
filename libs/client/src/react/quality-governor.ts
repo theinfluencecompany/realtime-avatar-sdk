@@ -699,6 +699,22 @@ const dwellMs = (failures: number, cfg: GovernorConfig): number =>
  *  otherwise it restarts at 1. This is what stops a stale tick from an earlier episode from
  *  arming the bottom rung on the next demote (0.11.5 replay: lowUnhealthy 29 after 58 s of
  *  a 124 ms gap every 2 s, then straight to 180x316). */
+/**
+ * Is this tick evidence about the LOW RUNG, or just an unhealthy tick?
+ *
+ * `lowUnhealthy` is not a health counter: `resolveLowCapQuality` reads it to pick WHICH rung
+ * the next demote lands on, so only evidence about the rung belongs in it. An SFU pause is
+ * the server telling us it has stopped forwarding this track; it says nothing about whether
+ * the subscriber should sit on a smaller one, and no rung the client picks will un-pause it.
+ *
+ * Reading the pause as a LEVEL (so a held pause cannot probe up while it is held) turned the
+ * counter into a stopwatch: one count per paused tick, so a 4 s pause selected the bottom rung
+ * on the next demote and a 40 s pause reached 39. The level read is right; counting it was not.
+ * Legacy mode keeps 0.11.5's arithmetic, pause included, so the kill switch stays a true revert.
+ */
+const countsAsLowRungEvidence = (s: GovernorSignal, cfg: GovernorConfig): boolean =>
+  isLegacyGovernor(cfg) || !s.paused;
+
 const bumpLowUnhealthy = (g: Governor, nowMs: number, cfg: GovernorConfig): Pick<Governor, "lowUnhealthy" | "lowUnhealthyAtMs"> => {
   // 0.11.5 had no clock here at all, and no field to put one in.
   if (isLegacyGovernor(cfg)) return { lowUnhealthy: g.lowUnhealthy + 1 };
@@ -838,7 +854,7 @@ export const step = (
       // Evidence about the LOW rung, gathered while sitting on it (time-decayed).
       const lowEvidence = resetFailures
         ? clearedLowUnhealthy(cfg)
-        : healthy
+        : healthy || !countsAsLowRungEvidence(s, cfg)
           ? keepLowUnhealthy(g, cfg)
           : bumpLowUnhealthy(g, nowMs, cfg);
       const dwellDone = nowMs - g.enteredAtMs >= dwellMs(g.failures, cfg);
@@ -871,7 +887,10 @@ export const step = (
       // MISSING reading as a block pinned those calls to the small rung for the
       // whole 30s connect window (measured: part of the 56% never-upgraded cohort).
       if (!isHealthy(s, cfg)) {
-        return { governor: { ...g, healthySinceMs: null, ...bumpLowUnhealthy(g, nowMs, cfg) } };
+        const evidence = countsAsLowRungEvidence(s, cfg)
+          ? bumpLowUnhealthy(g, nowMs, cfg)
+          : keepLowUnhealthy(g, cfg);
+        return { governor: { ...g, healthySinceMs: null, ...evidence } };
       }
       const cleanSince = g.healthySinceMs ?? nowMs;
       if (nowMs - cleanSince >= cfg.cleanMs) {

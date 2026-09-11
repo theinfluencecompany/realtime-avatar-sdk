@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   AVATAR_FRAME_GAP_FREEZE_FLOOR_MS as FLOOR,
   AVATAR_SETTLE_FRAMES,
+  AVATAR_SETTLE_MAX_GAP_MS,
   initialFrameSample,
   nextFrameSample,
   readFreezeFromSample,
@@ -110,11 +111,20 @@ test("the very same tick one frame later IS charged, so the exemption is bounded
 });
 
 test("the recorded gap and the ongoing gap are exempted by the SAME rule", () => {
-  // Both inputs of the max() must agree about the opening, or the settle only half-applies.
+  // Both inputs of the max() must agree about the opening, or the settle only half-applies —
+  // and they must agree about its BOUND too. A gap longer than the first-frame grace is not
+  // decoder warm-up whatever the frame count says, so neither input may exempt it (a binding
+  // that presents four frames and stops would otherwise read as a perfect link forever).
   const settling = afterFrames(2);
   assert.equal(settling.maxGapMs, 0, "the recorded gap was already exempt");
-  const withRecorded: FrameSample = { ...settling, maxGapMs: 5_000 };
-  assert.equal(readFreezeFromSample(withRecorded, 12_900, env).reading.freezeMsInWindow, 0);
+  const warmUp: FrameSample = { ...settling, maxGapMs: AVATAR_SETTLE_MAX_GAP_MS - 100 };
+  assert.equal(readFreezeFromSample(warmUp, 12_900, env).reading.freezeMsInWindow, 0);
+  const stalled: FrameSample = { ...settling, maxGapMs: 5_000 };
+  assert.equal(
+    readFreezeFromSample(stalled, 12_900, env).reading.freezeMsInWindow,
+    5_000 - FLOOR,
+    "a stall-sized recorded gap is charged on the same rule the ongoing gap uses",
+  );
 });
 
 test("reading consumes the recorded gap and leaves the rest of the ledger alone", () => {

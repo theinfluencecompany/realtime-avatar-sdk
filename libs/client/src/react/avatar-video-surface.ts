@@ -39,6 +39,7 @@ import {
   initialFrameSample,
   nextFrameSample,
   readFreezeFromSample,
+  type SettleOptions,
   type FrameSample,
 } from "./frame-recovery";
 // The escalated hold is part of this surface's contract (see `frameStallMs`), so it is
@@ -308,6 +309,14 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     trackProducing,
     videoTrack?.publication?.track,
     frameStallMs,
+    // The kill switch has to reach the SETTLE too. `linkEvidence: "optional"` is documented
+    // as a full revert to the pre-settle governor, and the settle runs BEFORE the reducer:
+    // it zeroes the signal `step()` would have read, so a revert that stops at the reducer
+    // leaves the opening behaving like the new build no matter what the config says.
+    useMemo(
+      () => (governorConfig?.linkEvidence === "optional" ? { settleFrames: 0 } : {}),
+      [governorConfig?.linkEvidence],
+    ),
   );
   // The app's overrides, with the `openingCap` prop winning. Identity is NOT what keeps the
   // governor alive across renders: the hook memoises its config on field VALUES
@@ -693,6 +702,7 @@ function useLiveFrameFlow(
   trackProducing: boolean,
   trackIdentity: unknown,
   stallAfterMs: number,
+  settle: SettleOptions,
 ): LiveFrameFlow {
   const boundedStallMs = normalizeFrameStallMs(stallAfterMs);
   // Keep recovery evidence across mute/unmute on the SAME track: a network mute
@@ -735,7 +745,7 @@ function useLiveFrameFlow(
       // resume, layer switch and opening settle are NOT charged as gaps) is the pure
       // `nextFrameSample` in frame-recovery, which carries the reasoning and the tests.
       const sizeKey = `${video?.videoWidth ?? 0}x${video?.videoHeight ?? 0}`;
-      sampleRef.current = nextFrameSample(previous, now, sizeKey);
+      sampleRef.current = nextFrameSample(previous, now, sizeKey, settle);
       if (firstFrame) setSeenFrame(true);
       // The recovery's own gap detector must agree with the watchdog's threshold, or a
       // gap the watchdog holds through would still force a recovery dwell here.
@@ -834,13 +844,18 @@ function useLiveFrameFlow(
     // the clock and the visibility state, and stores the ledger the read returns — the
     // recorded gap is consumed by a read, so a recovered gap is never charged twice while an
     // ongoing stall stays observable through its age.
-    const { reading, sample } = readFreezeFromSample(sampleRef.current, Date.now(), {
-      hidden: typeof document !== "undefined" && document.visibilityState !== "visible",
-      trackProducing,
-    });
+    const { reading, sample } = readFreezeFromSample(
+      sampleRef.current,
+      Date.now(),
+      {
+        hidden: typeof document !== "undefined" && document.visibilityState !== "visible",
+        trackProducing,
+      },
+      settle,
+    );
     sampleRef.current = sample;
     return reading;
-  }, [trackProducing]);
+  }, [trackProducing, settle]);
 
   return { flowing, seenFrame, freezeReading };
 }
