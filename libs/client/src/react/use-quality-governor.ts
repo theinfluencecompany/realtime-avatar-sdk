@@ -32,16 +32,21 @@ import { useEffect, useMemo, useRef } from "react";
 
 import {
   DEFAULT_GOVERNOR_CONFIG,
+  GOVERNOR_CONFIG_MEMO_KEYS,
   type Governor,
   type GovernorConfig,
   type GovernorSignal,
   type GovernorTraceEvent,
+  type InboundRtpLike,
   type JitterBufferTrendState,
+  type TransportCursor,
   initGovernor,
   isFreezeChargeable,
+  pickGovernorConfig,
   resolveLowCapQuality,
   step,
   stepJitterBufferTrend,
+  transportFromInboundRows,
 } from "./quality-governor";
 
 /** The player's freeze verdict for the trailing window, in milliseconds. The app
@@ -108,13 +113,13 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
   // A transcript render may supply a fresh config/getter or TrackReference for the
   // same subscription. Preserve probation and recovery until policy VALUES or the
   // actual subscription change; an object-identity reset can pin a busy call LOW.
-  const { openingCap, downgradeFreezeMs, probationFreezeMs, openingDwellMs,
-    dwellBaseMs, dwellMaxMs, cleanMs, probeMs, healthyResetMs } = policy;
-  const config = useMemo<GovernorConfig>(() => ({
-    openingCap, downgradeFreezeMs, probationFreezeMs, openingDwellMs,
-    dwellBaseMs, dwellMaxMs, cleanMs, probeMs, healthyResetMs,
-  }), [openingCap, downgradeFreezeMs, probationFreezeMs, openingDwellMs,
-    dwellBaseMs, dwellMaxMs, cleanMs, probeMs, healthyResetMs]);
+  // The dependency list is the field list itself (constant length), so a config field
+  // added to GovernorConfig cannot be silently dropped from the memo: see
+  // GOVERNOR_CONFIG_MEMO_KEYS.
+  const config = useMemo<GovernorConfig>(
+    () => pickGovernorConfig(policy),
+    GOVERNOR_CONFIG_MEMO_KEYS.map((key) => policy[key]),
+  );
   const freezeReadingRef = useRef(freezeReading);
   freezeReadingRef.current = freezeReading;
   const targetPublication = videoTrack?.publication as RemoteTrackPublication | undefined;
@@ -131,7 +136,7 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     // Transport cursors (inbound-rtp packetsLost / nackCount) and the decoded frame size
     // as the RECEIVER reports it. Both are per-binding for the same reason as the freeze
     // cursor: a replacement track must never be judged against the retired track's totals.
-    let lastTransport: { lost: number; nack: number; dropped: number } | null = null;
+    let lastTransport: TransportCursor | null = null;
     let lastFramesDecoded: number | null = null;
     let lastTickAtMs: number | null = null;
     let lastStatsSizeKey: string | null = null;
@@ -183,10 +188,8 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
         let frozenTotalMs = 0;
         let jitterDelaySeconds = 0;
         let jitterEmittedCount = 0;
-        let lostTotal: number | null = null;
-        let nackTotal = 0;
-        let droppedTotal = 0;
         let sizeKey: string | null = null;
+        const inboundVideoRows: InboundRtpLike[] = [];
         stats.forEach((r: {
           type?: string;
           kind?: string;
@@ -214,9 +217,7 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
           // The receiver's own view of the pipe. This report is the video receiver's, so
           // the inbound-rtp entry is ours; `kind` is only checked where a browser reports it.
           if (r.type === "inbound-rtp" && (r.kind === undefined || r.kind === "video")) {
-            if (typeof r.packetsLost === "number") lostTotal = (lostTotal ?? 0) + r.packetsLost;
-            if (typeof r.nackCount === "number") nackTotal += r.nackCount;
-            if (typeof r.framesDropped === "number") droppedTotal += r.framesDropped;
+            inboundVideoRows.push(r);
             if (typeof r.framesDecoded === "number") decodedTotal = (decodedTotal ?? 0) + r.framesDecoded;
             if (typeof r.frameWidth === "number" && typeof r.frameHeight === "number") {
               sizeKey = `${r.frameWidth}x${r.frameHeight}`;
@@ -239,28 +240,11 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
         const prevSizeKey = lastStatsSizeKey;
         lastStatsSizeKey = sizeKey ?? lastStatsSizeKey;
         const layerSwitched = prevSizeKey !== null && sizeKey !== null && sizeKey !== prevSizeKey;
-        // Transport is KNOWN from the first inbound-rtp read: the counters of a fresh
-        // binding start at zero, so the first totals ARE the first window's deltas. Waiting
-        // for a second read would leave the opening tick uncorroborated, and the opening
-        // tick is where the first-frame wait is judged. packetsLost is the one required
-        // counter (every browser reports it); nackCount / framesDropped default to 0 where
-        // a runtime omits them. No inbound-rtp at all (nothing has arrived yet, or no
-        // getStats) stays "unknown" = today's behaviour.
-        // A report with NO inbound-rtp row is a receiver that has not received a packet:
-        // every counter is zero, nothing was lost, so it reads as a clean pipe rather than
-        // as "unknown". This is the join-time first-frame wait (the worker's primary cache
-        // load runs 1-21 s on the rtx6000 pool), which a smaller rung cannot shorten. The
-        // #67 case (10 % loss, PLIs, 20-30 s black) still charges: packets ARE arriving there
-        // and packetsLost climbs from the first read.
-        const prevTransport = lastTransport ?? { lost: 0, nack: 0, dropped: 0 };
-        lastTransport = { lost: lostTotal ?? 0, nack: nackTotal, dropped: droppedTotal };
-        const transport: GovernorSignal["transport"] = lastTransport
-          ? {
-              packetsLostInWindow: Math.max(0, lastTransport.lost - prevTransport.lost),
-              nacksInWindow: Math.max(0, lastTransport.nack - prevTransport.nack),
-              framesDroppedInWindow: Math.max(0, lastTransport.dropped - prevTransport.dropped),
-            }
-          : undefined;
+        // Transport provenance (no row = clean, row without counters = unknown, first read
+        // = baseline only) lives in the pure `transportFromInboundRows`; see its doc.
+        const provenance = transportFromInboundRows(inboundVideoRows, lastTransport);
+        lastTransport = provenance.cursor;
+        const transport = provenance.transport;
         const prevDecoded = lastFramesDecoded;
         lastFramesDecoded = decodedTotal;
         const framesDecodedInWindow =
@@ -314,8 +298,8 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
           jitterRising: statsSignals.jitterRising,
           connectionQuality: connQuality,
           inhibited: rvfc.inhibited,
-          // Present only once two consecutive reads exist; the reducer charges a freeze
-          // with unknown transport exactly as it did before this field existed.
+          // Absent when the runtime exposes no sequence counters; the reducer then charges
+          // a freeze exactly as it did before this field existed.
           ...(statsSignals.transport ? { transport: statsSignals.transport } : {}),
         };
         pausedSinceTick = false; // consume the edge

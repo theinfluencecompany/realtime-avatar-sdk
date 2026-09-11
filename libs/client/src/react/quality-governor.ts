@@ -88,6 +88,67 @@ export interface GovernorSignal {
  *  keep up with the rung it is on. */
 export const LOCAL_STARVATION_DROPPED_FRAMES = 2;
 
+/** The inbound-rtp VIDEO rows of one getStats report, narrowed to the counters the
+ *  transport fence reads. Structural, so a test can hand in plain objects. */
+export interface InboundRtpLike {
+  kind?: string;
+  packetsLost?: number;
+  nackCount?: number;
+  framesDropped?: number;
+}
+
+/** Cumulative inbound-rtp totals at the previous read of ONE binding. */
+export interface TransportCursor {
+  lost: number;
+  nack: number;
+  dropped: number;
+}
+
+/**
+ * Translate one getStats report's inbound-rtp rows into the tick's transport evidence.
+ *
+ * Provenance rules, in order:
+ *  1. NO inbound-rtp video row: a receiver that has received nothing has lost nothing. This
+ *     is the join-time first-frame wait (the worker's primary cache load, 1-21 s on the
+ *     rtx6000 pool), which a smaller rung cannot shorten. Reads as a clean pipe; the cursor
+ *     is untouched.
+ *  2. A row exists but `packetsLost` is not a number: the runtime does not expose the
+ *     sequence space (Safari / RN without counters). Transport is UNKNOWN and the reducer
+ *     charges the freeze exactly as 0.11.5 did. The cursor is untouched.
+ *  3. A row with `packetsLost` (nackCount / framesDropped default to 0 where absent):
+ *     the FIRST read of a binding only stores the baseline and reports a clean window.
+ *     The totals of a fresh RTCRtpReceiver start at zero, but a REBIND onto a receiver
+ *     that already carried traffic does not, and charging its lifetime loss to one tick
+ *     would demote every reconnect. Nothing is lost by waiting: the first-frame wait is
+ *     charged only past the 1000 ms grace, i.e. from the second tick on. Later reads
+ *     report positive deltas against the cursor.
+ */
+export const transportFromInboundRows = (
+  rows: readonly InboundRtpLike[],
+  cursor: TransportCursor | null,
+): { transport: GovernorSignal["transport"]; cursor: TransportCursor | null } => {
+  const clean = { packetsLostInWindow: 0, nacksInWindow: 0, framesDroppedInWindow: 0 };
+  const video = rows.filter((r) => r.kind === undefined || r.kind === "video");
+  if (video.length === 0) return { transport: clean, cursor };
+  const counted = video.filter((r) => typeof r.packetsLost === "number");
+  if (counted.length === 0) return { transport: undefined, cursor };
+  const totals: TransportCursor = { lost: 0, nack: 0, dropped: 0 };
+  for (const r of counted) {
+    totals.lost += r.packetsLost ?? 0;
+    totals.nack += r.nackCount ?? 0;
+    totals.dropped += r.framesDropped ?? 0;
+  }
+  if (cursor === null) return { transport: clean, cursor: totals };
+  return {
+    transport: {
+      packetsLostInWindow: Math.max(0, totals.lost - cursor.lost),
+      nacksInWindow: Math.max(0, totals.nack - cursor.nack),
+      framesDroppedInWindow: Math.max(0, totals.dropped - cursor.dropped),
+    },
+    cursor: totals,
+  };
+};
+
 /** The side effect the hook must apply after a step (absent = leave the cap alone). */
 export interface GovernorAction {
   setCap: QualityCap;
@@ -191,6 +252,43 @@ export const DEFAULT_GOVERNOR_CONFIG: GovernorConfig = {
   probeMs: 10_000,
   healthyResetMs: 120_000,
 };
+
+/**
+ * Every GovernorConfig field, by name. The hook value-memoises its config on exactly these
+ * keys (a caller re-rendering with a fresh object must not re-init the governor), so a
+ * field missing here is a field the hook silently DROPS. The type below refuses to compile
+ * when a config field is added without listing it; `governor-config-memo.test.ts` pins the
+ * same fact at runtime against DEFAULT_GOVERNOR_CONFIG.
+ */
+export const GOVERNOR_CONFIG_MEMO_KEYS = [
+  "openingCap",
+  "downgradeFreezeMs",
+  "probationFreezeMs",
+  "openingDwellMs",
+  "dwellBaseMs",
+  "dwellMaxMs",
+  "cleanMs",
+  "probeMs",
+  "healthyResetMs",
+] as const satisfies readonly (keyof GovernorConfig)[];
+
+type UnlistedGovernorConfigKey = Exclude<keyof GovernorConfig, (typeof GOVERNOR_CONFIG_MEMO_KEYS)[number]>;
+// A compile error here means a GovernorConfig field was added without a memo key.
+const _everyGovernorConfigKeyIsListed: [UnlistedGovernorConfigKey] extends [never] ? true : never = true;
+void _everyGovernorConfigKeyIsListed;
+
+/** A fresh GovernorConfig holding only the listed fields, by value. */
+export const pickGovernorConfig = (p: GovernorConfig): GovernorConfig => ({
+  openingCap: p.openingCap,
+  downgradeFreezeMs: p.downgradeFreezeMs,
+  probationFreezeMs: p.probationFreezeMs,
+  openingDwellMs: p.openingDwellMs,
+  dwellBaseMs: p.dwellBaseMs,
+  dwellMaxMs: p.dwellMaxMs,
+  cleanMs: p.cleanMs,
+  probeMs: p.probeMs,
+  healthyResetMs: p.healthyResetMs,
+});
 
 /** Minimum interval-average jitter-buffer increase treated as a real trend. */
 export const JITTER_BUFFER_RISE_THRESHOLD_MS = 25;

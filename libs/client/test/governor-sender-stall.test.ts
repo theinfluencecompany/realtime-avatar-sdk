@@ -7,6 +7,7 @@ import {
   LOCAL_STARVATION_DROPPED_FRAMES,
   resolveLowCapQuality,
   step,
+  transportFromInboundRows,
   type Governor,
   type GovernorSignal,
 } from "../src/react/quality-governor.ts";
@@ -181,4 +182,37 @@ test("a starving client keeps walking lowUnhealthy toward the bottom rung; a sen
   const afterSender = step(low, senderStall, 1_000, CFG).governor;
   assert.equal(afterSender.lowUnhealthy, 0);
   assert.equal(resolveLowCapQuality([0, 1, 2], LOCAL_STARVATION_DROPPED_FRAMES), 0);
+});
+
+// ---------------------------------------------------------------------------
+// TRANSPORT PROVENANCE. The fence is only as honest as the hook's reading of the
+// counters. Three cases the first prototype got backwards or left implicit, pinned here
+// against the pure `transportFromInboundRows` the hook now calls.
+// ---------------------------------------------------------------------------
+test("a report with NO inbound-rtp video row is a receiver that has received nothing: a clean pipe", () => {
+  // The join-time first-frame wait: nothing has arrived, so nothing was lost.
+  const { transport, cursor } = transportFromInboundRows([], null);
+  assert.deepEqual(transport, cleanPipe);
+  assert.equal(cursor, null, "no baseline is stored from an empty report");
+  const audioOnly = transportFromInboundRows([{ kind: "audio", packetsLost: 40 }], null);
+  assert.deepEqual(audioOnly.transport, cleanPipe, "an audio row is not our pipe");
+});
+
+test("a row WITHOUT packetsLost is unknown transport, so the freeze is charged as 0.11.5 did", () => {
+  const { transport, cursor } = transportFromInboundRows([{ kind: "video", nackCount: 3 }], null);
+  assert.equal(transport, undefined);
+  assert.equal(cursor, null);
+  assert.equal(isFreezeChargeable({ ...CLEAN, freezeMsInWindow: 500 }), true);
+});
+
+test("the first read of a binding is baseline-only; the second yields deltas", () => {
+  const first = transportFromInboundRows([{ kind: "video", packetsLost: 120, nackCount: 30, framesDropped: 4 }], null);
+  assert.deepEqual(first.transport, cleanPipe, "a rebind onto a receiver with history must not charge its lifetime loss");
+  assert.deepEqual(first.cursor, { lost: 120, nack: 30, dropped: 4 });
+  const second = transportFromInboundRows([{ kind: "video", packetsLost: 123, nackCount: 30 }], first.cursor);
+  assert.deepEqual(second.transport, { packetsLostInWindow: 3, nacksInWindow: 0, framesDroppedInWindow: 0 });
+  assert.deepEqual(second.cursor, { lost: 123, nack: 30, dropped: 0 }, "nackCount / framesDropped default to 0 when absent");
+  // Counters that go backwards (a receiver reset) never produce a negative window.
+  const reset = transportFromInboundRows([{ kind: "video", packetsLost: 0 }], second.cursor);
+  assert.deepEqual(reset.transport, cleanPipe);
 });
