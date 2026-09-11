@@ -75,6 +75,11 @@ export function firstFrameWaitFreezeMs(waitedMs: number): number {
  * cost: gaps between frames 1-5 are exempt regardless of loss, which delays #67's lossy
  * demote by at most five frame gaps (bounded; the stats path still charges after Chrome's
  * own 5-frame threshold, and the first-frame WAIT is still charged past the grace).
+ *
+ * THE SETTLE APPLIES TO BOTH GAPS, and that is not a detail. `nextFrameSample` exempts the
+ * gap RECORDED when a frame lands; `readFreezeFromSample` exempts the gap still OPEN when the
+ * governor's tick lands. Only the second one is what a tick 900 ms into the opening actually
+ * reads, so exempting only the first left the opening demote fully reachable.
  */
 export const AVATAR_SETTLE_FRAMES = 5;
 
@@ -219,3 +224,85 @@ export class StallEscalation {
     while (this.stallsAtMs.length > 0 && this.stallsAtMs[0] < cutoff) this.stallsAtMs.shift();
   }
 }
+
+/** Ignore ordinary 15-25fps presentation spacing when scoring a freeze. */
+export const AVATAR_FRAME_GAP_FREEZE_FLOOR_MS = 100;
+
+/** Convert a presented-frame gap into a governor freeze signal.
+ *
+ *  CHARGES THE EXCESS OVER THE FLOOR, NOT THE WHOLE GAP. It used to return `gapMs`,
+ *  which made the floor decorative: the governor's probation bar is also 100 ms, so the
+ *  first gap the floor declined to forgive was already, on its own, an instant demote.
+ *  There was no margin between "ordinary presentation spacing" and "kill this rung".
+ *
+ *  The arithmetic that matters: the sub-top simulcast rungs declare 20 fps, so frames
+ *  are 50 ms apart and ONE dropped frame is a 100 ms gap. Under the old return that was
+ *  forgiven by a single millisecond, and 101 ms demoted. Measured consequence, replaying
+ *  the shipped reducer over a 120 s call with one such gap every 20 s: 5 rung switches
+ *  and 107 of 120 seconds spent on the low cap, on a link that lost 6 packets in total.
+ *  With the excess charged instead, the same series produces zero switches.
+ *
+ *  This is what the floor's own comment always promised ("ignore ordinary 15-25fps
+ *  presentation spacing"). A 133 ms gap, which is two frames at 15 fps, now costs 33 ms
+ *  of freeze budget rather than 133. */
+export function freezeMsFromFrameGap(gapMs: number): number {
+  if (!Number.isFinite(gapMs) || gapMs <= AVATAR_FRAME_GAP_FREEZE_FLOOR_MS) return 0;
+  return gapMs - AVATAR_FRAME_GAP_FREEZE_FLOOR_MS;
+}
+
+/** Everything outside the ledger that the freeze reading depends on. */
+export interface FrameEnvironment {
+  /** The document is not visible right now. */
+  hidden: boolean;
+  /** The track is producing media (subscribed, unmuted, not ended). */
+  trackProducing: boolean;
+}
+
+/** Hidden/suspended playback gaps are local scheduling, not network congestion. */
+export const isFrameFreezeInhibited = (sample: FrameSample, env: FrameEnvironment): boolean =>
+  env.hidden || sample.resumePending || !env.trackProducing || !sample.seenFrame || sample.lastFrameAtMs === null;
+
+/**
+ * The governor's freeze reading for one tick, from the presented-frame ledger. PURE: the
+ * caller passes the clock and stores the returned ledger (the recorded gap is CONSUMED by a
+ * read, so an ongoing stall stays observable through its age while a recovered one is not
+ * charged twice).
+ *
+ * Three readings, in order:
+ *  1. NO FIRST FRAME YET on a producing track: the wait itself, past the grace
+ *     (`firstFrameWaitFreezeMs`). This is the one freeze the frame clock cannot see, and the
+ *     one a HIGH opening on a starved link most needs the governor to act on.
+ *  2. INHIBITED (hidden tab, pending resume, no track): zero, and the stale gap is dropped
+ *     rather than carried into the window after the tab comes back.
+ *  3. Otherwise the larger of the recorded gap and the gap still open, floored — except
+ *     during the opening settle, where neither is charged (see `AVATAR_SETTLE_FRAMES`).
+ */
+export const readFreezeFromSample = (
+  sample: FrameSample,
+  nowMs: number,
+  env: FrameEnvironment,
+): { reading: { freezeMsInWindow: number; inhibited: boolean }; sample: FrameSample } => {
+  if (!env.hidden && !sample.resumePending && env.trackProducing && !sample.seenFrame && sample.producingSinceMs !== null) {
+    return {
+      reading: { freezeMsInWindow: firstFrameWaitFreezeMs(nowMs - sample.producingSinceMs), inhibited: false },
+      sample,
+    };
+  }
+  const consumed = sample.maxGapMs === 0 ? sample : { ...sample, maxGapMs: 0 };
+  if (isFrameFreezeInhibited(sample, env) || sample.lastFrameAtMs === null) {
+    return { reading: { freezeMsInWindow: 0, inhibited: true }, sample: consumed };
+  }
+  // THE SETTLE IS ONE RULE, APPLIED ONCE, TO EVERY GAP THIS READ CAN SEE. `nextFrameSample`
+  // already zeroes the gaps RECORDED between settling frames, but the gap a tick actually
+  // reads is the one still OPEN, and during the opening it is made of exactly the same
+  // decoder warm-up. Splitting the rule across the two paths is how it ended up applying to
+  // only one of them.
+  if (sample.framesSeen < AVATAR_SETTLE_FRAMES) {
+    return { reading: { freezeMsInWindow: 0, inhibited: false }, sample: consumed };
+  }
+  const ongoingGapMs = Math.max(0, nowMs - sample.lastFrameAtMs);
+  return {
+    reading: { freezeMsInWindow: freezeMsFromFrameGap(Math.max(sample.maxGapMs, ongoingGapMs)), inhibited: false },
+    sample: consumed,
+  };
+};

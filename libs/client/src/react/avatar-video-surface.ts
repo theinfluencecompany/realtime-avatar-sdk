@@ -36,9 +36,9 @@ import type { GovernorConfig, GovernorTraceEvent, QualityCap } from "./quality-g
 import {
   FrameRecovery,
   StallEscalation,
-  firstFrameWaitFreezeMs,
   initialFrameSample,
   nextFrameSample,
+  readFreezeFromSample,
   type FrameSample,
 } from "./frame-recovery";
 // The escalated hold is part of this surface's contract (see `frameStallMs`), so it is
@@ -59,12 +59,12 @@ export { DEFAULT_AVATAR_UNSTABLE_STALL_MS } from "./frame-recovery";
  */
 export const DEFAULT_AVATAR_FRAME_STALL_MS = 2_000;
 
-/** Ignore ordinary 15-25fps presentation spacing when scoring a freeze. */
-export const AVATAR_FRAME_GAP_FREEZE_FLOOR_MS = 100;
-// ...and ignore the gaps between the first few presented frames entirely (the opening
-// settle; the constant and the pure ledger transition live in frame-recovery so they are
-// testable without a DOM).
-export { AVATAR_SETTLE_FRAMES } from "./frame-recovery";
+// The presented-frame ledger and everything that READS it — the gap floor, the settle, the
+// inhibit rule and the freeze reading itself — live in frame-recovery.ts, which has no DOM
+// and no React, so the whole chain from "a frame landed" to "the freeze the governor sees"
+// is unit-testable. This file only supplies the clock, the <video> and the visibility state,
+// and it does not re-export any of it: one module owns the ledger, and nothing here needs a
+// second name for it.
 
 /** How the media is fit into the surface box. Mirrors CSS `object-fit`. */
 export type AvatarVideoFit = "contain" | "cover";
@@ -677,47 +677,6 @@ export function isFrameFlowingAt(snapshot: FrameFlowSnapshot): boolean {
   );
 }
 
-/** Convert a presented-frame gap into a governor freeze signal.
- *
- *  CHARGES THE EXCESS OVER THE FLOOR, NOT THE WHOLE GAP. It used to return `gapMs`,
- *  which made the floor decorative: the governor's probation bar is also 100 ms, so the
- *  first gap the floor declined to forgive was already, on its own, an instant demote.
- *  There was no margin between "ordinary presentation spacing" and "kill this rung".
- *
- *  The arithmetic that matters: the sub-top simulcast rungs declare 20 fps, so frames
- *  are 50 ms apart and ONE dropped frame is a 100 ms gap. Under the old return that was
- *  forgiven by a single millisecond, and 101 ms demoted. Measured consequence, replaying
- *  the shipped reducer over a 120 s call with one such gap every 20 s: 5 rung switches
- *  and 107 of 120 seconds spent on the low cap, on a link that lost 6 packets in total.
- *  With the excess charged instead, the same series produces zero switches.
- *
- *  This is what the floor's own comment always promised ("ignore ordinary 15-25fps
- *  presentation spacing"). A 133 ms gap, which is two frames at 15 fps, now costs 33 ms
- *  of freeze budget rather than 133. */
-export function freezeMsFromFrameGap(gapMs: number): number {
-  if (!Number.isFinite(gapMs) || gapMs <= AVATAR_FRAME_GAP_FREEZE_FLOOR_MS) return 0;
-  return gapMs - AVATAR_FRAME_GAP_FREEZE_FLOOR_MS;
-}
-
-export type FrameFreezeInhibitSnapshot = {
-  hidden: boolean;
-  resumePending: boolean;
-  trackProducing: boolean;
-  seenFrame: boolean;
-  lastFrameAtMs: number | null;
-};
-
-/** Hidden/suspended playback gaps are local scheduling, not network congestion. */
-export function isFrameFreezeInhibited(snapshot: FrameFreezeInhibitSnapshot): boolean {
-  return (
-    snapshot.hidden ||
-    snapshot.resumePending ||
-    !snapshot.trackProducing ||
-    !snapshot.seenFrame ||
-    snapshot.lastFrameAtMs === null
-  );
-}
-
 type LiveFrameFlow = {
   flowing: boolean;
   seenFrame: boolean;
@@ -871,32 +830,16 @@ function useLiveFrameFlow(
   }, [wrapRef, trackProducing, trackIdentity, boundedStallMs, recovery, escalation]);
 
   const freezeReading = useCallback<FreezeReadingFn>(() => {
-    const sample = sampleRef.current;
-    const lastFrameAtMs = sample.lastFrameAtMs;
-    const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
-    // NO FIRST FRAME YET is the one freeze the frame clock cannot see, and the one a HIGH
-    // opening on a starved link most needs the governor to act on (see
-    // firstFrameWaitFreezeMs). Report the wait itself, past the grace, so the probation
-    // bar can demote a layer whose keyframes never land instead of holding it forever.
-    if (!hidden && !sample.resumePending && trackProducing && !sample.seenFrame && sample.producingSinceMs !== null) {
-      return { freezeMsInWindow: firstFrameWaitFreezeMs(Date.now() - sample.producingSinceMs), inhibited: false };
-    }
-    const inhibited = isFrameFreezeInhibited({
-      hidden,
-      resumePending: sample.resumePending,
+    // The whole decision is `readFreezeFromSample` (pure, in frame-recovery). This supplies
+    // the clock and the visibility state, and stores the ledger the read returns — the
+    // recorded gap is consumed by a read, so a recovered gap is never charged twice while an
+    // ongoing stall stays observable through its age.
+    const { reading, sample } = readFreezeFromSample(sampleRef.current, Date.now(), {
+      hidden: typeof document !== "undefined" && document.visibilityState !== "visible",
       trackProducing,
-      seenFrame: sample.seenFrame,
-      lastFrameAtMs,
     });
-    if (inhibited || lastFrameAtMs === null) {
-      sample.maxGapMs = 0;
-      return { freezeMsInWindow: 0, inhibited: true };
-    }
-    const ongoingGapMs = Math.max(0, Date.now() - lastFrameAtMs);
-    const freezeMsInWindow = freezeMsFromFrameGap(Math.max(sample.maxGapMs, ongoingGapMs));
-    // Consume recovered gaps once sampled; an ongoing stall remains observable via age.
-    sample.maxGapMs = 0;
-    return { freezeMsInWindow, inhibited: false };
+    sampleRef.current = sample;
+    return reading;
   }, [trackProducing]);
 
   return { flowing, seenFrame, freezeReading };

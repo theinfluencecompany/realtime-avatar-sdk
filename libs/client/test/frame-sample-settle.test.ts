@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  AVATAR_FRAME_GAP_FREEZE_FLOOR_MS as FLOOR,
   AVATAR_SETTLE_FRAMES,
   initialFrameSample,
   nextFrameSample,
+  readFreezeFromSample,
   type FrameSample,
 } from "../src/react/frame-recovery.ts";
 
@@ -69,4 +71,81 @@ test("maxGapMs accumulates the LONGEST gap since the last read once settled", ()
   const a = nextFrameSample(sample, nowMs + 300, "584x1024");
   const b = nextFrameSample(a, nowMs + 300 + 40, "584x1024");
   assert.equal(b.maxGapMs, 300, "a short gap after a long one does not lower the reading");
+});
+
+// ---------------------------------------------------------------------------
+// THE SETTLE MUST COVER THE GAP THAT IS STILL OPEN.
+//
+// `nextFrameSample` exempts the gaps BETWEEN settling frames, which are the gaps already
+// recorded when a frame lands. But the governor tick does not land on a frame: it lands
+// wherever it lands, and it reads the gap that is STILL OPEN (now - lastFrameAtMs). During
+// the opening that ongoing gap is the decoder warming up and the jitter buffer filling
+// behind frame 1 — the same class of event, from the same five frames — and it was charged
+// in full. A tick that landed 900 ms after frame 2 of a HIGH opening therefore booked 800 ms
+// of freeze and demoted the rung, which is the opening-demote shape the settle exists to
+// remove (9 of the 12 demotes caught on the wire on 2026-09-11 were opening demotes).
+//
+// Read at the freezeReading level, which is where the two paths meet.
+// ---------------------------------------------------------------------------
+
+const env = { hidden: false, trackProducing: true } as const;
+/** A binding that has presented `frames` frames, 400 ms apart, ending at t=12_000. */
+const afterFrames = (frames: number): FrameSample => {
+  let sample = initialFrameSample(10_000, false);
+  for (let i = 0; i < frames; i++) sample = nextFrameSample(sample, 12_000 - 400 * (frames - 1 - i), "584x1024");
+  return sample;
+};
+
+test("a tick inside the opening settle charges nothing, however late it lands", () => {
+  for (let frames = 1; frames < AVATAR_SETTLE_FRAMES; frames++) {
+    const { reading } = readFreezeFromSample(afterFrames(frames), 12_900, env);
+    assert.equal(reading.freezeMsInWindow, 0, `${frames} frames in: an ongoing 900 ms gap is still the opening`);
+    assert.equal(reading.inhibited, false, "and the tick is NOT inhibited: the governor still runs");
+  }
+});
+
+test("the very same tick one frame later IS charged, so the exemption is bounded", () => {
+  const { reading } = readFreezeFromSample(afterFrames(AVATAR_SETTLE_FRAMES), 12_900, env);
+  assert.equal(reading.freezeMsInWindow, 900 - FLOOR, "frame 5 is the last settling frame; the gap after it counts");
+});
+
+test("the recorded gap and the ongoing gap are exempted by the SAME rule", () => {
+  // Both inputs of the max() must agree about the opening, or the settle only half-applies.
+  const settling = afterFrames(2);
+  assert.equal(settling.maxGapMs, 0, "the recorded gap was already exempt");
+  const withRecorded: FrameSample = { ...settling, maxGapMs: 5_000 };
+  assert.equal(readFreezeFromSample(withRecorded, 12_900, env).reading.freezeMsInWindow, 0);
+});
+
+test("reading consumes the recorded gap and leaves the rest of the ledger alone", () => {
+  const settled = afterFrames(AVATAR_SETTLE_FRAMES + 2);
+  const withGap: FrameSample = { ...settled, maxGapMs: 700 };
+  const { reading, sample } = readFreezeFromSample(withGap, 12_100, env);
+  assert.equal(reading.freezeMsInWindow, 700 - FLOOR, "the longest gap since the last read");
+  assert.equal(sample.maxGapMs, 0, "consumed, so the next tick does not re-charge it");
+  assert.equal(sample.lastFrameAtMs, withGap.lastFrameAtMs, "the presentation clock is untouched");
+  assert.equal(sample.framesSeen, withGap.framesSeen);
+  // A second read of an unchanged ledger returns the same object: no churn on a quiet call.
+  assert.equal(readFreezeFromSample(sample, 12_100, env).sample, sample);
+});
+
+test("the first-frame wait is still reported, past the grace, before any frame exists", () => {
+  const producing = initialFrameSample(10_000, false);
+  assert.equal(readFreezeFromSample(producing, 10_500, env).reading.freezeMsInWindow, 0, "inside the grace");
+  const waited = readFreezeFromSample(producing, 12_400, env).reading;
+  assert.equal(waited.freezeMsInWindow, 1_400, "2.4 s of waiting, minus the 1 s grace");
+  assert.equal(waited.inhibited, false, "a starved HIGH opening must stay demotable");
+});
+
+test("a hidden tab, a pending resume and a track that is not producing all inhibit", () => {
+  const settled = { ...afterFrames(AVATAR_SETTLE_FRAMES + 2), maxGapMs: 5_000 };
+  for (const [why, input] of [
+    ["hidden", { sample: settled, env: { hidden: true, trackProducing: true } }],
+    ["resume pending", { sample: { ...settled, resumePending: true }, env }],
+    ["not producing", { sample: settled, env: { hidden: false, trackProducing: false } }],
+  ] as const) {
+    const { reading, sample } = readFreezeFromSample(input.sample, 20_000, input.env);
+    assert.deepEqual(reading, { freezeMsInWindow: 0, inhibited: true }, why);
+    assert.equal(sample.maxGapMs, 0, `${why}: the stale gap is dropped, not carried into the next window`);
+  }
 });
