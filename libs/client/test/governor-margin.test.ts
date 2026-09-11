@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DEFAULT_GOVERNOR_CONFIG as CFG,
+  LOW_CAP_STEP_AFTER_UNHEALTHY,
   resolveLowCapQuality,
   step,
   type Governor,
@@ -49,9 +50,9 @@ const CLEAN: GovernorSignal = {
   inhibited: false,
 };
 const gap = (ms: number): GovernorSignal => ({ ...CLEAN, freezeMsInWindow: freezeMsFromFrameGap(ms) });
-const at = (state: Governor["state"], cap: Governor["cap"], failures = 0, enteredAtMs = 0): Governor => ({
-  state, cap, failures, enteredAtMs, healthySinceMs: null,
-});
+const at = (
+  state: Governor["state"], cap: Governor["cap"], failures = 0, enteredAtMs = 0, lowUnhealthy = 0,
+): Governor => ({ state, cap, failures, enteredAtMs, healthySinceMs: null, lowUnhealthy });
 
 test("the mirrored converter still matches the shipped one", () => {
   assert.ok(Number.isFinite(FLOOR), "could not read AVATAR_FRAME_GAP_FREEZE_FLOOR_MS from source");
@@ -131,18 +132,46 @@ test("one opening failure still yields the documented 20-second hold", () => {
   assert.equal(6_900 + dwellMs + CFG.cleanMs, 25_900);
 });
 
-test("the low cap STEPS: first demote one rung down, a repeat failure to the bottom", () => {
+test("the low cap steps on evidence from the LOW rung, never on a failed reach for HIGH", () => {
   // Two-layer ladder (the fleet default at long edge 768): both branches agree, so this
-  // change is byte-identical there. That is the safety property worth pinning.
+  // is byte-identical there. That is the safety property worth pinning.
   assert.equal(resolveLowCapQuality([1, 2], 0), 1);
-  assert.equal(resolveLowCapQuality([1, 2], 3), 1);
-  // Three-layer ladder (long edge 1024, which is what the production pool publishes):
-  // `length - 2` is the MIDDLE rung. Before this change the bottom rung could not be
-  // requested at all, so a client that could not hold the middle had no floor to fall to.
-  assert.equal(resolveLowCapQuality([0, 1, 2], 0), 1, "first demote goes to the middle rung");
-  assert.equal(resolveLowCapQuality([0, 1, 2], 1), 0, "a repeat failure reaches the bottom rung");
+  assert.equal(resolveLowCapQuality([1, 2], 9), 1);
+  // Three-layer ladder (long edge 1024, which is what the production pool publishes).
+  assert.equal(resolveLowCapQuality([0, 1, 2], 0), 1, "no low-rung evidence: the middle rung");
+  assert.equal(resolveLowCapQuality([0, 1, 2], 1), 1, "ONE unhealthy tick is noise, not a verdict");
+  assert.equal(
+    resolveLowCapQuality([0, 1, 2], LOW_CAP_STEP_AFTER_UNHEALTHY),
+    0,
+    "the low rung has now failed on its own terms, so the bottom rung becomes reachable",
+  );
   // Order of the declared layers must not matter; the publisher decides the labels.
-  assert.equal(resolveLowCapQuality([2, 0, 1], 1), 0);
+  assert.equal(resolveLowCapQuality([2, 0, 1], LOW_CAP_STEP_AFTER_UNHEALTHY), 0);
   // A degenerate ladder keeps its historical answer rather than inventing a rung.
-  assert.equal(resolveLowCapQuality([2], 5), 1);
+  assert.equal(resolveLowCapQuality([2], 9), 1);
+});
+
+test("a slow OPENING must not reach the bottom rung, which is the regression this replaces", () => {
+  // A starved opening reports the first-frame wait as a freeze, so essentially every real
+  // session books failures=1 before the link has carried anything. Measured on production,
+  // first frames ran 2.4s to 28s. Keying the rung step on `failures` therefore sent the
+  // FIRST demote to the bottom rung, including on a captured call with ZERO freezes.
+  const openingFailed = step(at("opening_high", "high", 0), gap(FLOOR + CFG.probationFreezeMs + 1), 2_000, CFG).governor;
+  assert.equal(openingFailed.cap, "low");
+  assert.equal(openingFailed.failures, 1, "the opening failure still drives dwell backoff");
+  assert.equal(openingFailed.lowUnhealthy, 0, "but it is NOT evidence about the low rung");
+  assert.equal(
+    resolveLowCapQuality([0, 1, 2], openingFailed.lowUnhealthy),
+    1,
+    "so the demote lands on the middle rung, not the bottom",
+  );
+});
+
+test("sitting on the low rung while it keeps freezing DOES reach the bottom", () => {
+  let g = at("cap_low_sticky", "low", 1, 0);
+  for (let i = 0; i < LOW_CAP_STEP_AFTER_UNHEALTHY; i++) {
+    g = step(g, gap(FLOOR + CFG.downgradeFreezeMs + 1), 1_000 * (i + 1), CFG).governor;
+  }
+  assert.ok(g.lowUnhealthy >= LOW_CAP_STEP_AFTER_UNHEALTHY);
+  assert.equal(resolveLowCapQuality([0, 1, 2], g.lowUnhealthy), 0);
 });
