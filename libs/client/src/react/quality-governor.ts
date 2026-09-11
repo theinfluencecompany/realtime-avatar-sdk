@@ -82,9 +82,9 @@ export interface GovernorConfig {
    *  penalty before any failure is not. */
   openingDwellMs: number; // 2_000
   /** Base minimum hold at low before an up-probe is considered (grows on failure). */
-  dwellBaseMs: number; // 8_000  (≈ Meet's <10s server-simulcast recovery)
+  dwellBaseMs: number; // 3_000  (was 8_000; see the sweep on DEFAULT_GOVERNOR_CONFIG)
   /** Cap on the exponential dwell backoff — never pin low permanently. */
-  dwellMaxMs: number; // 120_000
+  dwellMaxMs: number; // 12_000  (was 120_000, which let a flaky link sit soft for 2 min)
   /** Continuously-healthy window required before raising the cap. 3s: still well above
    *  the sub-second downgrade reaction (the asymmetry that prevents flap), but short
    *  enough that a clean link reaches the probe at ~5s from session start
@@ -102,8 +102,28 @@ export const DEFAULT_GOVERNOR_CONFIG: GovernorConfig = {
   downgradeFreezeMs: 150,
   probationFreezeMs: 100,
   openingDwellMs: 2_000,
-  dwellBaseMs: 8_000,
-  dwellMaxMs: 120_000,
+  // HOW LONG THE PICTURE STAYS SOFT AFTER A DEMOTE. Swept against this reducer, 300 s per
+  // run, five link profiles, scored as switches / percent of time on the top rung / worst
+  // single spell on the low cap:
+  //
+  //   profile                      8s x 2^n max 120s   flat 3s        3s x 2^n max 12s
+  //   a spurious blip, link fine    2 /  94% /  19s    2 /  98% / 6s   2 /  97% /  9s
+  //   ordinary jitter, /30s        20 /  61% /  19s   20 /  80% / 6s  20 /  79% /  9s
+  //   flaky, /10s                   9 /   7% / 123s   59 /  40% / 6s  31 /  25% / 15s
+  //   genuinely bad, 600ms /5s      9 /   4% / 123s   59 /  20% / 8s  31 /  11% / 18s
+  //
+  // Two things that table says. First, the old `dwellMaxMs` of 120 s was the real damage:
+  // a link that is merely flaky could sit soft for TWO MINUTES, which is far worse than
+  // the churn the backoff exists to prevent. Second, removing the backoff entirely (flat
+  // 3 s) buys the last few points of quality at 59 switches instead of 31, and a switch is
+  // a decoder reconfigure plus a keyframe wait, measured at about 1.3 s of dead air on a
+  // weak link. So the shape is kept and only the numbers move: start lower, cap far lower.
+  //
+  // This depends on not charging a layer switch to the link (see the size-change reset in
+  // avatar-video-surface). Probing more often is only safe once a failed probe cannot
+  // trigger the next demotion by itself.
+  dwellBaseMs: 3_000,
+  dwellMaxMs: 12_000,
   cleanMs: 3_000,
   probeMs: 10_000,
   healthyResetMs: 120_000,

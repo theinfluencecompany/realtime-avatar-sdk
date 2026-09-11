@@ -119,17 +119,20 @@ test("a COMMITTED cap that falls records NO failure, and that is deliberate", ()
   assert.equal(probing.governor.failures, 1);
 });
 
-test("one opening failure still yields the documented 20-second hold", () => {
+test("one opening failure now costs 9 seconds, not 19", () => {
   // Measured clean-link call before the fix: left the top rung at 6.9s, returned at 27.6s.
   // The DWELL arithmetic is unchanged; what changed is how easily a failure is earned.
   const demoted = step(at("opening_high", "high", 0), gap(FLOOR + CFG.probationFreezeMs + 1), 6_900, CFG).governor;
   assert.equal(demoted.cap, "low");
   assert.equal(demoted.failures, 1);
   const dwellMs = Math.min(CFG.dwellBaseMs * 2 ** demoted.failures, CFG.dwellMaxMs);
-  assert.equal(dwellMs, 16_000);
+  assert.equal(dwellMs, 6_000, "3s base, doubled once");
   // Dwell, then a clean window, then the probe fires. Decoder reconfigure and the
   // keyframe wait land on top of that, which is the rest of the measured 27.6s.
-  assert.equal(6_900 + dwellMs + CFG.cleanMs, 25_900);
+  assert.equal(6_900 + dwellMs + CFG.cleanMs, 15_900);
+  // The worst single spell on the low cap is now bounded by dwellMax, not by 2^failures
+  // running away to two minutes.
+  assert.equal(CFG.dwellMaxMs, 12_000);
 });
 
 test("the low cap steps on evidence from the LOW rung, never on a failed reach for HIGH", () => {
@@ -200,11 +203,13 @@ test("the gap across a decoded-size change is not charged as a freeze", () => {
   assert.match(SRC, /previous\.lastSizeKey !== null &&/);
 });
 
-test("a demote that follows a switch would have cost 21.8s, which is the dwell arithmetic", () => {
+test("the climb back after a switch-induced demote is bounded", () => {
   // Pinning the cost so the saving is legible: one opening-probation failure books
   // failures=1, and the climb back is dwellBase * 2^1 plus the clean window.
   const demoted = step(at("opening_high", "high", 0), gap(FLOOR + CFG.probationFreezeMs + 1), 11_410, CFG).governor;
   assert.equal(demoted.cap, "low");
   assert.equal(demoted.failures, 1);
-  assert.equal(Math.min(CFG.dwellBaseMs * 2 ** demoted.failures, CFG.dwellMaxMs) + CFG.cleanMs, 19_000);
+  // Was 8s x 2^1 + 3s = 19s, which is the 21.8s observed on production once the switch
+  // and keyframe are added. Now 3s x 2^1 + 3s.
+  assert.equal(Math.min(CFG.dwellBaseMs * 2 ** demoted.failures, CFG.dwellMaxMs) + CFG.cleanMs, 9_000);
 });
