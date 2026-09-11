@@ -146,6 +146,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/avatars/{avatarId}/clips/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Manually accept an uploaded clip after quality review
+         * @description Accept an uploaded clip after human quality review. Requires avatars:write and the clip-library rollout. Revision and asset identity must match; active source swaps, unavailable assets and non-pose failures cannot be overridden. Preserves the original machine verdict and records the review before publishing the asset.
+         *
+         *     Requires an API key with the `avatars:write` scope.
+         */
+        post: operations["reviewAvatarClip"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/avatars/{avatarId}/loop": {
         parameters: {
             query?: never;
@@ -179,7 +201,7 @@ export interface paths {
         put?: never;
         /**
          * Mint an API key
-         * @description Mint a developer API key for the caller's own tenant. The plaintext key is returned ONCE, in this response, and is not retrievable afterwards.
+         * @description Mint a developer API key for the caller's own tenant. The plaintext key is returned in this response. Workspace owners and admins can recover eligible keys in the dashboard; recovery is not available through the developer API.
          *
          *     Requires an API key with the `api_keys:write` scope.
          */
@@ -627,10 +649,10 @@ export interface components {
         CreateApiKeyRequest: {
             name: string;
             /**
-             * @default test
+             * @description Deprecated. Accepted for older clients but ignored; all new keys use the same tic_ format.
              * @enum {string}
              */
-            environment: "live" | "test";
+            environment?: "live" | "test";
             /**
              * @default [
              *       "realtime:write",
@@ -647,15 +669,16 @@ export interface components {
             keyId: string;
             tenantId: string;
             name: string;
-            /** @enum {string} */
-            environment: "live" | "test";
             redactedKey: string;
+            /** @default false */
+            canReveal: boolean;
             scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "usage:write")[];
             /** @enum {string} */
             status: "active" | "revoked" | "expired";
             spendLimitCreditMicros: number | null;
             createdAt: string;
             expiresAt: string | null;
+            /** Format: starts_with */
             apiKey: string;
         };
         Asset: {
@@ -766,8 +789,6 @@ export interface components {
                     issues: string[];
                     firstFrameUrl: string | null;
                     lastFrameUrl: string | null;
-                    trimStartMs: number | null;
-                    trimEndMs: number | null;
                 } | null;
                 error: {
                     code: string;
@@ -805,6 +826,13 @@ export interface components {
                     };
                 };
             };
+        };
+        ReviewAvatarClipRequest: {
+            clipId: string;
+            uploadAssetId: string;
+            expectedRevision: number;
+            expectedAnchorVersion: number;
+            reason: string;
         };
         PutAvatarClipsRequest: {
             expectedRevision: number;
@@ -857,8 +885,6 @@ export interface components {
                     issues: string[];
                     firstFrameUrl: string | null;
                     lastFrameUrl: string | null;
-                    trimStartMs: number | null;
-                    trimEndMs: number | null;
                 } | null;
                 error: {
                     code: string;
@@ -1465,6 +1491,57 @@ export interface operations {
             };
         };
     };
+    reviewAvatarClip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                avatarId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewAvatarClipRequest"];
+            };
+        };
+        responses: {
+            /** @description Uploaded clip accepted; cache preparation scheduled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, malformed, revoked, or expired key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key lacks the scope for this operation, or the tenant is not active. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     putAvatarLoop: {
         parameters: {
             query?: never;
@@ -1534,7 +1611,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created. The plaintext key is returned once and never again. */
+            /** @description Created. The plaintext key is returned on creation; workspace owners and admins can recover eligible keys in the dashboard. Recovery is not available through the developer API. */
             201: {
                 headers: {
                     [name: string]: unknown;

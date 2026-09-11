@@ -68,6 +68,34 @@ function expression(schema) {
   for (const keyword of Object.keys(schema)) {
     if (!supported.has(keyword)) throw new Error(`Unsupported clip schema keyword: ${keyword}`);
   }
+  // OpenAPI 3.1 spells a type as an ARRAY. A nullable field that 3.0 wrote as
+  // `anyOf: [{type:"string"},{type:"null"}]` becomes `type: ["string","null"]`, and a plain one
+  // may become `type: ["string"]`. Both spellings belong to the same migration, so both are
+  // understood here: handling only the nullable one would leave the next field the platform
+  // respells free to reopen exactly the outage this normalisation exists to close.
+  //
+  // Normalise into the 3.0 spelling and let the paths below emit it. A type array that is a
+  // genuine union of two real types throws instead, because such a union belongs in `anyOf`
+  // where a reader of the contract can see it.
+  if (Array.isArray(schema.type)) {
+    const nonNull = schema.type.filter((candidate) => candidate !== "null");
+    if (nonNull.length !== 1 || schema.type.length > 2) {
+      throw new Error(`Unsupported clip schema type union: ${JSON.stringify(schema.type)}`);
+    }
+    // The string-enum branch below rejects a non-string `type`, which is its proxy for "every
+    // member is a string". Normalising sets `type` to the non-null member and would walk a
+    // nullable enum straight past that proxy, so reject the null member here, where it is still
+    // visible, rather than emitting a `z.enum` that cannot typecheck.
+    if (Array.isArray(schema.enum) && schema.enum.some((member) => member === null)) {
+      throw new Error(`Unsupported clip schema nullable enum: ${JSON.stringify(schema.enum)}`);
+    }
+    // `type` first, matching how the 3.0 spelling writes it, so a respelled field that carries
+    // siblings still memoises onto the identical hand-written twin instead of emitting a second
+    // definition of the same schema under a different key.
+    const { type: _spelledAsArray, ...rest } = schema;
+    const spelled = { type: nonNull[0], ...rest };
+    return expression(schema.type.length === 1 ? spelled : { anyOf: [spelled, { type: "null" }] });
+  }
   let result;
   if (schema.anyOf) {
     result = `z.union([${schema.anyOf.map(expression).join(", ")}])`;
@@ -116,20 +144,42 @@ function expression(schema) {
 const roots = [
   ["clipLibraryResponseSchema", "ListAvatarClipsResponse"],
   ["clipLibraryUpdateSchema", "PutAvatarClipsResponse"],
-].map(([name, contract]) => {
-  const schema = expression(spec.components.schemas[contract]);
-  return `export const ${name} = ${schema} satisfies z.ZodType<components["schemas"]["${contract}"], components["schemas"]["${contract}"]>;`;
-});
+].map(([name, contract]) =>
+  `export const ${name} = ${expression(spec.components.schemas[contract])} satisfies z.ZodType<Wire["${contract}"]>;\n`
+  + `type _${name}AcceptsWire = AssertTrue<Accepts<typeof ${name}, Wire["${contract}"]>>;`);
 const output = `import { z } from "zod";
 import type { components } from "./openapi.ts";
 import { clipBehaviorSchema, clipLibraryDeclarationSchema } from "./character-motion.ts";
 
-clipLibraryDeclarationSchema satisfies z.ZodType<components["schemas"]["PutAvatarClipsRequest"], components["schemas"]["PutAvatarClipsRequest"]>;
+type Wire = components["schemas"];
+
+/**
+ * A schema in this file IS its contract schema, asserted in both directions it can still be
+ * asserted in.
+ *
+ * OUTPUT is the \`satisfies z.ZodType<Wire[...]>\` on each root: what a parse returns is the wire
+ * type and nothing wider. libs/http-client/test/client.test.ts pins it to exact equality.
+ *
+ * INPUT is \`Accepts\`, and it is one directional deliberately. It used to be the second argument
+ * of the same \`satisfies\`, which said the schema accepts the wire type AND nothing else. The
+ * vendored character-motion.ts now wraps its two motion records in \`z.preprocess\` with an
+ * unannotated callback, so zod infers \`unknown\` for their input and the "nothing else" half has
+ * no expression left. That file is taken byte for byte from the platform under the sha256 pin in
+ * \`x-clip-contract\`, so it cannot be corrected from here. The half that survives is the half a
+ * caller leans on: a value of the wire type is accepted. Every shape the lost half used to
+ * reject at compile time is asserted at runtime in client.test.ts instead.
+ */
+type Accepts<Schema extends z.ZodType, Value> = [Value] extends [z.input<Schema>] ? true : false;
+type AssertTrue<Value extends true> = Value;
+
+clipLibraryDeclarationSchema satisfies z.ZodType<Wire["PutAvatarClipsRequest"]>;
+type _clipLibraryDeclarationSchemaAcceptsWire =
+  AssertTrue<Accepts<typeof clipLibraryDeclarationSchema, Wire["PutAvatarClipsRequest"]>>;
 export { clipLibraryDeclarationSchema };
 
 ${definitions.join("\n\n")}
 
-${roots.join("\n")}
+${roots.join("\n\n")}
 `;
 if (check) {
   if (await readFile(target, "utf8") !== output) throw new Error("Clip schemas are stale; run npm run spec:types");
