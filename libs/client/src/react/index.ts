@@ -121,28 +121,14 @@ export {
 // QUALITY.md). The app never touches this directly; it uses the hook that wraps it.
 export {
   DEFAULT_GOVERNOR_CONFIG,
-  GOVERNOR_CONFIG_MEMO_KEYS,
-  chargedFreezeMs,
-  isFreezeChargeable,
-  resolveGovernorConfig,
-  transportFromInboundRows,
   type Governor,
   type GovernorAction,
   type GovernorConfig,
   type GovernorSignal,
   type GovernorState,
   type GovernorTraceEvent,
-  type InboundRtpLike,
   type QualityCap,
-  type TransportCursor,
 } from "./quality-governor";
-// The presented-frame ledger the surface feeds the governor (pure; the opening settle).
-export {
-  AVATAR_SETTLE_FRAMES,
-  initialFrameSample,
-  nextFrameSample,
-  type FrameSample,
-} from "./frame-recovery";
 export {
   useAvatarQualityGovernor,
   type FreezeReadingFn,
