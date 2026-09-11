@@ -192,12 +192,16 @@ test("sitting on the low rung while it keeps freezing DOES reach the bottom", ()
 // then twenty of a blurry one.
 // ---------------------------------------------------------------------------
 test("the gap across a decoded-size change is not charged as a freeze", () => {
-  const SRC = readFileSync(new URL("../src/react/avatar-video-surface.ts", import.meta.url), "utf8");
+  // The size is read off the <video> in the surface; the ledger transition that acts on it
+  // is the pure `nextFrameSample` in frame-recovery (DOM-free, so frame-sample-settle.test.ts
+  // can drive it directly). Both halves are pinned.
+  const SRC = readFileSync(new URL("../src/react/frame-recovery.ts", import.meta.url), "utf8");
   // The reset must be driven by a SIZE change, and must sit on the same branch as the
-  // bfcache resume, which is the same class of event: real, local, not the network.
-  assert.match(SRC, /const sizeKey = `\$\{video\?\.videoWidth \?\? 0\}x\$\{video\?\.videoHeight \?\? 0\}`/);
+  // bfcache resume and the opening settle, which are the same class of event: real, local,
+  // not the network.
+  assert.match(SURFACE_SRC, /const sizeKey = `\$\{video\?\.videoWidth \?\? 0\}x\$\{video\?\.videoHeight \?\? 0\}`/);
   assert.match(SRC, /const layerSwitched =\s*previous\.lastSizeKey !== null && sizeKey !== previous\.lastSizeKey/);
-  assert.match(SRC, /previous\.resumePending \|\| layerSwitched\s*\n?\s*\? 0/);
+  assert.match(SRC, /previous\.resumePending \|\| layerSwitched \|\| settling\s*\n?\s*\? 0/);
   // And the very first frame must NOT count as a switch, or every session would start by
   // discarding a baseline it never had.
   assert.match(SRC, /previous\.lastSizeKey !== null &&/);

@@ -175,8 +175,17 @@ export interface GovernorTraceEvent {
   /** inbound-rtp framesDecoded delta since the previous tick; undefined when unreadable. */
   framesDecodedInWindow?: number;
   signal: GovernorSignal;
+  /** The two inputs of `signal.freezeMsInWindow` (= max of both): the surface's presented-
+   *  frame reading and the Chrome totalFreezesDuration delta. Which one carried the freeze
+   *  is the first question a demote investigation asks. */
+  rvfcFreezeMs: number;
+  statsFreezeMs: number;
+  /** Decoded "WxH" the receiver reported this tick (null when unreadable): the rung. */
+  sizeKey: string | null;
   /** Whether the tick's freeze was charged to the link (see `isFreezeChargeable`). */
   chargeable: boolean;
+  /** The freeze the reducer actually judged (0 when not chargeable and the fence is on). */
+  chargedFreezeMs: number;
   before: Pick<Governor, "state" | "cap" | "failures" | "lowUnhealthy">;
   after: Pick<Governor, "state" | "cap" | "failures" | "lowUnhealthy">;
   action?: GovernorAction;
@@ -218,6 +227,27 @@ export interface GovernorConfig {
   probeMs: number; // 10_000  (≈ Meet full-recovery window)
   /** Sustained-healthy-at-low duration that resets the failure count (link improved). */
   healthyResetMs: number; // 120_000
+  /** KILL SWITCH for the transport fence. "required" (default): a freeze is charged to the
+   *  link only with link evidence (SFU pause, loss, NACKs, decoder starvation) or when the
+   *  runtime exposes no counters at all; see `isFreezeChargeable`. "optional": every freeze
+   *  is charged regardless of transport, which is the 0.11.5 predicate byte for byte (the
+   *  unknown-transport branch IS that predicate). Exists so the fence can be turned off from
+   *  app config without a release if it ever hides a real link failure. */
+  linkEvidence: "required" | "optional"; // "required"
+  /** A tick is HEALTHY while its link-charged freeze is within this many ms. 67 = one frame
+   *  interval at 15 fps, the slowest declared rung on the three-layer ladder (the 180x316
+   *  layer), so ordinary presentation spacing on the lowest rung can be judged healthy and
+   *  the climb back happens inside the designed dwell + clean window. 0.11.5 demanded
+   *  exactly 0 and measured 10-46 s of low-rung dwell against a designed 15 s (2026-09-11).
+   *  MUST stay below `probationFreezeMs` so the band can never mask a demote; `initGovernor`
+   *  refuses a config that breaks this. */
+  healthyFreezeToleranceMs: number; // 67
+  /** Two link-charged unhealthy ticks on the low cap arm the BOTTOM rung
+   *  (LOW_CAP_STEP_AFTER_UNHEALTHY) only if they land within this window of each other.
+   *  10 s = probeMs, so one failed probation cycle still counts as "recent"; a decoder that
+   *  drops one frame every 15 s stays on the middle rung, which is the intended floor
+   *  behaviour. 0.11.5 counted any two ticks anywhere in the call. */
+  lowUnhealthyWindowMs: number; // 10_000
 }
 
 /** The grounded defaults (Meet <10s recovery + GCC +5%/−15% step asymmetry). */
@@ -251,6 +281,9 @@ export const DEFAULT_GOVERNOR_CONFIG: GovernorConfig = {
   cleanMs: 3_000,
   probeMs: 10_000,
   healthyResetMs: 120_000,
+  linkEvidence: "required",
+  healthyFreezeToleranceMs: 67,
+  lowUnhealthyWindowMs: 10_000,
 };
 
 /**
@@ -270,6 +303,9 @@ export const GOVERNOR_CONFIG_MEMO_KEYS = [
   "cleanMs",
   "probeMs",
   "healthyResetMs",
+  "linkEvidence",
+  "healthyFreezeToleranceMs",
+  "lowUnhealthyWindowMs",
 ] as const satisfies readonly (keyof GovernorConfig)[];
 
 type UnlistedGovernorConfigKey = Exclude<keyof GovernorConfig, (typeof GOVERNOR_CONFIG_MEMO_KEYS)[number]>;
@@ -288,6 +324,9 @@ export const pickGovernorConfig = (p: GovernorConfig): GovernorConfig => ({
   cleanMs: p.cleanMs,
   probeMs: p.probeMs,
   healthyResetMs: p.healthyResetMs,
+  linkEvidence: p.linkEvidence,
+  healthyFreezeToleranceMs: p.healthyFreezeToleranceMs,
+  lowUnhealthyWindowMs: p.lowUnhealthyWindowMs,
 });
 
 /** Minimum interval-average jitter-buffer increase treated as a real trend. */
@@ -359,6 +398,12 @@ export interface Governor {
    *  `failures` therefore sent the FIRST demote straight to the bottom rung, including on
    *  a call that recorded zero freezes. Reset whenever the cap returns to high. */
   lowUnhealthy: number;
+  /** Wall-clock ms of the most recent unhealthy tick counted in `lowUnhealthy`. Absent when
+   *  none has been counted since the last reset. The count only ACCUMULATES while the next
+   *  unhealthy tick lands within `lowUnhealthyWindowMs` of this; otherwise it restarts at 1
+   *  (see `bumpLowUnhealthy`). Optional rather than nullable so a Governor literal without
+   *  it (every pre-existing trace test) is a valid "no recent evidence" state. */
+  lowUnhealthyAtMs?: number;
   /** Wall-clock ms the current state was entered (for dwell/clean/probe timing). */
   enteredAtMs: number;
   /** Wall-clock ms of the last healthy tick in the current low period (clean-window
@@ -369,14 +414,28 @@ export interface Governor {
 /** The initial governor. Default opening: cap=low — first impression is NEVER a
  *  freeze, with only the short opening dwell. `openingCap: "high"` inverts the bet:
  *  first impression is never a RAMP, under the strict probation bar from t=0. */
-export const initGovernor = (nowMs: number, openingCap: QualityCap = "low"): Governor => ({
-  state: openingCap === "high" ? "opening_high" : "opening",
-  cap: openingCap,
-  failures: 0,
-  lowUnhealthy: 0,
-  enteredAtMs: nowMs,
-  healthySinceMs: null,
-});
+export const initGovernor = (
+  nowMs: number,
+  openingCap: QualityCap = "low",
+  cfg: GovernorConfig = DEFAULT_GOVERNOR_CONFIG,
+): Governor => {
+  // STARTUP INVARIANT. The healthy band only touches recovery; if it reached the probation
+  // bar a freeze could be "healthy" and "a demote" at once, and the two bars would disagree
+  // about the same tick. Refuse the config rather than reason about that state.
+  if (!(cfg.healthyFreezeToleranceMs < cfg.probationFreezeMs)) {
+    throw new RangeError(
+      `healthyFreezeToleranceMs (${cfg.healthyFreezeToleranceMs}) must be below probationFreezeMs (${cfg.probationFreezeMs})`,
+    );
+  }
+  return {
+    state: openingCap === "high" ? "opening_high" : "opening",
+    cap: openingCap,
+    failures: 0,
+    lowUnhealthy: 0,
+    enteredAtMs: nowMs,
+    healthySinceMs: null,
+  };
+};
 
 /**
  * Can this tick's freeze be charged to the LINK?
@@ -394,34 +453,63 @@ export const isFreezeChargeable = (s: GovernorSignal): boolean =>
   s.transport.nacksInWindow > 0 ||
   s.transport.framesDroppedInWindow >= LOCAL_STARVATION_DROPPED_FRAMES;
 
-/** The freeze the governor actually reasons about: zero for a sender-shaped stall. */
-const chargedFreezeMs = (s: GovernorSignal): number =>
-  isFreezeChargeable(s) ? s.freezeMsInWindow : 0;
+/** The freeze the governor actually reasons about: zero for a sender-shaped stall, the
+ *  whole reading when the fence is switched off (`linkEvidence: "optional"`). */
+export const chargedFreezeMs = (s: GovernorSignal, cfg: GovernorConfig): number =>
+  cfg.linkEvidence === "optional" || isFreezeChargeable(s) ? s.freezeMsInWindow : 0;
 
 /** A signal is a downgrade trigger from a stable/high cap (docs §2 Fix 3). */
 const isDowngrade = (s: GovernorSignal, cfg: GovernorConfig): boolean =>
   s.paused ||
-  chargedFreezeMs(s) >= cfg.downgradeFreezeMs ||
-  (s.jitterRising && chargedFreezeMs(s) > 0);
+  chargedFreezeMs(s, cfg) >= cfg.downgradeFreezeMs ||
+  (s.jitterRising && chargedFreezeMs(s, cfg) > 0);
 
 /** A signal fails an in-flight probation (stricter bar — kill a bad upgrade fast). */
 const isProbationFail = (s: GovernorSignal, cfg: GovernorConfig): boolean =>
-  s.paused || chargedFreezeMs(s) >= cfg.probationFreezeMs;
+  s.paused || chargedFreezeMs(s, cfg) >= cfg.probationFreezeMs;
 
-/** "Healthy right now": no charged freeze, no pause, jitter not rising, quality not
- *  poor/lost. A sender-shaped stall is not unhealthy LINK evidence, so it neither
- *  restarts the clean window nor counts toward `lowUnhealthy` (the walk to the bottom
- *  rung must be earned by the link, not by the worker's render queue). */
-const isHealthy = (s: GovernorSignal): boolean =>
-  !s.paused &&
-  chargedFreezeMs(s) === 0 &&
-  !s.jitterRising &&
-  s.connectionQuality !== "poor" &&
-  s.connectionQuality !== "lost";
+/**
+ * "Healthy right now": the SFU has not paused the track, the LINK-CHARGED freeze is within
+ * one frame interval of the slowest rung, jitter is not rising WHILE a charged freeze
+ * exists, and the avatar participant's quality is not poor/lost.
+ *
+ * Two deliberate departures from 0.11.5. First, the band (`healthyFreezeToleranceMs`)
+ * replaces `=== 0`: a 124 ms presented gap on the 15 fps rung was resetting the 3 s clean
+ * window forever while never being large enough to demote, so the cap could not come back
+ * (measured: 4 of 7 probe calls never recovered). Second, the bare `!jitterRising` clause is
+ * gone: the app's own adaptive playout hint moves the jitter-buffer average, and a jitter
+ * flicker alone must not restart the clean window or walk `lowUnhealthy`. Jitter still
+ * corroborates a demote through `isDowngrade`. A sender-shaped stall is not unhealthy LINK
+ * evidence either, so it neither restarts the clean window nor counts toward `lowUnhealthy`
+ * (the walk to the bottom rung must be earned by the link, not by the worker's render queue).
+ */
+const isHealthy = (s: GovernorSignal, cfg: GovernorConfig): boolean => {
+  const charged = chargedFreezeMs(s, cfg);
+  return (
+    !s.paused &&
+    charged <= cfg.healthyFreezeToleranceMs &&
+    !(s.jitterRising && charged > 0) &&
+    s.connectionQuality !== "poor" &&
+    s.connectionQuality !== "lost"
+  );
+};
 
 /** The exponential dwell for the current failure count, capped. */
 const dwellMs = (failures: number, cfg: GovernorConfig): number =>
   Math.min(cfg.dwellBaseMs * 2 ** failures, cfg.dwellMaxMs);
+
+/** Count one more unhealthy tick on the low cap, decaying on TIME: the count accumulates
+ *  only while consecutive unhealthy ticks land within `lowUnhealthyWindowMs` of each other,
+ *  otherwise it restarts at 1. This is what stops a stale tick from an earlier episode from
+ *  arming the bottom rung on the next demote (0.11.5 replay: lowUnhealthy 29 after 58 s of
+ *  a 124 ms gap every 2 s, then straight to 180x316). */
+const bumpLowUnhealthy = (g: Governor, nowMs: number, cfg: GovernorConfig): Pick<Governor, "lowUnhealthy" | "lowUnhealthyAtMs"> => {
+  const recent = typeof g.lowUnhealthyAtMs === "number" && nowMs - g.lowUnhealthyAtMs <= cfg.lowUnhealthyWindowMs;
+  return { lowUnhealthy: recent ? g.lowUnhealthy + 1 : 1, lowUnhealthyAtMs: nowMs };
+};
+
+/** `lowUnhealthy` and its clock, cleared together. */
+const NO_LOW_UNHEALTHY: Pick<Governor, "lowUnhealthy" | "lowUnhealthyAtMs"> = { lowUnhealthy: 0, lowUnhealthyAtMs: undefined };
 
 const enter = (g: Governor, state: GovernorState, cap: QualityCap, nowMs: number): Governor => ({
   ...g,
@@ -486,7 +574,7 @@ export const step = (
       // and the sharp start is committed; any failure was already caught above by the
       // instant-downgrade gate (probation bar), which sent us to cap_low_sticky with
       // a failure on record. No action on commit — the cap is already high.
-      if (nowMs - g.enteredAtMs >= cfg.probeMs && isHealthy(s)) {
+      if (nowMs - g.enteredAtMs >= cfg.probeMs && isHealthy(s, cfg)) {
         return { governor: enter(g, "cap_high_stable", "high", nowMs) };
       }
       return { governor: g };
@@ -495,7 +583,7 @@ export const step = (
     case "opening": {
       // Session start: low cap, but only the SHORT dwell. There is no failure to back
       // off from yet, and every ms here is the small rung on a link that may be fine.
-      if (nowMs - g.enteredAtMs >= cfg.openingDwellMs && isHealthy(s)) {
+      if (nowMs - g.enteredAtMs >= cfg.openingDwellMs && isHealthy(s, cfg)) {
         return { governor: { ...enter(g, "cap_low_eligible", "low", nowMs), healthySinceMs: nowMs } };
       }
       return { governor: g };
@@ -504,19 +592,23 @@ export const step = (
     case "cap_low_sticky": {
       // Reset the failure count if the link has been genuinely healthy for a long
       // window (network changed / improved) — prevents permanent low-pinning.
-      const healthy = isHealthy(s);
+      const healthy = isHealthy(s, cfg);
       const healthySince = healthy ? (g.healthySinceMs ?? nowMs) : null;
       const resetFailures =
         healthy && healthySince !== null && nowMs - healthySince >= cfg.healthyResetMs;
-      // Evidence about the LOW rung, gathered while sitting on it.
-      const lowUnhealthy = healthy ? g.lowUnhealthy : g.lowUnhealthy + 1;
+      // Evidence about the LOW rung, gathered while sitting on it (time-decayed).
+      const lowEvidence = resetFailures
+        ? NO_LOW_UNHEALTHY
+        : healthy
+          ? { lowUnhealthy: g.lowUnhealthy, lowUnhealthyAtMs: g.lowUnhealthyAtMs }
+          : bumpLowUnhealthy(g, nowMs, cfg);
       const dwellDone = nowMs - g.enteredAtMs >= dwellMs(g.failures, cfg);
       if (dwellDone && healthy) {
         return {
           governor: {
             ...enter(g, "cap_low_eligible", "low", nowMs),
             failures: resetFailures ? 0 : g.failures,
-            lowUnhealthy: resetFailures ? 0 : lowUnhealthy,
+            ...lowEvidence,
             healthySinceMs: nowMs,
           },
         };
@@ -526,7 +618,7 @@ export const step = (
           ...g,
           healthySinceMs: healthySince,
           failures: resetFailures ? 0 : g.failures,
-          lowUnhealthy: resetFailures ? 0 : lowUnhealthy,
+          ...lowEvidence,
         },
       };
     }
@@ -539,8 +631,8 @@ export const step = (
       // and on many prod sessions the event simply never fires, so treating a
       // MISSING reading as a block pinned those calls to the small rung for the
       // whole 30s connect window (measured: part of the 56% never-upgraded cohort).
-      if (!isHealthy(s)) {
-        return { governor: { ...g, healthySinceMs: null, lowUnhealthy: g.lowUnhealthy + 1 } };
+      if (!isHealthy(s, cfg)) {
+        return { governor: { ...g, healthySinceMs: null, ...bumpLowUnhealthy(g, nowMs, cfg) } };
       }
       const cleanSince = g.healthySinceMs ?? nowMs;
       if (nowMs - cleanSince >= cfg.cleanMs) {
@@ -557,7 +649,7 @@ export const step = (
       // Survived the probation window with no pause/freeze → commit to high.
       if (nowMs - g.enteredAtMs >= cfg.probeMs) {
         return {
-          governor: { ...enter(g, "cap_high_stable", "high", nowMs), failures: 0, lowUnhealthy: 0 },
+          governor: { ...enter(g, "cap_high_stable", "high", nowMs), failures: 0, ...NO_LOW_UNHEALTHY },
         };
       }
       return { governor: g };

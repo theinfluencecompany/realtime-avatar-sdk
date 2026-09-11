@@ -63,6 +63,91 @@ export function firstFrameWaitFreezeMs(waitedMs: number): number {
 }
 
 /**
+ * Presented frames the surface lets pass before it starts booking inter-frame gaps as
+ * freeze evidence. 5 is Chrome's own minimum rendered-frame count before its
+ * `totalFreezesDuration` detector scores anything, so the rVFC path and the getStats path
+ * (the two inputs of the governor's `max()`) now agree about the opening.
+ *
+ * Why: nine of the twelve demotes caught on the wire on 2026-09-11 were OPENING demotes.
+ * The gaps between the first few presented frames (decoder warm-up, the jitter buffer
+ * filling behind frame 1, the first keyframe's own size) were charged to the link and
+ * demoted a HIGH opening 0.5-1.5 s after its first frame with zero packets lost. Stated
+ * cost: gaps between frames 1-5 are exempt regardless of loss, which delays #67's lossy
+ * demote by at most five frame gaps (bounded; the stats path still charges after Chrome's
+ * own 5-frame threshold, and the first-frame WAIT is still charged past the grace).
+ */
+export const AVATAR_SETTLE_FRAMES = 5;
+
+/** The surface's presented-frame ledger for ONE track binding. */
+export interface FrameSample {
+  seenFrame: boolean;
+  lastFrameAtMs: number | null;
+  /** Longest inter-frame gap since the governor last read the sample (raw ms; the floor is
+   *  subtracted in `freezeReading`). */
+  maxGapMs: number;
+  /** A hidden-tab / bfcache resume is pending: the next frame is a new baseline. */
+  resumePending: boolean;
+  /** When the track began producing (this binding): the clock the first-frame wait runs on. */
+  producingSinceMs: number | null;
+  /** Decoded size of the previous frame, as "WxH". A CHANGE here means the SFU moved us to a
+   *  different simulcast layer, which costs a decoder reconfigure and a wait for that layer's
+   *  keyframe. See `nextFrameSample` for why that gap must not be charged to the link. */
+  lastSizeKey: string | null;
+  /** Presented frames counted on this binding; gaps are exempt until AVATAR_SETTLE_FRAMES. */
+  framesSeen: number;
+}
+
+/** The ledger for a fresh binding. `hidden` = the document is not visible right now. */
+export const initialFrameSample = (producingSinceMs: number | null, hidden: boolean): FrameSample => ({
+  seenFrame: false,
+  lastFrameAtMs: null,
+  maxGapMs: 0,
+  resumePending: hidden,
+  producingSinceMs,
+  lastSizeKey: null,
+  framesSeen: 0,
+});
+
+/**
+ * Book one presented frame. Pure: the surface's `markFrame` hands it the clock and the
+ * decoded size and stores the result.
+ *
+ * A CHANGE OF DECODED SIZE IS A SIMULCAST LAYER SWITCH, and the gap that straddles it is
+ * the switch's own cost: the decoder reconfigures and then waits for the new layer's
+ * keyframe. Nothing was lost, it simply had not been sent yet.
+ *
+ * Charging that gap to the link made the governor punish the stream for the cost of its
+ * own decision, and the punishment was another switch. Measured on production: the top
+ * rung arrived at t=10.98s and was demoted 0.43s later with ZERO packets lost, then took
+ * 21.8s to come back (dwellBase 8s x 2^1 for the failure, plus the clean window). From the
+ * viewer's side that is one second of a sharp face and then twenty of a blurry one.
+ *
+ * Treated exactly like a bfcache resume and like the settle window, which are the same
+ * class of event: a gap that is real, local, and says nothing about the network. The first
+ * frame at the new size becomes the new baseline. The very first frame never counts as a
+ * switch (`lastSizeKey === null`), or every session would start by discarding a baseline
+ * it never had.
+ */
+export const nextFrameSample = (previous: FrameSample, nowMs: number, sizeKey: string): FrameSample => {
+  const layerSwitched = previous.lastSizeKey !== null && sizeKey !== previous.lastSizeKey;
+  const settling = previous.framesSeen < AVATAR_SETTLE_FRAMES;
+  return {
+    producingSinceMs: previous.producingSinceMs,
+    seenFrame: true,
+    lastFrameAtMs: nowMs,
+    // A hidden tab/bfcache resume, a layer switch and the opening settle are local
+    // scheduling gaps, not network congestion. The fresh frame becomes the new baseline.
+    maxGapMs:
+      previous.resumePending || layerSwitched || settling
+        ? 0
+        : Math.max(previous.maxGapMs, previous.lastFrameAtMs === null ? 0 : nowMs - previous.lastFrameAtMs),
+    resumePending: false,
+    lastSizeKey: sizeKey,
+    framesSeen: previous.framesSeen + 1,
+  };
+};
+
+/**
  * Once a link has proven unstable, hold the frozen live frame this long before
  * falling back to the idle floor. Measured on a prod rtx6000 call through a
  * 900 kbit / 150 ms / 10 % loss link (2026-09-09): after the opening, presented-frame

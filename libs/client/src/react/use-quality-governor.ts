@@ -40,6 +40,7 @@ import {
   type InboundRtpLike,
   type JitterBufferTrendState,
   type TransportCursor,
+  chargedFreezeMs,
   initGovernor,
   isFreezeChargeable,
   pickGovernorConfig,
@@ -170,20 +171,33 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
       return;
     }
 
-    let gov: Governor = initGovernor(Date.now(), config.openingCap);
+    // FAIL-OPEN, like every other fault here: a config that violates the reducer's startup
+    // invariant (see initGovernor) leaves the cap to the SFU instead of throwing into React.
+    let gov: Governor;
+    try {
+      gov = initGovernor(Date.now(), config.openingCap, config);
+    } catch {
+      try {
+        room.off(RoomEvent.TrackStreamStateChanged, onStreamState);
+        room.off(RoomEvent.ConnectionQualityChanged, onQuality);
+      } catch { /* teardown swallows */ }
+      return;
+    }
 
     const readGetStatsSignals = async (): Promise<{
       freezeMs: number;
       jitterRising: boolean;
       transport: GovernorSignal["transport"];
       framesDecodedInWindow?: number;
+      /** Decoded "WxH" the receiver reports this tick; null when unreadable. */
+      sizeKey: string | null;
     }> => {
       // inbound-rtp freezeCount/totalFreezesDuration delta (Chrome). Best-effort; any
       // failure yields 0 (rVFC still covers the freeze via freezeReading).
       try {
         const track = targetPublication?.track;
         const stats = await track?.getRTCStatsReport?.();
-        if (!stats) return { freezeMs: 0, jitterRising: false, transport: undefined };
+        if (!stats) return { freezeMs: 0, jitterRising: false, transport: undefined, sizeKey: null };
         let decodedTotal: number | null = null;
         let frozenTotalMs = 0;
         let jitterDelaySeconds = 0;
@@ -254,9 +268,10 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
           jitterRising: trend.rising && !layerSwitched,
           transport,
           ...(framesDecodedInWindow !== undefined ? { framesDecodedInWindow } : {}),
+          sizeKey,
         };
       } catch {
-        return { freezeMs: 0, jitterRising: false, transport: undefined };
+        return { freezeMs: 0, jitterRising: false, transport: undefined, sizeKey: null };
       }
     };
 
@@ -309,25 +324,33 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
         // here before it shows up anywhere in inbound-rtp.
         const tickLateMs = lastTickAtMs === null ? 0 : Math.max(0, tMs - lastTickAtMs - tickMs);
         lastTickAtMs = tMs;
-        const before = { state: gov.state, cap: gov.cap, failures: gov.failures, lowUnhealthy: gov.lowUnhealthy };
+        // Nothing below allocates unless an observer is set.
+        const trace = onTraceRef.current;
+        const before = trace ? { state: gov.state, cap: gov.cap, failures: gov.failures, lowUnhealthy: gov.lowUnhealthy } : null;
         const { governor, action } = step(gov, signal, tMs, config);
         gov = governor;
         if (action) applyCap(action.setCap, gov.lowUnhealthy);
-        try {
-          onTraceRef.current?.({
-            tMs,
-            tickLateMs,
-            ...(statsSignals.framesDecodedInWindow !== undefined
-              ? { framesDecodedInWindow: statsSignals.framesDecodedInWindow }
-              : {}),
-            signal,
-            chargeable: isFreezeChargeable(signal),
-            before,
-            after: { state: gov.state, cap: gov.cap, failures: gov.failures, lowUnhealthy: gov.lowUnhealthy },
-            ...(action ? { action } : {}),
-          });
-        } catch {
-          // Telemetry must never touch the call.
+        if (trace && before) {
+          try {
+            trace({
+              tMs,
+              tickLateMs,
+              ...(statsSignals.framesDecodedInWindow !== undefined
+                ? { framesDecodedInWindow: statsSignals.framesDecodedInWindow }
+                : {}),
+              signal,
+              rvfcFreezeMs: rvfc.freezeMsInWindow,
+              statsFreezeMs: statsSignals.freezeMs,
+              sizeKey: statsSignals.sizeKey,
+              chargeable: isFreezeChargeable(signal),
+              chargedFreezeMs: chargedFreezeMs(signal, config),
+              before,
+              after: { state: gov.state, cap: gov.cap, failures: gov.failures, lowUnhealthy: gov.lowUnhealthy },
+              ...(action ? { action } : {}),
+            });
+          } catch {
+            // Telemetry must never touch the call.
+          }
         }
       } catch {
         // A tick fault must never kill the loop or the call.
