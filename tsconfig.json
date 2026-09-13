@@ -8,7 +8,14 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
-    "noUncheckedIndexedAccess": true,
+    // `noUncheckedIndexedAccess` was here and cannot be. This project compiles
+    // libs/http-client/src/generated/character-motion.ts, which is taken byte for byte from the
+    // platform under the sha256 pin in `x-clip-contract` and therefore cannot be edited to
+    // satisfy a flag its own build does not set. TypeScript has no per-file compiler option and
+    // `exclude` does not reach a file pulled in by an import, so the choice was this flag or a
+    // typecheck that no PR can pass. Cost accepted knowingly: 11 indexed expressions across the
+    // six packages this project covers, and the two configs that actually ship the code
+    // (libs/tsconfig.published.json, libs/client/tsconfig.json) have never set it either.
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true,

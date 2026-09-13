@@ -794,7 +794,7 @@
           "reservation_expires_at": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
           "max_sessions_per_gpu": {
             "type": "integer",
@@ -1157,13 +1157,9 @@
             ]
           },
           "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "idleVideoStatus": {
@@ -1177,13 +1173,9 @@
             ]
           },
           "defaultVoiceId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "llm": {
@@ -1579,7 +1571,7 @@
             "maxLength": 120
           },
           "environment": {
-            "default": "test",
+            "description": "Deprecated. Accepted for older clients but ignored; all new keys use the same tic_ format.",
             "type": "string",
             "enum": [
               "live",
@@ -1626,7 +1618,7 @@
               {
                 "type": "string",
                 "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
               },
               {
                 "type": "null"
@@ -1661,15 +1653,12 @@
           "name": {
             "type": "string"
           },
-          "environment": {
-            "type": "string",
-            "enum": [
-              "live",
-              "test"
-            ]
-          },
           "redactedKey": {
             "type": "string"
+          },
+          "canReveal": {
+            "default": false,
+            "type": "boolean"
           },
           "scopes": {
             "type": "array",
@@ -1711,17 +1700,14 @@
             "type": "string"
           },
           "expiresAt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "apiKey": {
             "type": "string",
+            "format": "starts_with",
             "pattern": "^tic_.*"
           }
         },
@@ -1730,8 +1716,8 @@
           "keyId",
           "tenantId",
           "name",
-          "environment",
           "redactedKey",
+          "canReveal",
           "scopes",
           "status",
           "spendLimitCreditMicros",
@@ -1783,13 +1769,9 @@
             "maximum": 9007199254740991
           },
           "sha256": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "publicUrl": {
@@ -1939,23 +1921,15 @@
                   "maxLength": 80
                 },
                 "avatarId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "avatarName": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "status": {
@@ -1968,23 +1942,15 @@
                   ]
                 },
                 "startedAt": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "endedAt": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "activeSeconds": {
@@ -2038,24 +2004,20 @@
             }
           },
           "nextCursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "from": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
           },
           "to": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
           }
         },
         "required": [
@@ -2126,13 +2088,9 @@
                   ]
                 },
                 "error": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "idleVideoStatus": {
@@ -2146,13 +2104,9 @@
                   ]
                 },
                 "defaultVoiceId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "llm": {
@@ -2261,23 +2215,15 @@
                   ]
                 },
                 "uploadAssetId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "motionPrompt": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "durationSeconds": {
@@ -2359,39 +2305,13 @@
                               "type": "null"
                             }
                           ]
-                        },
-                        "trimStartMs": {
-                          "anyOf": [
-                            {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "trimEndMs": {
-                          "anyOf": [
-                            {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
                         }
                       },
                       "required": [
                         "verdict",
                         "issues",
                         "firstFrameUrl",
-                        "lastFrameUrl",
-                        "trimStartMs",
-                        "trimEndMs"
+                        "lastFrameUrl"
                       ],
                       "additionalProperties": false
                     },
@@ -2505,13 +2425,9 @@
             "type": "boolean"
           },
           "defaultSourceAssetId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "behavior": {
@@ -2610,6 +2526,43 @@
           "behavior"
         ],
         "additionalProperties": false
+      },
+      "ReviewAvatarClipRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "clipId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "uploadAssetId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "expectedAnchorVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "clipId",
+          "uploadAssetId",
+          "expectedRevision",
+          "expectedAnchorVersion",
+          "reason"
+        ]
       },
       "PutAvatarClipsRequest": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2798,23 +2751,15 @@
                   ]
                 },
                 "uploadAssetId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "motionPrompt": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
+                  "type": [
+                    "string",
+                    "null"
                   ]
                 },
                 "durationSeconds": {
@@ -2896,39 +2841,13 @@
                               "type": "null"
                             }
                           ]
-                        },
-                        "trimStartMs": {
-                          "anyOf": [
-                            {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "trimEndMs": {
-                          "anyOf": [
-                            {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
                         }
                       },
                       "required": [
                         "verdict",
                         "issues",
                         "firstFrameUrl",
-                        "lastFrameUrl",
-                        "trimStartMs",
-                        "trimEndMs"
+                        "lastFrameUrl"
                       ],
                       "additionalProperties": false
                     },
@@ -3042,13 +2961,9 @@
             "type": "boolean"
           },
           "defaultSourceAssetId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "string",
+              "null"
             ]
           },
           "behavior": {
@@ -3989,6 +3904,74 @@
         ]
       }
     },
+    "/v1/avatars/{avatarId}/clips/review": {
+      "post": {
+        "operationId": "reviewAvatarClip",
+        "description": "Accept an uploaded clip after human quality review. Requires avatars:write and the clip-library rollout. Revision and asset identity must match; active source swaps, unavailable assets and non-pose failures cannot be overridden. Preserves the original machine verdict and records the review before publishing the asset.\n\nRequires an API key with the `avatars:write` scope.",
+        "parameters": [
+          {
+            "name": "avatarId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewAvatarClipRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Uploaded clip accepted; cache preparation scheduled"
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "avatars:write"
+        ],
+        "summary": "Manually accept an uploaded clip after quality review",
+        "tags": [
+          "Avatars"
+        ]
+      }
+    },
     "/v1/avatars/{avatarId}/loop": {
       "put": {
         "operationId": "putAvatarLoop",
@@ -4076,7 +4059,7 @@
     "/v1/api-keys": {
       "post": {
         "operationId": "createApiKey",
-        "description": "Mint a developer API key for the caller's own tenant. The plaintext key is returned ONCE, in this response, and is not retrievable afterwards.\n\nRequires an API key with the `api_keys:write` scope.",
+        "description": "Mint a developer API key for the caller's own tenant. The plaintext key is returned in this response. Workspace owners and admins can recover eligible keys in the dashboard; recovery is not available through the developer API.\n\nRequires an API key with the `api_keys:write` scope.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4089,7 +4072,7 @@
         },
         "responses": {
           "201": {
-            "description": "Created. The plaintext key is returned once and never again.",
+            "description": "Created. The plaintext key is returned on creation; workspace owners and admins can recover eligible keys in the dashboard. Recovery is not available through the developer API.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4503,7 +4486,7 @@
   },
   "x-clip-contract": {
     "source": "/character-motion.ts",
-    "sha256": "7438746be01863e378997b665ac32c8ba0244b4c05a17288e07cd590c02b3b63"
+    "sha256": "418d21cab4b8d96ba5202235df03b1888d39a19615ad7ed2bd5c4bab69bd787d"
   },
   "tags": [
     {

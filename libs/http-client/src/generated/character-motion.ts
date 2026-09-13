@@ -6,12 +6,14 @@ export const motionIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)
 function motionRecord<T extends z.ZodType>(valueSchema: T) {
   const record = z.record(motionIdSchema, valueSchema);
   // Zod records skip __proto__; reject it before validation without erasing the input type.
-  return z.transform((value: z.input<typeof record>, ctx) => {
+  // `preprocess` rather than `transform().pipe()`: the pipe has to prove its own input type,
+  // which it cannot while the value schema is still generic — zod 4.6 made that a hard error.
+  return z.preprocess((value, ctx) => {
     if (value !== null && typeof value === "object" && Object.hasOwn(value, "__proto__")) {
       ctx.addIssue({ code: "custom", path: ["__proto__"], message: "Reserved identifier" });
     }
     return value;
-  }).pipe(record);
+  }, record);
 }
 
 export const clipSourceSchema = z.union([
@@ -124,7 +126,7 @@ export function selectIdleClip(
   // Filtered BEFORE the draw, so cold or excluded members shrink the CHOICE, never the
   // odds of doing something at all — that share is authored, not derived from a count.
   if (weight <= 0 || random() * (weight + 1) >= weight) return null;
-  return candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))]!;
+  return candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
 }
 
 /** A listening reaction or an action's variant: uniform, never excluded for repeating. */
@@ -135,7 +137,7 @@ export function selectTriggeredClip(
   const random = options.random ?? Math.random;
   const candidates = clips.filter(options.available);
   if (candidates.length === 0) return null;
-  return candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))]!;
+  return candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
 }
 
 export const companionSessionRequestSchema = z.strictObject({
