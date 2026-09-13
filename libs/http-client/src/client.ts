@@ -141,14 +141,19 @@ export class RealtimeAvatar {
     const response = await this.#request("POST", "/realtime/livekit/session", { json: body });
 
     if (response.status === 429) {
-      const busy = (await response.json()) as Record<string, unknown>;
-      return {
-        queued: true,
-        position: typeof busy.queue_position === "number" ? busy.queue_position : null,
-        size: typeof busy.queue_size === "number" ? busy.queue_size : 0,
-        retryAfterMs: typeof busy.recommended_retry_ms === "number" ? busy.recommended_retry_ms : 3000,
-        queueTicketId: typeof busy.queue_ticket_id === "string" ? busy.queue_ticket_id : null,
-      };
+      const busy: unknown = await response.clone().json().catch(() => null);
+      // A plan refusal or per-key throttle is not a capacity queue.
+      if (isRecord(busy) && !("code" in busy) &&
+        typeof busy.queue_size === "number" && Number.isFinite(busy.queue_size) && busy.queue_size >= 0 &&
+        typeof busy.recommended_retry_ms === "number" && Number.isFinite(busy.recommended_retry_ms) && busy.recommended_retry_ms >= 0) {
+        return {
+          queued: true,
+          position: typeof busy.queue_position === "number" ? busy.queue_position : null,
+          size: busy.queue_size,
+          retryAfterMs: busy.recommended_retry_ms,
+          queueTicketId: typeof busy.queue_ticket_id === "string" ? busy.queue_ticket_id : null,
+        };
+      }
     }
 
     const grant = (await this.#json(response)) as Record<string, unknown>;
@@ -602,7 +607,7 @@ export class RealtimeAvatar {
     } catch {
       // Not JSON — an HTML body usually means the route is not served at all.
     }
-    throw new RealtimeAvatarHttpError(response.status, code, text.slice(0, 400));
+    throw new RealtimeAvatarHttpError(response.status, code, text, response.headers.get("x-request-id") ?? undefined);
   }
 }
 

@@ -26,6 +26,7 @@ export class RealtimeAvatarError extends Error {
  * | `loop_pending` · `anchor_pending` | 409 | one is already in flight — wait, then retry |
  * | `revision_conflict` | 409 | someone declared first. Re-read `listClips`, re-decide, re-declare |
  * | `clip_render_limit` | 429 | a true rate limit; nothing was applied. Retry later |
+ * | `concurrency_limit_reached` | 429 | active and starting sessions occupy the limit; release one or wait for pending starts before retrying |
  * | `clip_screen_unavailable` | 503 | the prose screen could not run. Retry |
  *
  * Pose validation does NOT appear here: a rejected upload is not an error response at all.
@@ -40,13 +41,33 @@ export class RealtimeAvatarHttpError extends RealtimeAvatarError {
   readonly status: number;
   readonly code: string | undefined;
   readonly body: string;
+  readonly requestId?: string;
+  readonly concurrency?: Partial<Record<"maxConcurrentSessions" | "liveSessions" | "activeSessions" | "connectingSessions" | "pendingSessions", number>>;
 
-  constructor(status: number, code: string | undefined, body: string) {
-    super(`Realtime Avatar API ${status}${code ? ` (${code})` : ""}: ${body || "no body"}`);
+  constructor(status: number, code: string | undefined, body: string, requestId?: string) {
+    const bounded = body.slice(0, 400);
+    super(`Realtime Avatar API ${status}${code ? ` (${code})` : ""}: ${bounded || "no body"}`);
     this.name = "RealtimeAvatarHttpError";
     this.status = status;
     this.code = code;
-    this.body = body;
+    this.body = bounded;
+    let parsed: Record<string, unknown> = {};
+    try {
+      const value: unknown = JSON.parse(body);
+      if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+    } catch { /* Non-JSON error bodies retain their bounded text. */ }
+    const validId = (value: unknown): value is string =>
+      typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
+    this.requestId = validId(parsed.requestId) ? parsed.requestId : validId(requestId) ? requestId : undefined;
+    if (status === 429 && code === "concurrency_limit_reached") {
+      this.concurrency = {};
+      for (const key of ["maxConcurrentSessions", "liveSessions", "activeSessions", "connectingSessions", "pendingSessions"] as const) {
+        const value = parsed[key];
+        if (typeof value === "number" && Number.isSafeInteger(value) && value >= (key === "maxConcurrentSessions" ? 1 : 0)) {
+          this.concurrency[key] = value;
+        }
+      }
+    }
   }
 
   /** Out of credits, or over this key's spend limit. Surface a paywall, not an error. */

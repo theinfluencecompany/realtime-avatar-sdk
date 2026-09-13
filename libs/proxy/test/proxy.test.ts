@@ -27,6 +27,40 @@ const connect = (body: unknown) =>
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
   });
 
+test("concurrency errors survive the proxy without private diagnostics", async () => {
+  const requestId = "123e4567-e89b-42d3-a456-426614174000";
+  const { restore } = upstream({ status: 429, body: {
+    error: "PRIVATE_DIAGNOSTIC", code: "concurrency_limit_reached",
+    maxConcurrentSessions: 3, liveSessions: 3, activeSessions: 0, connectingSessions: 1, pendingSessions: 2,
+    detail: "x".repeat(800), blockingSessionIds: ["private-session"], requestId,
+  } });
+  try {
+    const handler = createProxyHandler({ apiKey: "k" });
+    const response = await handler(connect({ avatarId: "ava_1" }));
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get("X-Request-ID"), requestId);
+    const text = await response.clone().text();
+    assert.ok(!text.includes("PRIVATE_DIAGNOSTIC"));
+    assert.ok(!text.includes("private-session"));
+    const body = await response.json() as Record<string, unknown>;
+    assert.equal(body.code, "concurrency_limit_reached");
+    assert.match(String(body.error), /0 active, 1 connecting, 2 starting/);
+    assert.match(String(body.error), /then retry/);
+    assert.equal(body.requestId, requestId);
+  } finally { restore(); }
+});
+
+test("an uncoded 429 throttle is relayed as an error, not an empty queue", async () => {
+  const { restore } = upstream({ status: 429, body: { error: "private limiter details" } });
+  try {
+    const response = await createProxyHandler({ apiKey: "k" })(connect({ avatarId: "ava_1" }));
+    assert.equal(response.status, 429);
+    assert.deepEqual(await response.json(), {
+      error: "Too many requests. Wait before retrying.", code: "rate_limited", status: 429, retryable: true,
+    });
+  } finally { restore(); }
+});
+
 test("authorize can refuse, and nothing reaches the API", async () => {
   const { seen, restore } = upstream({ body: GRANT });
   const handler = createProxyHandler({
@@ -67,7 +101,7 @@ test("the grant is relayed verbatim, including fields we do not model", async ()
 });
 
 test("a busy pool is passed through as 429 with a position", async () => {
-  const { restore } = upstream({ status: 429, body: { queue_position: 2, recommended_retry_ms: 4000 } });
+  const { restore } = upstream({ status: 429, body: { queue_position: 2, queue_size: 3, recommended_retry_ms: 4000 } });
   const handler = createProxyHandler({ apiKey: "k" });
   const res = await handler(connect({ avatarId: "ava_1" }));
   restore();
@@ -75,7 +109,7 @@ test("a busy pool is passed through as 429 with a position", async () => {
   assert.deepEqual(await res.json(), {
     queued: true,
     position: 2,
-    size: 0,
+    size: 3,
     retryAfterMs: 4000,
     queue_ticket_id: null,
   });

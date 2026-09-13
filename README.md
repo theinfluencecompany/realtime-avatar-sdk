@@ -226,10 +226,14 @@ verifyTranscript(rawBytes, headers, secret)
 | `402` | Out of credits, or over the key's spend limit | Show a paywall, not an error screen |
 | `403` | Key lacks the scope | Mint one with it. Don't widen to `*`. |
 | `422` | Schema rejection | Unknown or mis-cased field — the wire is strict |
-| `429` | Capacity full **or** rate limited | On a call this is the queue. Retry; not auto-retried. |
+| `429` | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Not auto-retried. |
 | `503` | Transient upstream | Retried for you, up to `maxRetries` |
 
-`429` is not a failure — it's `{ queued: true, position, retryAfterMs }`. Render the position.
+Only a capacity-queue response returns `{ queued: true, position, retryAfterMs }`.
+`concurrency_limit_reached` throws: active, connecting and starting sessions all count toward
+the workspace limit. End a session or wait for pending starts to clear, then retry.
+Avoid duplicate parallel starts. The HTTP error retains safe counts at `.concurrency` and
+the correlation ID at `.requestId`; the proxy and browser client preserve the refusal.
 Showing an error there is the most common bad first impression.
 
 ---

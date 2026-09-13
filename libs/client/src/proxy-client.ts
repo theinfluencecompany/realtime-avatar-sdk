@@ -102,8 +102,14 @@ export function createProxyClient(options: ProxyClientOptions): AvatarSessionCli
       // A busy pool is a queue, not a failure. Passing it back as a VALUE is what lets a page
       // render a position instead of an error screen.
       if (response.status === 429) {
-        const busy = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-        return { status: "busy", busy: busy as never };
+        const value: unknown = await response.clone().json().catch(() => null);
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          const busy = value as Record<string, unknown>;
+          const valid = (n: unknown) => typeof n === "number" && Number.isFinite(n) && n >= 0;
+          const queue = (busy.queued === true && valid(busy.size) && valid(busy.retryAfterMs)) ||
+            (valid(busy.queue_size) && valid(busy.recommended_retry_ms));
+          if (!("code" in busy) && queue) return { status: "busy", busy: busy as never };
+        }
       }
       if (!response.ok) {
         // Your route's refusal IS the answer the page has to act on: a 402 is the paywall, a 401

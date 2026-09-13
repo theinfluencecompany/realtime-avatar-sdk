@@ -116,6 +116,24 @@ export function createProxyHandler(config: ProxyConfig): (request: Request) => P
       // Verbatim. Reshaping this is what makes a client reject the whole payload.
       return json(call.raw);
     } catch (error) {
+      if (error instanceof RealtimeAvatarHttpError && error.status === 429) {
+        const concurrency = error.code === "concurrency_limit_reached";
+        const counts = error.concurrency;
+        const message = concurrency
+          ? counts?.maxConcurrentSessions !== undefined && counts.activeSessions !== undefined &&
+            counts.connectingSessions !== undefined && counts.pendingSessions !== undefined
+            ? `Session limit reached (${counts.maxConcurrentSessions} allowed): ${counts.activeSessions} active, ${counts.connectingSessions} connecting, ${counts.pendingSessions} starting. End a session or wait for pending starts to clear, then retry.`
+            : "The concurrent session limit is reached. Active and starting sessions count. End a session or wait for pending starts to clear, then retry."
+          : "Too many requests. Wait before retrying.";
+        const response = json({
+          error: message, code: concurrency ? "concurrency_limit_reached" : "rate_limited",
+          status: 429, retryable: true,
+          ...(concurrency ? counts : {}),
+          ...(error.requestId ? { requestId: error.requestId } : {}),
+        }, 429);
+        if (error.requestId) response.headers.set("X-Request-ID", error.requestId);
+        return response;
+      }
       if (error instanceof RealtimeAvatarHttpError && error.isBilling) {
         return json({ code: error.code ?? "insufficient_credits" }, 402);
       }

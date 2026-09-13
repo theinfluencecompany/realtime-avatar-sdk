@@ -8,6 +8,7 @@ export type RealtimeAvatarErrorCode =
   | "not_found"
   | "conflict"
   | "rate_limited"
+  | "concurrency_limit_reached"
   | "service_unavailable"
   | "request_failed"
   | "network_error";
@@ -156,6 +157,14 @@ export function normalizeRealtimeAvatarError(input: {
   }
   if (status === 409) {
     return { code: "conflict", message: "That request is already in progress. Try again in a moment.", retryable: true };
+  }
+  if (status === 429 && rawCode === "concurrency_limit_reached") {
+    return {
+      code: rawCode,
+      message: userSafeMessage(rawMessage) ??
+        "The concurrent session limit is reached. Active and starting sessions count. End a session or wait for pending starts to clear, then retry.",
+      retryable: true,
+    };
   }
   if (status === 429) {
     return { code: "rate_limited", message: "Too many realtime requests. Please slow down and retry.", retryable: true };

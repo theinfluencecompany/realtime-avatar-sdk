@@ -79,9 +79,31 @@ test("a non-JSON refusal still carries its status", async () => {
   });
 });
 
-test("a 429 is still the busy VALUE, never a throw", async () => {
+test("a capacity queue 429 is still a busy value", async () => {
   const result = await mint(json(429, { queue_size: 3, queue_position: 2, recommended_retry_ms: 2000 }));
   assert.equal(result.status, "busy");
+});
+
+test("a concurrency refusal preserves its safe message, counts and request ID", async () => {
+  const requestId = "123e4567-e89b-42d3-a456-426614174000";
+  const error = "Session limit reached (3 allowed): 0 active, 1 connecting, 2 starting. End a session or wait for pending starts to clear, then retry.";
+  await assert.rejects(mint(json(429, { error, code: "concurrency_limit_reached", requestId,
+    activeSessions: 0, connectingSessions: 1, pendingSessions: 2 })), (failure: unknown) => {
+    assert.ok(failure instanceof RealtimeAvatarApiError);
+    assert.equal(failure.code, "concurrency_limit_reached");
+    assert.equal(failure.message, error);
+    assert.equal((failure.body as Record<string, unknown>).requestId, requestId);
+    assert.equal((failure.body as Record<string, unknown>).pendingSessions, 2);
+    return true;
+  });
+});
+
+test("proxy queues still work while throttles and coded refusals are errors", async () => {
+  assert.equal((await mint(json(429, { queued: true, size: 3, retryAfterMs: 3000, position: null }))).status, "busy");
+  for (const body of [
+    { error: "Rate limit" }, { queued: true }, null,
+    { code: "concurrency_limit_reached", queue_size: 4, recommended_retry_ms: 3000 },
+  ]) await assert.rejects(mint(json(429, body)), RealtimeAvatarApiError);
 });
 
 test("a 200 is still the grant, relayed byte for byte", async () => {

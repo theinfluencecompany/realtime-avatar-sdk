@@ -216,8 +216,13 @@ original result instead of billing you twice. Two extra attempts by default:
 new RealtimeAvatar({ apiKey, maxRetries: 0, userAgent: "acme-web/2.1" });
 ```
 
-`429` is deliberately **not** retried. On a call it is the queue, not a rate limit — retrying
-would burn the backoff and hand you the same queued answer, having destroyed `isQueued()`.
+`429` is deliberately **not** retried. A capacity queue returns `isQueued()`. A concurrency
+refusal or rate limit throws `RealtimeAvatarHttpError`; never show it as a queue position.
+For `concurrency_limit_reached`, active, connecting and starting sessions all occupy slots.
+End a session or wait for pending starts to clear before retrying; avoid duplicate parallel
+starts. The error retains safe counts at `.concurrency` and a correlation ID at `.requestId`.
+The proxy relays these safely, and the browser client throws a structured error with the
+same code and response body. Display the message and retain the request ID for support.
 
 What that is worth, measured against an upstream that fails the way that hurts — it starts the
 session, *then* loses the response, so the call has already been charged for:
@@ -597,7 +602,7 @@ try {
 | 403 | Key lacks the scope | Mint a key with it; do not widen to `*` |
 | 409 | `expectedRevision` is behind — someone else declared the clip library first | Re-read `listClips`, re-decide, re-declare |
 | 422 | Schema rejection | An unknown or mis-cased field — the wire is strict |
-| 429 | Capacity full **or** rate limited | For a call, that is the queue: retry. Not auto-retried |
+| 429 | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Release/wait for occupied slots or back off. Not auto-retried |
 | 503 | Transient upstream | Retried for you, up to `maxRetries` |
 
 ---

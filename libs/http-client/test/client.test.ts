@@ -679,11 +679,39 @@ test("a transient 503 is retried, and the SAME idempotency key is replayed", asy
   assert.equal(new Set(attempts.map((a) => a.body)).size, 1);
 });
 
-test("429 is NOT retried — on a call it is the queue, not a rate limit", async () => {
-  const { attempts, fetchImpl } = scripted([{ status: 429, body: { queue_position: 3 } }]);
+test("a capacity queue 429 is not automatically retried", async () => {
+  const { attempts, fetchImpl } = scripted([{ status: 429, body: { queue_position: 3, queue_size: 5, recommended_retry_ms: 3000 } }]);
   const call = await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).startCall({ avatarId: "a" });
   assert.equal(attempts.length, 1, "retrying would burn the backoff and still return queued");
   assert.ok(isQueued(call) && call.position === 3);
+});
+
+test("concurrency refusals preserve counts and correlation instead of becoming queues", async () => {
+  const requestId = "123e4567-e89b-42d3-a456-426614174000";
+  const body = { error: "Concurrent session limit reached.", code: "concurrency_limit_reached",
+    maxConcurrentSessions: 3, liveSessions: 3, activeSessions: 0, connectingSessions: 1, pendingSessions: 2,
+    private_detail: "x".repeat(500), requestId };
+  const { attempts, fetchImpl } = scripted([{ status: 429, body }]);
+  await assert.rejects(new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).startCall({ avatarId: "a" }), (error: unknown) => {
+    assert.ok(error instanceof RealtimeAvatarHttpError);
+    assert.equal(error.code, "concurrency_limit_reached");
+    assert.equal(error.requestId, requestId, "correlation survives the bounded body preview");
+    assert.deepEqual(error.concurrency, { maxConcurrentSessions: 3, liveSessions: 3, activeSessions: 0, connectingSessions: 1, pendingSessions: 2 });
+    assert.ok(error.body.length <= 400);
+    return true;
+  });
+  assert.equal(attempts.length, 1);
+});
+
+test("a coded refusal wins over queue-looking fields and malformed 429s are not queues", async () => {
+  for (const body of [
+    { code: "concurrency_limit_reached", queue_size: 4, recommended_retry_ms: 3000 },
+    { error: "Too many requests" }, null, [],
+    { queue_size: -1, recommended_retry_ms: 3000 },
+  ]) {
+    const { fetchImpl } = stub({ status: 429, body });
+    await assert.rejects(new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).startCall({ avatarId: "a" }), RealtimeAvatarHttpError);
+  }
 });
 
 test("a 4xx is final — retrying a rejected schema just wastes time", async () => {
