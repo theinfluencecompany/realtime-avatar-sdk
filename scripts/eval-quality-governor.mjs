@@ -27,12 +27,16 @@ const room = {
   off(event, fn) { listeners.get(event)?.delete(fn); },
   emit(event, ...args) { for (const fn of listeners.get(event) ?? []) fn(...args); },
 };
-let history = [], frozen = 0, pending = null, release = null;
+let history = [], frozen = 0, pending = null, release = null, statsReads = 0;
 const participant = {sid:'avatar', connectionQuality:ConnectionQuality.Excellent};
 function publication(id) {return {
   id, trackInfo:{layers:[{quality:0},{quality:2}]},
-  setVideoQuality(quality) {history.push({at:Date.now(),id,quality});},
+  setVideoQuality(quality) {
+    if (options.qualityThrows) throw new Error('detached publication');
+    history.push({at:Date.now(),id,quality});
+  },
   track:{async getRTCStatsReport() {
+    statsReads++;
     if (pending) {const p=pending;pending=null;await p;}
     return new Map([['video',{type:'inbound-rtp',totalFreezesDuration:frozen/1000}]]);
   }},
@@ -52,14 +56,17 @@ window.render = (next={}) => {
   if ('inhibited' in next) inhibited=next.inhibited;
   if ('frozen' in next) frozen=next.frozen;
   if (next.replace) pub=publication(next.replace);
+  if (next.replaceTrack) pub.track=publication('replacement-track').track;
   // Recreate the wrapper and callbacks, as ordinary context/transcript renders do.
   window.binding.videoTrack=next.noTrack ? undefined : {publication:pub,participant};
+  window.binding.room=next.noRoom ? undefined : room;
   flushSync(()=>root.render(<App/>));
 };
 window.pause = (other=false) => room.emit(RoomEvent.TrackStreamStateChanged,other ? publication('other') : pub,Track.StreamState.Paused);
 window.holdStats = () => {pending=new Promise(r=>{release=r;});};
 window.releaseStats = () => release?.();
 window.result = () => ({history,listeners:[...listeners.values()].reduce((n,s)=>n+s.size,0)});
+window.statsReads = () => statsReads;
 window.stop = () => flushSync(()=>root.unmount());
 `;
 const bundled = await build({stdin:{contents:entry,resolveDir:root,loader:"tsx"},bundle:true,write:false,
@@ -147,12 +154,76 @@ try {
   assert.equal((await read()).listeners,0,"unmount removes listeners");
 
   await start({enabled:false});await advance(6000);
-  assert.deepEqual(await read(),{history:[],listeners:0});
+  const disabled=await record("disabled requests HIGH once without listeners or stats");
+  assert.deepEqual(disabled.history.map(v=>v.quality),baseline?[]:[2]);
+  assert.equal(disabled.listeners,0);
+  assert.equal(await page.evaluate(()=>window.statsReads()),0);
   await start({noTrack:true});await advance(6000);
-  if (!baseline) assert.deepEqual(await read(),{history:[],listeners:0});
+  const missing=await record("missing track does not actuate");
+  if (!baseline) assert.deepEqual(missing.history,[]);
+
+  if (!baseline) {
+    await start({enabled:false,freeze:500});
+    for(let i=0;i<24;i++){await advance(250);await render({});}
+    await page.evaluate(()=>window.pause());await advance(1000);
+    const steady=await record("disabled ignores freezes and pause without reasserting on renders");
+    assert.deepEqual(steady.history.map(v=>v.quality),[2]);
+    assert.equal(steady.listeners,0);
+    assert.equal(await page.evaluate(()=>window.statsReads()),0);
+
+    await start({config:{openingCap:"high"}});
+    await page.evaluate(()=>window.pause());await advance(1000);
+    await render({enabled:false});
+    const released=await record("disabling releases an already applied LOW cap");
+    assert.deepEqual(released.history.map(v=>v.quality),[2,0,2]);
+    assert.equal(released.listeners,0);
+    const reads=await page.evaluate(()=>window.statsReads());
+    await advance(5000);
+    assert.equal(await page.evaluate(()=>window.statsReads()),reads);
+
+    await start({config:{openingCap:"high"}});
+    await page.evaluate(()=>window.holdStats());await render({freeze:200});await advance(1000);
+    await render({enabled:false});await page.evaluate(()=>window.releaseStats());await advance(2000);
+    const stale=await record("disabling fences an in-flight downgrade");
+    assert.deepEqual(stale.history.map(v=>v.quality),[2,2]);
+    assert.equal(stale.listeners,0);
+
+    await start({enabled:false});
+    await render({replace:"second"});
+    await render({replaceTrack:true});
+    const replaced=await record("disabled reasserts HIGH on publication and track replacement");
+    assert.deepEqual(replaced.history.map(({id,quality})=>({id,quality})),
+      [{id:"first",quality:2},{id:"second",quality:2},{id:"second",quality:2}]);
+    assert.equal(replaced.listeners,0);
+
+    await start({enabled:false,noTrack:true});await advance(1000);
+    assert.deepEqual((await read()).history,[]);
+    await render({noTrack:false});
+    assert.deepEqual((await record("disabled waits for a subscription")).history.map(v=>v.quality),[2]);
+
+    await start({enabled:false,noRoom:true});await advance(1000);
+    assert.deepEqual((await read()).history,[]);
+    await render({noRoom:false});
+    assert.deepEqual((await record("disabled waits for the room")).history.map(v=>v.quality),[2]);
+
+    await start({enabled:false});
+    await render({enabled:true,config:{openingCap:"low"}});
+    const resumed=await record("re-enabling restores the configured governor");
+    assert.deepEqual(resumed.history.map(v=>v.quality),[2,0]);
+    assert.equal(resumed.listeners,2);
+    await advance(5000);
+    assert.deepEqual((await read()).history.map(v=>v.quality),[2,0,2]);
+    await page.evaluate(()=>window.stop());
+    assert.equal((await read()).listeners,0);
+
+    await start({enabled:false,qualityThrows:true});await advance(1000);
+    const detached=await record("detached publication cannot throw into the call");
+    assert.deepEqual(detached.history,[]);
+    assert.equal(detached.listeners,0);
+  }
 
   assert.deepEqual(errors,[],"the hook must not throw into the call");
-  const report={arm:baseline?"baseline":"candidate",checks:10,results};
+  const report={arm:baseline?"baseline":"candidate",checks:results.length,results};
   if(reportDir){await mkdir(reportDir,{recursive:true});await writeFile(resolve(reportDir,`hook-${report.arm}.json`),JSON.stringify(report,null,2));}
   console.log(JSON.stringify(report,null,2));
 } finally {await browser?.close();await new Promise(r=>server.close(r));}
