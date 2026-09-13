@@ -3225,6 +3225,36 @@
           "billingUrl": {
             "description": "Present on 402 — where to send the user to top up.",
             "type": "string"
+          },
+          "maxConcurrentSessions": {
+            "description": "On concurrency_limit_reached: the workspace's concurrent session limit.",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "liveSessions": {
+            "description": "Legacy concurrency count: occupied reservations, including active, connecting and starting sessions. Not the number of active conversations.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "activeSessions": {
+            "description": "On concurrency_limit_reached: counted reservations with started media, observed at refusal.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "connectingSessions": {
+            "description": "On concurrency_limit_reached: counted reservations with an attached session that has not started media.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pendingSessions": {
+            "description": "On concurrency_limit_reached: counted in-flight starts with no attached session yet.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -3343,7 +3373,7 @@
             }
           },
           "429": {
-            "description": "Either the plan's concurrent-stream ceiling was reached — an Error with code \"concurrency_limit_reached\" and details.maxConcurrentSessions, which no queue will drain — or no GPU slot is free, which is the queue contract. Switch on the presence of `code`.",
+            "description": "Either the workspace session limit was reached (code \"concurrency_limit_reached\", top-level maxConcurrentSessions, liveSessions, activeSessions, connectingSessions, pendingSessions), or GPU capacity is full (the queue contract). Starting and connecting sessions count toward the workspace limit. End a session or wait for pending starts to clear before retrying; avoid parallel duplicate starts. This refusal is not a queue position. Retain requestId for support.",
             "content": {
               "application/json": {
                 "schema": {

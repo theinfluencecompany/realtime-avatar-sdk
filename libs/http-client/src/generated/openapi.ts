@@ -969,6 +969,16 @@ export interface components {
             grantedScopes?: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "usage:write")[];
             /** @description Present on 402 — where to send the user to top up. */
             billingUrl?: string;
+            /** @description On concurrency_limit_reached: the workspace's concurrent session limit. */
+            maxConcurrentSessions?: number;
+            /** @description Legacy concurrency count: occupied reservations, including active, connecting and starting sessions. Not the number of active conversations. */
+            liveSessions?: number;
+            /** @description On concurrency_limit_reached: counted reservations with started media, observed at refusal. */
+            activeSessions?: number;
+            /** @description On concurrency_limit_reached: counted reservations with an attached session that has not started media. */
+            connectingSessions?: number;
+            /** @description On concurrency_limit_reached: counted in-flight starts with no attached session yet. */
+            pendingSessions?: number;
         } & {
             [key: string]: unknown;
         };
@@ -1068,7 +1078,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Either the plan's concurrent-stream ceiling was reached — an Error with code "concurrency_limit_reached" and details.maxConcurrentSessions, which no queue will drain — or no GPU slot is free, which is the queue contract. Switch on the presence of `code`. */
+            /** @description Either the workspace session limit was reached (code "concurrency_limit_reached", top-level maxConcurrentSessions, liveSessions, activeSessions, connectingSessions, pendingSessions), or GPU capacity is full (the queue contract). Starting and connecting sessions count toward the workspace limit. End a session or wait for pending starts to clear before retrying; avoid parallel duplicate starts. This refusal is not a queue position. Retain requestId for support. */
             429: {
                 headers: {
                     [name: string]: unknown;
