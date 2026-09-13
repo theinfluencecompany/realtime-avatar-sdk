@@ -36,10 +36,12 @@ import {
   type GovernorConfig,
   type GovernorSignal,
   type JitterBufferTrendState,
+  type NativeFreezeSample,
   initGovernor,
   resolveLowCapQuality,
   step,
   stepJitterBufferTrend,
+  stepNativeFreezeCounter,
 } from "./quality-governor";
 
 /** The player's freeze verdict for the trailing window, in milliseconds. The app
@@ -117,7 +119,8 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     // Binding-local state also fences an old asynchronous getStats read from the
     // replacement track's counters after a reconnect.
     let pausedSinceTick = false;
-    let lastFreezeStat: { frozen: number; ts: number } | null = null;
+    let lastFreezeStat: number | null = null;
+    let lastNativeFreezeStat: NativeFreezeSample | null = null;
     let jitterTrend: JitterBufferTrendState | null = null;
     let connQuality = qualityToSignal(
       targetParticipant?.connectionQuality ?? ConnectionQuality.Unknown,
@@ -153,6 +156,7 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
 
     const readGetStatsSignals = async (): Promise<{
       freezeMs: number;
+      nativeFreezeMs: number | undefined;
       jitterRising: boolean;
     }> => {
       // inbound-rtp freezeCount/totalFreezesDuration delta (Chrome). Best-effort; any
@@ -160,18 +164,41 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
       try {
         const track = targetPublication?.track;
         const stats = await track?.getRTCStatsReport?.();
-        if (!stats) return { freezeMs: 0, jitterRising: false };
+        if (!stats) {
+          lastNativeFreezeStat = null;
+          return { freezeMs: 0, nativeFreezeMs: undefined, jitterRising: false };
+        }
+        let freezeSample: NativeFreezeSample | null = null;
+        let freezeReports = 0;
         let frozenTotalMs = 0;
         let jitterDelaySeconds = 0;
         let jitterEmittedCount = 0;
         stats.forEach((r: {
           type?: string;
+          id?: string;
+          timestamp?: number;
+          kind?: string;
+          mediaType?: string;
           totalFreezesDuration?: number;
           jitterBufferDelay?: number;
           jitterBufferEmittedCount?: number;
         }) => {
+          // Preserve the existing downgrade feed even when report identity/freshness
+          // cannot corroborate the separate, recovery-only zero-freeze allowance.
           if (r.type === "inbound-rtp" && typeof r.totalFreezesDuration === "number") {
-            frozenTotalMs = r.totalFreezesDuration * 1000; // seconds → ms
+            frozenTotalMs = r.totalFreezesDuration * 1000;
+          }
+          if (
+            r.type === "inbound-rtp" &&
+            (r.kind ?? r.mediaType ?? "video") === "video" &&
+            typeof r.totalFreezesDuration === "number"
+          ) {
+            freezeReports++;
+            freezeSample = {
+              id: r.id ?? "",
+              timestampMs: r.timestamp ?? NaN,
+              totalMs: r.totalFreezesDuration * 1000,
+            };
           }
           if (
             r.type === "inbound-rtp" &&
@@ -182,20 +209,25 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
             jitterEmittedCount += r.jitterBufferEmittedCount;
           }
         });
-        const now = Date.now();
-        const prev = lastFreezeStat;
-        lastFreezeStat = { frozen: frozenTotalMs, ts: now };
+        const previousFreezeStat = lastFreezeStat;
+        lastFreezeStat = frozenTotalMs;
+        const nativeFreeze = stepNativeFreezeCounter(
+          lastNativeFreezeStat, freezeReports === 1 ? freezeSample : null,
+        );
+        lastNativeFreezeStat = nativeFreeze.state;
         const trend = stepJitterBufferTrend(jitterTrend, {
           delaySeconds: jitterDelaySeconds,
           emittedCount: jitterEmittedCount,
         });
         jitterTrend = trend.state;
         return {
-          freezeMs: prev ? Math.max(0, frozenTotalMs - prev.frozen) : 0,
+          freezeMs: previousFreezeStat === null ? 0 : Math.max(0, frozenTotalMs - previousFreezeStat),
+          nativeFreezeMs: nativeFreeze.freezeMs,
           jitterRising: trend.rising,
         };
       } catch {
-        return { freezeMs: 0, jitterRising: false };
+        lastNativeFreezeStat = null;
+        return { freezeMs: 0, nativeFreezeMs: undefined, jitterRising: false };
       }
     };
 
@@ -234,6 +266,7 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
         const signal: GovernorSignal = {
           paused: pausedSinceTick,
           freezeMsInWindow: Math.max(rvfc.freezeMsInWindow, statsSignals.freezeMs),
+          nativeFreezeMsInWindow: statsSignals.nativeFreezeMs,
           jitterRising: statsSignals.jitterRising,
           connectionQuality: connQuality,
           inhibited: rvfc.inhibited,

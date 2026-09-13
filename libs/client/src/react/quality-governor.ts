@@ -42,6 +42,9 @@ export interface GovernorSignal {
   /** Frozen milliseconds observed in the trailing freeze window W (max of inbound-rtp
    *  delta and the rVFC-derived gap — Safari coverage). */
   freezeMsInWindow: number;
+  /** Confirmed inbound-rtp freeze delta. Undefined when native counters are unavailable,
+   *  stale, reset, or have no baseline; absence is NOT evidence of zero freezes. */
+  nativeFreezeMsInWindow?: number;
   /** jitterBufferDelay is trending up — the earliest LEADING pre-freeze sign. */
   jitterRising: boolean;
   /** LiveKit ConnectionQuality — a LAGGING corroborator only (jitter/RTT are disabled
@@ -131,6 +134,34 @@ export const DEFAULT_GOVERNOR_CONFIG: GovernorConfig = {
 
 /** Minimum interval-average jitter-buffer increase treated as a real trend. */
 export const JITTER_BUFFER_RISE_THRESHOLD_MS = 25;
+
+/** Recovery-only allowance for residual rVFC timing noise, with native corroboration. */
+export const RECOVERY_FREEZE_NOISE_MS = 25;
+
+export type NativeFreezeSample = {
+  id: string;
+  timestampMs: number;
+  totalMs: number;
+};
+
+/** Only two fresh, monotonic samples from the same RTP report can confirm zero. */
+export function stepNativeFreezeCounter(
+  previous: NativeFreezeSample | null,
+  current: NativeFreezeSample | null,
+): { state: NativeFreezeSample | null; freezeMs: number | undefined } {
+  if (
+    !current || !current.id ||
+    !Number.isFinite(current.timestampMs) || current.timestampMs < 0 ||
+    !Number.isFinite(current.totalMs) || current.totalMs < 0
+  ) {
+    return { state: null, freezeMs: undefined };
+  }
+  const comparable = previous !== null &&
+    current.id === previous.id &&
+    current.timestampMs > previous.timestampMs &&
+    current.totalMs >= previous.totalMs;
+  return { state: current, freezeMs: comparable ? current.totalMs - previous.totalMs : undefined };
+}
 
 export type JitterBufferTotals = {
   delaySeconds: number;
@@ -235,6 +266,16 @@ const isHealthy = (s: GovernorSignal): boolean =>
   s.connectionQuality !== "poor" &&
   s.connectionQuality !== "lost";
 
+const isRecoveryHealthy = (s: GovernorSignal): boolean =>
+  isHealthy(s) ||
+  (s.nativeFreezeMsInWindow === 0 &&
+    s.freezeMsInWindow > 0 &&
+    s.freezeMsInWindow <= RECOVERY_FREEZE_NOISE_MS &&
+    !s.paused &&
+    !s.jitterRising &&
+    s.connectionQuality !== "poor" &&
+    s.connectionQuality !== "lost");
+
 /** The exponential dwell for the current failure count, capped. */
 const dwellMs = (failures: number, cfg: GovernorConfig): number =>
   Math.min(cfg.dwellBaseMs * 2 ** failures, cfg.dwellMaxMs);
@@ -311,7 +352,7 @@ export const step = (
     case "opening": {
       // Session start: low cap, but only the SHORT dwell. There is no failure to back
       // off from yet, and every ms here is the small rung on a link that may be fine.
-      if (nowMs - g.enteredAtMs >= cfg.openingDwellMs && isHealthy(s)) {
+      if (nowMs - g.enteredAtMs >= cfg.openingDwellMs && isRecoveryHealthy(s)) {
         return { governor: { ...enter(g, "cap_low_eligible", "low", nowMs), healthySinceMs: nowMs } };
       }
       return { governor: g };
@@ -320,7 +361,7 @@ export const step = (
     case "cap_low_sticky": {
       // Reset the failure count if the link has been genuinely healthy for a long
       // window (network changed / improved) — prevents permanent low-pinning.
-      const healthy = isHealthy(s);
+      const healthy = isRecoveryHealthy(s);
       const healthySince = healthy ? (g.healthySinceMs ?? nowMs) : null;
       const resetFailures =
         healthy && healthySince !== null && nowMs - healthySince >= cfg.healthyResetMs;
@@ -350,12 +391,12 @@ export const step = (
     case "cap_low_eligible": {
       // Raise the cap only after a continuously-healthy clean window. A single
       // unhealthy tick restarts the clean accumulation. poor/lost block via
-      // isHealthy; "unknown" deliberately does NOT — LiveKit's quality score is a
+      // isRecoveryHealthy; "unknown" deliberately does NOT — LiveKit's quality score is a
       // lagging corroborator this file already refuses to trust as a sole trigger,
       // and on many prod sessions the event simply never fires, so treating a
       // MISSING reading as a block pinned those calls to the small rung for the
       // whole 30s connect window (measured: part of the 56% never-upgraded cohort).
-      if (!isHealthy(s)) {
+      if (!isRecoveryHealthy(s)) {
         return { governor: { ...g, healthySinceMs: null, lowUnhealthy: g.lowUnhealthy + 1 } };
       }
       const cleanSince = g.healthySinceMs ?? nowMs;
