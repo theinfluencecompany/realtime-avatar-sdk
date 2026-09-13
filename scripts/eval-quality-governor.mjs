@@ -27,17 +27,23 @@ const room = {
   off(event, fn) { listeners.get(event)?.delete(fn); },
   emit(event, ...args) { for (const fn of listeners.get(event) ?? []) fn(...args); },
 };
-let history = [], frozen = 0, pending = null, release = null, statsReads = 0;
+let history = [], notices = [], frozen = 0, pending = null, release = null, statsReads = 0;
 const participant = {sid:'avatar', connectionQuality:ConnectionQuality.Excellent};
-function publication(id) {return {
+function publication(id) {let frames=0, received=0, lost=0; return {
   id, trackInfo:{layers:[{quality:0},{quality:2}]},
   setVideoQuality(quality) {
     if (options.qualityThrows) throw new Error('detached publication');
     history.push({at:Date.now(),id,quality});
   },
-  track:{async getRTCStatsReport() {
+  track:{streamState:Track.StreamState.Active, async getRTCStatsReport() {
     statsReads++;
     if (pending) {const p=pending;pending=null;await p;}
+    if (options.statsThrows) throw new Error('stats unavailable');
+    if (options.enabled === 'network-only') {
+      frames+=options.weak ? 0 : 25; received+=options.weak ? 92 : 100; lost+=options.weak ? 8 : 0;
+      return new Map([['video',{id,ssrc:1,type:'inbound-rtp',kind:'video',timestamp:performance.now(),
+        framesDecoded:frames,packetsReceived:received,packetsLost:lost,jitter:0.01}]]);
+    }
     return new Map([['video',{type:'inbound-rtp',totalFreezesDuration:frozen/1000}]]);
   }},
 };}
@@ -46,6 +52,7 @@ window.binding = {room, videoTrack:{publication:pub,participant}};
 let root = createRoot(document.getElementById('app'));
 function App() {
   useAvatarQualityGovernor({enabled:options.enabled ?? true,
+    onNetworkStatusChange:status=>notices.push({at:Date.now(),status}),
     config:{...DEFAULT_GOVERNOR_CONFIG,...options.config},
     freezeReading:() => ({freezeMsInWindow:freeze,inhibited})});
   return null;
@@ -65,7 +72,7 @@ window.render = (next={}) => {
 window.pause = (other=false) => room.emit(RoomEvent.TrackStreamStateChanged,other ? publication('other') : pub,Track.StreamState.Paused);
 window.holdStats = () => {pending=new Promise(r=>{release=r;});};
 window.releaseStats = () => release?.();
-window.result = () => ({history,listeners:[...listeners.values()].reduce((n,s)=>n+s.size,0)});
+window.result = () => ({history,notices,listeners:[...listeners.values()].reduce((n,s)=>n+s.size,0)});
 window.statsReads = () => statsReads;
 window.stop = () => flushSync(()=>root.unmount());
 `;
@@ -222,6 +229,52 @@ try {
     assert.equal(detached.listeners,0);
   }
 
+  if (!baseline) {
+    await start({enabled:"network-only",freeze:700});
+    for(let i=0;i<24;i++){await advance(250);await render({});}
+    const healthyNetwork=await record("network-only ignores rendering jitter on healthy RTP");
+    assert.deepEqual(healthyNetwork.history.map(v=>v.quality),[2]);
+    assert.equal(healthyNetwork.listeners,0);
+    await render({weak:true});await advance(7000);
+    const weakNetwork=await record("network-only reduces and notifies without native freeze totals");
+    assert.deepEqual(weakNetwork.history.map(v=>v.quality),[2,0,0]);
+    assert.equal(weakNetwork.notices.at(-1).status,"poor");
+    await render({weak:false,freeze:4});await advance(7000);
+    const recoveredNetwork=await record("network-only recovers despite 4ms estimate residue");
+    assert.equal(recoveredNetwork.history.at(-1).quality,2);
+    await advance(5000);
+    assert.equal((await read()).notices.at(-1).status,"healthy");
+
+    await start({enabled:"network-only",weak:true});
+    await advance(4000); await page.evaluate(()=>window.holdStats());await advance(1000);
+    await render({replace:"second",weak:false});
+    await page.evaluate(()=>window.releaseStats());await advance(1000);
+    const networkRebind=await record("network-only fences replacement and clears old notice");
+    assert.equal(networkRebind.history.at(-1).id,"second");
+    assert.equal(networkRebind.history.at(-1).quality,2);
+
+    await start({enabled:"network-only",weak:true,inhibited:true});
+    await advance(10000);
+    const inhibitedNetwork=await record("network-only cannot downgrade or notify while inhibited");
+    assert.deepEqual(inhibitedNetwork.history.map(v=>v.quality),[2]);
+    assert.equal(inhibitedNetwork.notices.at(-1).status,"unknown");
+
+    await start({enabled:"network-only",weak:true,statsThrows:true});
+    await advance(10000);
+    const unsupportedNetwork=await record("network-only fails open on missing stats");
+    assert.deepEqual(unsupportedNetwork.history.map(v=>v.quality),[2]);
+
+    await start({enabled:"network-only",weak:true});
+    await advance(10000);
+    await render({enabled:false});
+    const networkOff=await record("network-only disable releases cap and clears notice");
+    assert.equal(networkOff.history.at(-1).quality,2);
+    assert.equal(networkOff.notices.at(-1).status,"unknown");
+    const readCount=await page.evaluate(()=>window.statsReads());
+    await advance(10000);
+    assert.equal(await page.evaluate(()=>window.statsReads()),readCount);
+    await page.evaluate(()=>window.stop());
+  }
   assert.deepEqual(errors,[],"the hook must not throw into the call");
   const report={arm:baseline?"baseline":"candidate",checks:results.length,results};
   if(reportDir){await mkdir(reportDir,{recursive:true});await writeFile(resolve(reportDir,`hook-${report.arm}.json`),JSON.stringify(report,null,2));}

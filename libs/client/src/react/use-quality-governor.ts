@@ -29,6 +29,8 @@ import {
   type RemoteTrackPublication,
 } from "livekit-client";
 import { useEffect, useMemo, useRef } from "react";
+import { bindNetworkQuality } from "./network-quality-binding";
+import type { NetworkQualityStatus } from "./network-quality";
 
 import {
   DEFAULT_GOVERNOR_CONFIG,
@@ -57,7 +59,9 @@ export type FreezeReadingFn = () => {
 export interface UseAvatarQualityGovernorInput {
   /** Master switch (product policy). Off releases the manual cap to HIGH on each
    * subscription, with no governor tick or congestion listeners. SFU adaptation stays on. */
-  enabled: boolean;
+  enabled: boolean | "network-only";
+  /** Sustained, receiver-evidenced impairment. Never inferred from rendering jitter alone. */
+  onNetworkStatusChange?: (status: NetworkQualityStatus) => void;
   /** The player's rVFC freeze reading getter (see FreezeReadingFn). Optional: without
    *  it the governor still reacts to Paused + getStats freezes, just without the
    *  cross-browser rVFC signal. */
@@ -90,7 +94,7 @@ const qualityToSignal = (q: ConnectionQuality): GovernorSignal["connectionQualit
  * useCallTelemetry). Mount it once inside the call body; it self-tears-down.
  */
 export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): void {
-  const { enabled, freezeReading, config: policy = DEFAULT_GOVERNOR_CONFIG, tickMs = 1000 } = input;
+  const { enabled, freezeReading, onNetworkStatusChange, config: policy = DEFAULT_GOVERNOR_CONFIG, tickMs = 1000 } = input;
   const room = useMaybeRoomContext();
   // The avatar's video publication rides the same voice-assistant participant the
   // rest of the SDK reads; reach its VIDEO track publication for setVideoQuality.
@@ -108,12 +112,22 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     dwellBaseMs, dwellMaxMs, cleanMs, probeMs, healthyResetMs]);
   const freezeReadingRef = useRef(freezeReading);
   freezeReadingRef.current = freezeReading;
+  const networkCallback = useRef(onNetworkStatusChange);
+  networkCallback.current = onNetworkStatusChange;
   const targetPublication = videoTrack?.publication as RemoteTrackPublication | undefined;
   const targetParticipant = videoTrack?.participant;
   const targetTrack = targetPublication?.track;
 
   useEffect(() => {
     if (!room || !targetPublication || !targetParticipant) return;
+    if (enabled === "network-only") {
+      return bindNetworkQuality(
+        targetPublication,
+        () => freezeReadingRef.current?.().inhibited ?? false,
+        (status) => networkCallback.current?.(status),
+        tickMs,
+      );
+    }
     if (!enabled) {
       // Stopping the timer alone leaves the publication's previous LOW cap in place.
       // HIGH releases that ceiling; the SFU still chooses an affordable layer.

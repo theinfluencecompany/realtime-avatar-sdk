@@ -133,6 +133,7 @@ export {
   type FreezeReadingFn,
   type UseAvatarQualityGovernorInput,
 } from "./use-quality-governor";
+export { NETWORK_QUALITY_POLICY, type NetworkQualityStatus } from "./network-quality";
 // Multi-clip choreography protocol pieces apps need to build clip libraries + narrow states.
 export {
   knownBehaviorStates,
