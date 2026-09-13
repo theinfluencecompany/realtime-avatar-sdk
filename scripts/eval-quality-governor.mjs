@@ -34,7 +34,11 @@ function publication(id) {return {
   setVideoQuality(quality) {history.push({at:Date.now(),id,quality});},
   track:{async getRTCStatsReport() {
     if (pending) {const p=pending;pending=null;await p;}
-    return new Map([['video',{type:'inbound-rtp',totalFreezesDuration:frozen/1000}]]);
+    if (options.stats === 'throw') throw new Error('stats unavailable');
+    if (options.stats === 'missing') return undefined;
+    return new Map([['video',{type:'inbound-rtp',id:options.stats === 'unidentified' ? undefined : options.statsId ?? 'video',
+      timestamp:options.statsTimestamp ?? Date.now(),kind:'video',
+      ...(options.stats === 'unsupported' ? {} : {totalFreezesDuration:frozen/1000})}]]);
   }},
 };}
 let pub = publication('first'), options = {}, freeze = 0, inhibited = false;
@@ -151,8 +155,49 @@ try {
   await start({noTrack:true});await advance(6000);
   if (!baseline) assert.deepEqual(await read(),{history:[],listeners:0});
 
+  if (!baseline) {
+    await start({freeze:4});
+    await advance(5000);
+    assert.deepEqual((await record("native zero permits recovery through 4ms residue")).history.map(v=>v.quality),[0,2]);
+
+    for (const stats of ["missing","unsupported","throw"]) {
+      await start({freeze:4,stats});
+      await advance(6000);
+      assert.deepEqual((await record(stats+" cannot confirm native zero")).history.map(v=>v.quality),[0]);
+      await render({stats:"available"});await advance(1000);
+      assert.deepEqual((await read()).history.map(v=>v.quality),[0],"first native sample is only a baseline");
+      await advance(4000);
+      assert.deepEqual((await read()).history.map(v=>v.quality),[0,2]);
+    }
+
+    await start({freeze:4,statsTimestamp:1000});
+    await advance(6000);
+    assert.deepEqual((await record("stale native samples cannot confirm zero")).history.map(v=>v.quality),[0]);
+
+    await start({freeze:4});await advance(4000);
+    await render({frozen:4});await advance(1000);
+    assert.deepEqual((await record("native freeze resets an almost-complete recovery")).history.map(v=>v.quality),[0]);
+    await advance(3000);
+    assert.deepEqual((await read()).history.map(v=>v.quality),[0]);
+    await advance(1000);
+    assert.deepEqual((await read()).history.map(v=>v.quality),[0,2]);
+
+    await start({freeze:4});await advance(4000);
+    await render({statsId:"replacement"});await advance(1000);
+    assert.deepEqual((await record("RTP report replacement resets recovery")).history.map(v=>v.quality),[0]);
+    await advance(4000);
+    assert.deepEqual((await read()).history.map(v=>v.quality),[0,2]);
+
+    for (const options of [{stats:"unidentified"},{statsTimestamp:1000}]) {
+      await start({...options,config:{openingCap:"high"}});
+      await advance(1000);
+      await render({frozen:200});await advance(1000);
+      assert.deepEqual((await record("native downgrade survives missing identity or stale timestamp")).history.map(v=>v.quality),[2,0]);
+    }
+  }
+
   assert.deepEqual(errors,[],"the hook must not throw into the call");
-  const report={arm:baseline?"baseline":"candidate",checks:10,results};
+  const report={arm:baseline?"baseline":"candidate",checks:baseline?10:19,results};
   if(reportDir){await mkdir(reportDir,{recursive:true});await writeFile(resolve(reportDir,`hook-${report.arm}.json`),JSON.stringify(report,null,2));}
   console.log(JSON.stringify(report,null,2));
 } finally {await browser?.close();await new Promise(r=>server.close(r));}
