@@ -63,6 +63,7 @@ window.render = (next={}) => {
   if ('inhibited' in next) inhibited=next.inhibited;
   if ('frozen' in next) frozen=next.frozen;
   if (next.replace) pub=publication(next.replace);
+  if (next.layers) pub.trackInfo={layers:next.layers.map(quality=>({quality}))};
   if (next.replaceTrack) pub.track=publication('replacement-track').track;
   // Recreate the wrapper and callbacks, as ordinary context/transcript renders do.
   window.binding.videoTrack=next.noTrack ? undefined : {publication:pub,participant};
@@ -230,14 +231,14 @@ try {
   }
 
   if (!baseline) {
-    await start({enabled:"network-only",freeze:700});
+    await start({enabled:"network-only",freeze:700,layers:[0,1,2]});
     for(let i=0;i<24;i++){await advance(250);await render({});}
     const healthyNetwork=await record("network-only ignores rendering jitter on healthy RTP");
     assert.deepEqual(healthyNetwork.history.map(v=>v.quality),[2]);
     assert.equal(healthyNetwork.listeners,0);
     await render({weak:true});await advance(7000);
     const weakNetwork=await record("network-only reduces and notifies without native freeze totals");
-    assert.deepEqual(weakNetwork.history.map(v=>v.quality),[2,0,0]);
+    assert.deepEqual(weakNetwork.history.map(v=>v.quality),[2,1,0]);
     assert.equal(weakNetwork.notices.at(-1).status,"poor");
     await render({weak:false,freeze:4});await advance(7000);
     const recoveredNetwork=await record("network-only recovers despite 4ms estimate residue");
