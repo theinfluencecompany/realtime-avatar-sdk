@@ -92,6 +92,8 @@ export type AvatarVideoSurfaceProps = {
    * Enable the subscriber-side fast-down/sticky-up quality governor. It starts on
    * the lower simulcast rung, reacts immediately to an SFU pause or decoded-frame
    * freeze, and only probes the full layer after a clean dwell. Default true.
+   * False releases the manual cap to HIGH on each subscription without running
+   * the governor. SFU bandwidth adaptation and live/idle fallback remain active.
    */
   adaptiveQuality?: boolean;
   /**
