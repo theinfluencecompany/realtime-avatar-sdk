@@ -33,6 +33,7 @@ import { useAvatarPlayoutDelay } from "./livekit";
 import { useAvatarAdaptivePlayoutDelay } from "./use-adaptive-playout";
 import { useAvatarQualityGovernor, type FreezeReadingFn } from "./use-quality-governor";
 import { DEFAULT_GOVERNOR_CONFIG, type QualityCap } from "./quality-governor";
+import type { NetworkQualityStatus } from "./network-quality";
 import { FrameRecovery, StallEscalation, firstFrameWaitFreezeMs } from "./frame-recovery";
 // The escalated hold is part of this surface's contract (see `frameStallMs`), so it is
 // re-exported from here beside DEFAULT_AVATAR_FRAME_STALL_MS.
@@ -95,7 +96,10 @@ export type AvatarVideoSurfaceProps = {
    * False releases the manual cap to HIGH on each subscription without running
    * the governor. SFU bandwidth adaptation and live/idle fallback remain active.
    */
-  adaptiveQuality?: boolean;
+  adaptiveQuality?: boolean | "network-only";
+  /** Opt-in "network-only" keeps HIGH unless sustained receiver/network impairment is
+   * observed. Status is unknown until enough fresh data exists; poor after 5s. */
+  onNetworkStatusChange?: (status: NetworkQualityStatus) => void;
   /**
    * Opening bet for the governor when `adaptiveQuality` is on. `"high"` opens on the
    * FULL simulcast layer under probation — sharp from frame 1, no LOW→HIGH layer-walk —
@@ -296,6 +300,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     // Keep the governor alive across presentation-intent changes; resetting it on
     // every turn would re-apply LOW and a normal short turn could never earn HIGH.
     enabled: adaptiveQuality,
+    onNetworkStatusChange: props.onNetworkStatusChange,
     freezeReading: frameFlow.freezeReading,
     config: governorConfig,
   });
