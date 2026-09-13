@@ -82,9 +82,9 @@ export interface GovernorConfig {
    *  penalty before any failure is not. */
   openingDwellMs: number; // 2_000
   /** Base minimum hold at low before an up-probe is considered (grows on failure). */
-  dwellBaseMs: number; // 8_000  (≈ Meet's <10s server-simulcast recovery)
+  dwellBaseMs: number; // 3_000  (was 8_000; see the sweep on DEFAULT_GOVERNOR_CONFIG)
   /** Cap on the exponential dwell backoff — never pin low permanently. */
-  dwellMaxMs: number; // 120_000
+  dwellMaxMs: number; // 12_000  (was 120_000, which let a flaky link sit soft for 2 min)
   /** Continuously-healthy window required before raising the cap. 3s: still well above
    *  the sub-second downgrade reaction (the asymmetry that prevents flap), but short
    *  enough that a clean link reaches the probe at ~5s from session start
@@ -102,8 +102,28 @@ export const DEFAULT_GOVERNOR_CONFIG: GovernorConfig = {
   downgradeFreezeMs: 150,
   probationFreezeMs: 100,
   openingDwellMs: 2_000,
-  dwellBaseMs: 8_000,
-  dwellMaxMs: 120_000,
+  // HOW LONG THE PICTURE STAYS SOFT AFTER A DEMOTE. Swept against this reducer, 300 s per
+  // run, five link profiles, scored as switches / percent of time on the top rung / worst
+  // single spell on the low cap:
+  //
+  //   profile                      8s x 2^n max 120s   flat 3s        3s x 2^n max 12s
+  //   a spurious blip, link fine    2 /  94% /  19s    2 /  98% / 6s   2 /  97% /  9s
+  //   ordinary jitter, /30s        20 /  61% /  19s   20 /  80% / 6s  20 /  79% /  9s
+  //   flaky, /10s                   9 /   7% / 123s   59 /  40% / 6s  31 /  25% / 15s
+  //   genuinely bad, 600ms /5s      9 /   4% / 123s   59 /  20% / 8s  31 /  11% / 18s
+  //
+  // Two things that table says. First, the old `dwellMaxMs` of 120 s was the real damage:
+  // a link that is merely flaky could sit soft for TWO MINUTES, which is far worse than
+  // the churn the backoff exists to prevent. Second, removing the backoff entirely (flat
+  // 3 s) buys the last few points of quality at 59 switches instead of 31, and a switch is
+  // a decoder reconfigure plus a keyframe wait, measured at about 1.3 s of dead air on a
+  // weak link. So the shape is kept and only the numbers move: start lower, cap far lower.
+  //
+  // This depends on not charging a layer switch to the link (see the size-change reset in
+  // avatar-video-surface). Probing more often is only safe once a failed probe cannot
+  // trigger the next demotion by itself.
+  dwellBaseMs: 3_000,
+  dwellMaxMs: 12_000,
   cleanMs: 3_000,
   probeMs: 10_000,
   healthyResetMs: 120_000,
@@ -160,8 +180,24 @@ export function stepJitterBufferTrend(
 export interface Governor {
   state: GovernorState;
   cap: QualityCap;
-  /** Consecutive failed up-probes — drives the exponential dwell backoff. */
+  /** Consecutive failed up-probes. Drives the exponential dwell backoff.
+   *
+   *  NOT a signal about the low rung. It counts attempts to reach HIGH that did not
+   *  survive, which says nothing about whether the rung below HIGH is holdable. Using it
+   *  to pick WHICH rung "low" means was a real regression: see `lowUnhealthy`. */
   failures: number;
+  /** Unhealthy ticks observed while ALREADY on the low cap.
+   *
+   *  This is the only honest evidence that the low rung itself is not affordable, and it
+   *  is what steps the cap down to the bottom of the ladder. It exists because `failures`
+   *  looked like it would do the job and does not: a starved OPENING reports the wait for
+   *  the first frame as a freeze (`firstFrameWaitFreezeMs`), so any session whose first
+   *  frame is slower than about a second fails its opening probation and lands on
+   *  `failures = 1` before the link has been asked to carry anything. Measured on prod,
+   *  first frames ran 2.4 s to 28 s, i.e. essentially every call. Keying the rung step on
+   *  `failures` therefore sent the FIRST demote straight to the bottom rung, including on
+   *  a call that recorded zero freezes. Reset whenever the cap returns to high. */
+  lowUnhealthy: number;
   /** Wall-clock ms the current state was entered (for dwell/clean/probe timing). */
   enteredAtMs: number;
   /** Wall-clock ms of the last healthy tick in the current low period (clean-window
@@ -176,6 +212,7 @@ export const initGovernor = (nowMs: number, openingCap: QualityCap = "low"): Gov
   state: openingCap === "high" ? "opening_high" : "opening",
   cap: openingCap,
   failures: 0,
+  lowUnhealthy: 0,
   enteredAtMs: nowMs,
   healthySinceMs: null,
 });
@@ -287,12 +324,15 @@ export const step = (
       const healthySince = healthy ? (g.healthySinceMs ?? nowMs) : null;
       const resetFailures =
         healthy && healthySince !== null && nowMs - healthySince >= cfg.healthyResetMs;
+      // Evidence about the LOW rung, gathered while sitting on it.
+      const lowUnhealthy = healthy ? g.lowUnhealthy : g.lowUnhealthy + 1;
       const dwellDone = nowMs - g.enteredAtMs >= dwellMs(g.failures, cfg);
       if (dwellDone && healthy) {
         return {
           governor: {
             ...enter(g, "cap_low_eligible", "low", nowMs),
             failures: resetFailures ? 0 : g.failures,
+            lowUnhealthy: resetFailures ? 0 : lowUnhealthy,
             healthySinceMs: nowMs,
           },
         };
@@ -302,6 +342,7 @@ export const step = (
           ...g,
           healthySinceMs: healthySince,
           failures: resetFailures ? 0 : g.failures,
+          lowUnhealthy: resetFailures ? 0 : lowUnhealthy,
         },
       };
     }
@@ -315,7 +356,7 @@ export const step = (
       // MISSING reading as a block pinned those calls to the small rung for the
       // whole 30s connect window (measured: part of the 56% never-upgraded cohort).
       if (!isHealthy(s)) {
-        return { governor: { ...g, healthySinceMs: null } };
+        return { governor: { ...g, healthySinceMs: null, lowUnhealthy: g.lowUnhealthy + 1 } };
       }
       const cleanSince = g.healthySinceMs ?? nowMs;
       if (nowMs - cleanSince >= cfg.cleanMs) {
@@ -331,7 +372,9 @@ export const step = (
     case "probing_up": {
       // Survived the probation window with no pause/freeze → commit to high.
       if (nowMs - g.enteredAtMs >= cfg.probeMs) {
-        return { governor: { ...enter(g, "cap_high_stable", "high", nowMs), failures: 0 } };
+        return {
+          governor: { ...enter(g, "cap_high_stable", "high", nowMs), failures: 0, lowUnhealthy: 0 },
+        };
       }
       return { governor: g };
     }
@@ -364,16 +407,20 @@ export const step = (
  * Unknown or single-layer ladder ⇒ MEDIUM (=1, the historical value; with one layer
  * no subscriber cap can bite anyway, so this only matters as a safe default).
  */
+/** Two unhealthy ticks on the low rung, not one. A single tick is the ordinary noise the
+ *  freeze floor already forgives elsewhere, and the bottom rung is a real quality cost. */
+export const LOW_CAP_STEP_AFTER_UNHEALTHY = 2;
+
 export const resolveLowCapQuality = (
   declaredLayerQualities: readonly number[],
-  failures = 0,
+  lowUnhealthy = 0,
 ): number => {
   const sorted = [...declaredLayerQualities].sort((a, b) => a - b);
   if (sorted.length < 2) return 1;
   // FIRST demote: one rung below the top. That is what this function has always
   // returned, and on a TWO-layer ladder it is the bottom rung, which is correct.
   //
-  // PAST THE FIRST FAILURE: the rung the client can actually afford. On a THREE-layer
+  // ONCE THE LOW RUNG HAS ITSELF FAILED: the rung the client can actually afford. On a THREE-layer
   // ladder `length - 2` is the MIDDLE rung, so the bottom was unreachable and a starving
   // client had no floor to fall to. The function never changed; the publisher did. A
   // publish long edge of 1024 crosses livekit's `>= 960` branch into three layers, and
@@ -385,5 +432,5 @@ export const resolveLowCapQuality = (
   //
   // On a two-layer ladder both branches return the same value, so the fleet default
   // (long edge 768, two layers) is byte-identical to before.
-  return failures >= 1 ? sorted[0] : sorted[sorted.length - 2];
+  return lowUnhealthy >= LOW_CAP_STEP_AFTER_UNHEALTHY ? sorted[0] : sorted[sorted.length - 2];
 };
