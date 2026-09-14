@@ -174,7 +174,8 @@
           "room_name": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Optional room label. RTA appends the session identity; use the returned grant's room name to connect. A new call never joins an existing session."
           },
           "source_kind": {
             "default": "source_video",

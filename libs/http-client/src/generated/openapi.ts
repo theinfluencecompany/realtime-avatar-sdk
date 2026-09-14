@@ -405,6 +405,7 @@ export interface components {
             participant_name?: string;
             character_name?: string;
             queue_ticket_id?: string;
+            /** @description Optional room label. RTA appends the session identity; use the returned grant's room name to connect. A new call never joins an existing session. */
             room_name?: string;
             /**
              * @description The realtime source. Creation is image-only — every avatar grows its own PLATFORM-GENERATED looping source video from the uploaded portrait — so this is always "source_video".
