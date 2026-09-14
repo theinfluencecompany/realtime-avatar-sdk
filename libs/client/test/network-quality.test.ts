@@ -53,7 +53,7 @@ describe("Network-only quality policy", () => {
     }
     assert.notEqual(f.state().status, "poor");
   });
-  it("smooths loss, then reduces after 2s bad, floors after 2s more without frames, warns after 5s bad", () => {
+  it("smooths loss, reduces after 2s bad, and warns after 5s more impairment following the downgrade", () => {
     const f = fixture(); f.warm();
     // First loss sample is diluted by the two preceding healthy samples.
     assert.equal(f.tick(weak).cap, "high");
@@ -62,6 +62,8 @@ describe("Network-only quality policy", () => {
     assert.equal(f.tick(weak).cap, "reduced");
     assert.equal(f.tick(weak).cap, "floor");
     assert.notEqual(f.state().status, "poor");
+    assert.notEqual(f.tick(weak).status, "poor");
+    assert.notEqual(f.tick(weak).status, "poor");
     assert.equal(f.tick(weak).status, "poor");
   });
   it("does not go to the floor when reduced video still makes progress", () => {
@@ -71,7 +73,7 @@ describe("Network-only quality policy", () => {
   });
   it("recovers after 5s of healthy receiving, clears notice after 10s, with no rVFC noise input", () => {
     const f = fixture(); f.warm();
-    for (let i = 0; i < 6; i++) f.tick(weak);
+    for (let i = 0; i < 8; i++) f.tick(weak);
     // One clean receive interval still has >=5% loss in its trailing packet window.
     assert.equal(f.tick().cleanMs, 0);
     for (let i = 0; i < 4; i++) assert.equal(f.tick().cap, "floor");
@@ -82,14 +84,14 @@ describe("Network-only quality policy", () => {
   });
   it("handles sustained SFU pause before native freeze totals advance", () => {
     const f = fixture(); f.warm();
-    for (let i = 0; i < 5; i++) f.tick({ frames: 0, received: 0, paused: true });
+    for (let i = 0; i < 7; i++) f.tick({ frames: 0, received: 0, paused: true });
     assert.equal(f.state().cap, "floor"); assert.equal(f.state().status, "poor");
   });
   it("uses jitter only with impaired decode and fresh packet evidence", () => {
     const f = fixture(); f.warm();
     for (let i = 0; i < 5; i++) f.tick({ frames: 0, received: 0, jitter: 1 });
     assert.equal(f.state().cap, "high");
-    for (let i = 0; i < 5; i++) f.tick({ frames: 3, received: 30, jitter: 0.1 });
+    for (let i = 0; i < 7; i++) f.tick({ frames: 3, received: 30, jitter: 0.1 });
     assert.equal(f.state().cap, "reduced"); assert.equal(f.state().status, "poor");
   });
   for (const interruption of [

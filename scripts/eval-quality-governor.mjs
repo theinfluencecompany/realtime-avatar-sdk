@@ -237,7 +237,11 @@ try {
     assert.deepEqual(healthyNetwork.history.map(v=>v.quality),[2]);
     assert.equal(healthyNetwork.listeners,0);
     await render({weak:true});await advance(7000);
-    const weakNetwork=await record("network-only reduces and notifies without native freeze totals");
+    const reducedNetwork=await record("network-only gives reduced quality five seconds before notifying");
+    assert.deepEqual(reducedNetwork.history.map(v=>v.quality),[2,1,0]);
+    assert.notEqual(reducedNetwork.notices.at(-1).status,"poor");
+    await advance(2000);
+    const weakNetwork=await record("network-only notifies after continued impairment on reduced quality");
     assert.deepEqual(weakNetwork.history.map(v=>v.quality),[2,1,0]);
     assert.equal(weakNetwork.notices.at(-1).status,"poor");
     await render({weak:false,freeze:4});await advance(7000);

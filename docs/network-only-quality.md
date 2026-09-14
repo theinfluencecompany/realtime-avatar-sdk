@@ -1,15 +1,15 @@
-# Network-Only Quality Canary
+# Network-Only Quality
 
 `AvatarVideoSurface adaptiveQuality="network-only"` is opt-in. Boolean modes keep
-their existing behavior (including #81's HIGH release when disabled). One adapter
+their existing behavior, with a HIGH release when disabled. One adapter
 owns the publication cap. SFU bandwidth adaptation, A/V playout and the live/idle
 fallback remain enabled and unchanged.
 
-## Candidate Thresholds
+## Thresholds
 
 `NETWORK_QUALITY_POLICY` is the implementation's source of truth:
 
-| Condition | Candidate value |
+| Condition | Value |
 | --- | --- |
 | Receiver subscription startup grace | 3 seconds |
 | Sampling | 1 second, discard gaps over 1.5 seconds |
@@ -18,7 +18,7 @@ fallback remain enabled and unchanged.
 | Alternative direct signal | Bound track currently SFU-paused, with fresh receiver statistics |
 | First cap reduction | Evidence and impact persist for 2 seconds |
 | Lowest declared layer | Another 2 seconds of network-evidenced zero decoded frames after reducing |
-| Poor-network callback | Evidence and impact persist for 5 seconds |
+| Poor-network callback | Evidence and impact persist for another 5 seconds after a cap reduction |
 | Release cap to HIGH | 5 seconds of healthy receiving/decoding |
 | Clear poor status | 10 seconds of healthy receiving/decoding |
 
@@ -40,16 +40,13 @@ their timer on replacement, mode changes and unmount.
 
 ## Verification Limits
 
-Controlled policy and browser-hook tests validate decisions, teardown and normal
-network invariance. Replaying the earlier candidate traces finds no cap reduction
-for normal/light-jitter calls; the weak trace requests reduced quality at +5.46s,
-emits poor at +8.44s and requests the floor at +10.44s relative to the observation
-start. It requests HIGH again at +26.44s. Recorded stats lacked RTC report timestamps
-and SFU stream-state samples: replay uses the recorded monotonic poll times and
-does not invent pause events.
+Version 0.13.0 publishes the network-only policy previously carried in a consumer
+patch, including the five-second delay after a downgrade before notifying. This
+allows consumers to remove their distribution patches without changing policy.
 
-This is **offline, open-loop replay**, not an after measurement: applying a cap
-would change subsequent RTP, so neither the freeze reduction nor the recovery
-timing is proven by replay. Keep the feature in canary until new paired calls
-measure actual freezes, first-frame time, genuine low-tier time, A/V delay,
-notification false positives and the voice handoff.
+Controlled policy and browser-hook tests validate decisions, notification timing,
+teardown and normal-network invariance. They do not establish end-to-end freeze
+reduction, startup improvement or absolute A/V alignment. Those measurements
+depend on the rendering service, SFU, receiver and actual network conditions.
+Consumers enabling this mode for the first time should evaluate paired calls and
+their app's voice handoff before rollout.

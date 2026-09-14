@@ -44,7 +44,7 @@ export function bindNetworkQuality(
       if (state.status !== prior.status) emit(state.status);
     } catch {
       // Break continuity on a failed read; missing data cannot buy recovery or a warning.
-      if (!disposed) state = { ...state, sample: null, packetWindow: [], badMs: 0, cleanMs: 0, reducedBadMs: 0 };
+      if (!disposed) state = { ...state, sample: null, packetWindow: [], badMs: 0, postDowngradeBadMs: 0, cleanMs: 0, reducedBadMs: 0 };
     } finally {
       running = false;
     }
