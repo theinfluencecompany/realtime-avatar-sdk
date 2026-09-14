@@ -8,24 +8,26 @@ import {
   type Governor,
   type GovernorSignal,
 } from "../src/react/quality-governor.ts";
+import {
+  AVATAR_FRAME_GAP_FREEZE_FLOOR_MS,
+  freezeMsFromFrameGap,
+} from "../src/react/frame-recovery.ts";
 import { readFileSync } from "node:fs";
 
-// `avatar-video-surface.ts` cannot be imported here: it reaches React and livekit through
-// extensionless specifiers that node's ESM resolver rejects. Its two relevant facts are
-// therefore READ FROM SOURCE, which is not a shortcut. It is the only way this test can
-// fail when someone edits that file, and the whole point is the RELATIONSHIP between a
-// constant declared there and one declared in the governor. Importing one and hard-coding
-// the other would let the pair drift apart silently, which is exactly the bug.
+// The floor and its converter now live in `frame-recovery.ts`, which has no DOM and no
+// React, so this test IMPORTS them instead of mirroring them out of source text. That is
+// strictly better than the regex mirror it replaces: the relationship this file exists to
+// pin — a constant in the surface's ledger against a bar in the governor — is now checked
+// against the real function rather than a copy of it that could drift.
+//
+// `avatar-video-surface.ts` still cannot be imported (it reaches React and livekit through
+// extensionless specifiers node's ESM resolver rejects), so the one fact that still lives
+// there — the decoded size the ledger is fed — is read from source below.
 const SURFACE_SRC = readFileSync(
   new URL("../src/react/avatar-video-surface.ts", import.meta.url),
   "utf8",
 );
-const FLOOR = Number(
-  /AVATAR_FRAME_GAP_FREEZE_FLOOR_MS\s*=\s*(\d+)/.exec(SURFACE_SRC)?.[1] ?? NaN,
-);
-/** Mirrors `freezeMsFromFrameGap`. The assertion below pins the mirror to the original. */
-const freezeMsFromFrameGap = (gapMs: number): number =>
-  !Number.isFinite(gapMs) || gapMs <= FLOOR ? 0 : gapMs - FLOOR;
+const FLOOR = AVATAR_FRAME_GAP_FREEZE_FLOOR_MS;
 
 /**
  * THE MARGIN BETWEEN "ORDINARY FRAME SPACING" AND "DEMOTE THIS STREAM".
@@ -54,16 +56,12 @@ const at = (
   state: Governor["state"], cap: Governor["cap"], failures = 0, enteredAtMs = 0, lowUnhealthy = 0,
 ): Governor => ({ state, cap, failures, enteredAtMs, healthySinceMs: null, lowUnhealthy });
 
-test("the mirrored converter still matches the shipped one", () => {
-  assert.ok(Number.isFinite(FLOOR), "could not read AVATAR_FRAME_GAP_FREEZE_FLOOR_MS from source");
-  // Pin BOTH halves of the shipped implementation: the forgiving comparison, and that what
-  // it returns past the floor is the WHOLE gap rather than the excess over it. If either
-  // changes, this mirror is wrong and every assertion below is worthless, so fail loudly.
-  assert.match(
-    SURFACE_SRC,
-    /gapMs\s*<=\s*AVATAR_FRAME_GAP_FREEZE_FLOOR_MS\)\s*return 0;\s*\n\s*return gapMs - AVATAR_FRAME_GAP_FREEZE_FLOOR_MS;/,
-    "freezeMsFromFrameGap changed shape; update the mirror in this test",
-  );
+test("the floor is declared exactly once, and the surface only feeds the ledger", () => {
+  assert.ok(Number.isFinite(FLOOR), "AVATAR_FRAME_GAP_FREEZE_FLOOR_MS must be a number");
+  // The relationship this file pins is between a constant in the ledger and a bar in the
+  // governor. A second declaration of the floor anywhere is how that pair drifts apart.
+  assert.doesNotMatch(SURFACE_SRC, /AVATAR_FRAME_GAP_FREEZE_FLOOR_MS\s*=/);
+  assert.match(SURFACE_SRC, /readFreezeFromSample\(/, "the surface reads the ledger, it does not score gaps");
 });
 
 test("the floor charges the EXCESS, so one millisecond past it costs one millisecond", () => {
@@ -192,12 +190,16 @@ test("sitting on the low rung while it keeps freezing DOES reach the bottom", ()
 // then twenty of a blurry one.
 // ---------------------------------------------------------------------------
 test("the gap across a decoded-size change is not charged as a freeze", () => {
-  const SRC = readFileSync(new URL("../src/react/avatar-video-surface.ts", import.meta.url), "utf8");
+  // The size is read off the <video> in the surface; the ledger transition that acts on it
+  // is the pure `nextFrameSample` in frame-recovery (DOM-free, so frame-sample-settle.test.ts
+  // can drive it directly). Both halves are pinned.
+  const SRC = readFileSync(new URL("../src/react/frame-recovery.ts", import.meta.url), "utf8");
   // The reset must be driven by a SIZE change, and must sit on the same branch as the
-  // bfcache resume, which is the same class of event: real, local, not the network.
-  assert.match(SRC, /const sizeKey = `\$\{video\?\.videoWidth \?\? 0\}x\$\{video\?\.videoHeight \?\? 0\}`/);
+  // bfcache resume and the opening settle, which are the same class of event: real, local,
+  // not the network.
+  assert.match(SURFACE_SRC, /const sizeKey = `\$\{video\?\.videoWidth \?\? 0\}x\$\{video\?\.videoHeight \?\? 0\}`/);
   assert.match(SRC, /const layerSwitched =\s*previous\.lastSizeKey !== null && sizeKey !== previous\.lastSizeKey/);
-  assert.match(SRC, /previous\.resumePending \|\| layerSwitched\s*\n?\s*\? 0/);
+  assert.match(SRC, /previous\.resumePending \|\| layerSwitched \|\| settling\s*\n?\s*\? 0/);
   // And the very first frame must NOT count as a switch, or every session would start by
   // discarding a baseline it never had.
   assert.match(SRC, /previous\.lastSizeKey !== null &&/);

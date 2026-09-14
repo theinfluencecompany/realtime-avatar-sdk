@@ -31,15 +31,25 @@ import {
 import { useEffect, useMemo, useRef } from "react";
 
 import {
-  DEFAULT_GOVERNOR_CONFIG,
+  GOVERNOR_CONFIG_MEMO_KEYS,
   type Governor,
   type GovernorConfig,
   type GovernorSignal,
+  type GovernorTraceEvent,
+  type InboundRtpLike,
   type JitterBufferTrendState,
+  type PauseLevel,
+  type TransportReadState,
+  chargedFreezeMs,
   initGovernor,
+  initialTransportRead,
+  isFreezeChargeable,
+  pausedForTick,
+  resolveGovernorConfig,
   resolveLowCapQuality,
   step,
   stepJitterBufferTrend,
+  transportFromInboundRows,
 } from "./quality-governor";
 
 /** The player's freeze verdict for the trailing window, in milliseconds. The app
@@ -62,11 +72,17 @@ export interface UseAvatarQualityGovernorInput {
    *  it the governor still reacts to Paused + getStats freezes, just without the
    *  cross-browser rVFC signal. */
   freezeReading?: FreezeReadingFn;
-  /** Governor timing overrides (tests / tuning). Defaults are the grounded constants. */
-  config?: GovernorConfig;
+  /** Governor overrides (tests / tuning), merged over DEFAULT_GOVERNOR_CONFIG by value. A full
+   *  GovernorConfig is accepted unchanged. */
+  config?: Partial<GovernorConfig>;
   /** Poll cadence (ms). Default 1000 — the governor tick. */
   tickMs?: number;
+  /** Per-tick observer for telemetry: the signal the reducer saw, the state it left in, and
+   *  the cap action if any. The app counts demotes and their evidence class; the SDK keeps
+   *  no history. Fail-open: a throwing observer is swallowed like every other tick fault. */
+  onTrace?: (event: GovernorTraceEvent) => void;
 }
+
 
 const qualityToSignal = (q: ConnectionQuality): GovernorSignal["connectionQuality"] => {
   switch (q) {
@@ -90,7 +106,9 @@ const qualityToSignal = (q: ConnectionQuality): GovernorSignal["connectionQualit
  * useCallTelemetry). Mount it once inside the call body; it self-tears-down.
  */
 export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): void {
-  const { enabled, freezeReading, config: policy = DEFAULT_GOVERNOR_CONFIG, tickMs = 1000 } = input;
+  const { enabled, freezeReading, config: overrides, tickMs = 1000, onTrace } = input;
+  const onTraceRef = useRef(onTrace);
+  onTraceRef.current = onTrace;
   const room = useMaybeRoomContext();
   // The avatar's video publication rides the same voice-assistant participant the
   // rest of the SDK reads; reach its VIDEO track publication for setVideoQuality.
@@ -99,13 +117,15 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
   // A transcript render may supply a fresh config/getter or TrackReference for the
   // same subscription. Preserve probation and recovery until policy VALUES or the
   // actual subscription change; an object-identity reset can pin a busy call LOW.
-  const { openingCap, downgradeFreezeMs, probationFreezeMs, openingDwellMs,
-    dwellBaseMs, dwellMaxMs, cleanMs, probeMs, healthyResetMs } = policy;
-  const config = useMemo<GovernorConfig>(() => ({
-    openingCap, downgradeFreezeMs, probationFreezeMs, openingDwellMs,
-    dwellBaseMs, dwellMaxMs, cleanMs, probeMs, healthyResetMs,
-  }), [openingCap, downgradeFreezeMs, probationFreezeMs, openingDwellMs,
-    dwellBaseMs, dwellMaxMs, cleanMs, probeMs, healthyResetMs]);
+  // The dependency list is the field list itself (constant length), so a config field
+  // added to GovernorConfig cannot be silently dropped from the memo: see
+  // GOVERNOR_CONFIG_MEMO_KEYS. Resolving first is what lets a caller pass a fresh partial
+  // object every render and still keep one governor.
+  const resolved = resolveGovernorConfig(overrides);
+  const config = useMemo<GovernorConfig>(
+    () => resolved,
+    GOVERNOR_CONFIG_MEMO_KEYS.map((key) => resolved[key]),
+  );
   const freezeReadingRef = useRef(freezeReading);
   freezeReadingRef.current = freezeReading;
   const targetPublication = videoTrack?.publication as RemoteTrackPublication | undefined;
@@ -119,6 +139,14 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     let pausedSinceTick = false;
     let lastFreezeStat: { frozen: number; ts: number } | null = null;
     let jitterTrend: JitterBufferTrendState | null = null;
+    // Transport reader (inbound-rtp packetsLost / nackCount, plus the join-window clock) and
+    // the decoded frame size as the RECEIVER reports it. Both are per-binding for the same
+    // reason as the freeze cursor: a replacement track must never be judged against the
+    // retired track's totals.
+    let transportRead: TransportReadState = initialTransportRead();
+    let lastFramesDecoded: number | null = null;
+    let lastTickAtMs: number | null = null;
+    let lastStatsSizeKey: string | null = null;
     let connQuality = qualityToSignal(
       targetParticipant?.connectionQuality ?? ConnectionQuality.Unknown,
     );
@@ -130,7 +158,31 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     ): void => {
       if (pub !== targetPublication) return;
       // Paused = the SFU congestion controller acted — the strongest downgrade signal.
+      // This EDGE is only the fast path for a pause that starts and ends between two ticks;
+      // the authoritative reading is the LEVEL below. See `pausedForTick`.
       if (streamState === Track.StreamState.Paused) pausedSinceTick = true;
+    };
+    /** The SFU pause as it stands RIGHT NOW, translated off the vendor enum so the pure core
+     *  never sees a LiveKit type.
+     *
+     *  This IS the same state the event carries: livekit-client's StreamStateUpdate handler
+     *  calls `pub.track.setStreamState(...)` and only then emits TrackStreamStateChanged, and
+     *  it emits only when the value CHANGES — which is exactly why an edge cannot stand in
+     *  for the level. `unknown` (no track bound yet, or a runtime without the getter) leaves
+     *  the edge as the only evidence, which is the behaviour that shipped. */
+    const readPauseLevel = (): PauseLevel => {
+      try {
+        switch (targetPublication?.track?.streamState) {
+          case Track.StreamState.Paused:
+            return "paused";
+          case Track.StreamState.Active:
+            return "active";
+          default:
+            return "unknown";
+        }
+      } catch {
+        return "unknown";
+      }
     };
     const onQuality = (q: ConnectionQuality, participant: Participant): void => {
       if (participant.sid !== targetParticipant.sid) return;
@@ -149,26 +201,45 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
       return;
     }
 
-    let gov: Governor = initGovernor(Date.now(), config.openingCap);
+    // NO FAIL-OPEN BRANCH HERE, because there is nothing left to fail: `initGovernor` is
+    // total for every input, and an out-of-range config is clamped where it is read
+    // (`healthyToleranceMs`) rather than refused. The branch that used to be here caught a
+    // RangeError by unsubscribing BEFORE `applyCap` ran, so a mistyped config opened the call
+    // at the TOP rung with no governor at all — strictly worse than no config.
+    let gov: Governor = initGovernor(Date.now(), config.openingCap, config);
 
     const readGetStatsSignals = async (): Promise<{
       freezeMs: number;
       jitterRising: boolean;
+      transport: GovernorSignal["transport"];
+      framesDecodedInWindow?: number;
+      /** Decoded "WxH" the receiver reports this tick; null when unreadable. */
+      sizeKey: string | null;
     }> => {
       // inbound-rtp freezeCount/totalFreezesDuration delta (Chrome). Best-effort; any
       // failure yields 0 (rVFC still covers the freeze via freezeReading).
       try {
         const track = targetPublication?.track;
         const stats = await track?.getRTCStatsReport?.();
-        if (!stats) return { freezeMs: 0, jitterRising: false };
+        if (!stats) return { freezeMs: 0, jitterRising: false, transport: undefined, sizeKey: null };
+        let decodedTotal: number | null = null;
         let frozenTotalMs = 0;
         let jitterDelaySeconds = 0;
         let jitterEmittedCount = 0;
+        let sizeKey: string | null = null;
+        const inboundVideoRows: InboundRtpLike[] = [];
         stats.forEach((r: {
           type?: string;
+          kind?: string;
           totalFreezesDuration?: number;
           jitterBufferDelay?: number;
           jitterBufferEmittedCount?: number;
+          packetsLost?: number;
+          nackCount?: number;
+          framesDropped?: number;
+          framesDecoded?: number;
+          frameWidth?: number;
+          frameHeight?: number;
         }) => {
           if (r.type === "inbound-rtp" && typeof r.totalFreezesDuration === "number") {
             frozenTotalMs = r.totalFreezesDuration * 1000; // seconds → ms
@@ -181,6 +252,15 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
             jitterDelaySeconds += r.jitterBufferDelay;
             jitterEmittedCount += r.jitterBufferEmittedCount;
           }
+          // The receiver's own view of the pipe. This report is the video receiver's, so
+          // the inbound-rtp entry is ours; `kind` is only checked where a browser reports it.
+          if (r.type === "inbound-rtp" && (r.kind === undefined || r.kind === "video")) {
+            inboundVideoRows.push(r);
+            if (typeof r.framesDecoded === "number") decodedTotal = (decodedTotal ?? 0) + r.framesDecoded;
+            if (typeof r.frameWidth === "number" && typeof r.frameHeight === "number") {
+              sizeKey = `${r.frameWidth}x${r.frameHeight}`;
+            }
+          }
         });
         const now = Date.now();
         const prev = lastFreezeStat;
@@ -190,12 +270,33 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
           emittedCount: jitterEmittedCount,
         });
         jitterTrend = trend.state;
+        // A simulcast LAYER SWITCH seen from the stats side. The rVFC sampler already
+        // discards the gap that straddles a decoded-size change (avatar-video-surface,
+        // 0.11.4); Chrome's totalFreezesDuration counts that same rendered gap once it
+        // passes its own ~190 ms threshold, and this delta was still charging it. The
+        // switch is the governor's own decision (or the SFU's); neither is the link.
+        const prevSizeKey = lastStatsSizeKey;
+        lastStatsSizeKey = sizeKey ?? lastStatsSizeKey;
+        const layerSwitched = prevSizeKey !== null && sizeKey !== null && sizeKey !== prevSizeKey;
+        // Transport provenance (no row = clean for the join window only, row without counters
+        // = unknown, first read = baseline only) lives in the pure `transportFromInboundRows`;
+        // see its doc. `now` is the same clock the join window is measured against.
+        const provenance = transportFromInboundRows(inboundVideoRows, transportRead, now);
+        transportRead = provenance.state;
+        const transport = provenance.transport;
+        const prevDecoded = lastFramesDecoded;
+        lastFramesDecoded = decodedTotal;
+        const framesDecodedInWindow =
+          decodedTotal !== null && prevDecoded !== null ? Math.max(0, decodedTotal - prevDecoded) : undefined;
         return {
-          freezeMs: prev ? Math.max(0, frozenTotalMs - prev.frozen) : 0,
-          jitterRising: trend.rising,
+          freezeMs: prev && !layerSwitched ? Math.max(0, frozenTotalMs - prev.frozen) : 0,
+          jitterRising: trend.rising && !layerSwitched,
+          transport,
+          ...(framesDecodedInWindow !== undefined ? { framesDecodedInWindow } : {}),
+          sizeKey,
         };
       } catch {
-        return { freezeMs: 0, jitterRising: false };
+        return { freezeMs: 0, jitterRising: false, transport: undefined, sizeKey: null };
       }
     };
 
@@ -232,17 +333,53 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
         // flight. Never let a stale tick overwrite the new binding's opening cap.
         if (disposed) return;
         const signal: GovernorSignal = {
-          paused: pausedSinceTick,
+          // LEVEL first, edge as the fast path: a pause that is still in force must read as
+          // paused on every tick it is in force, or the governor probes up into a track the
+          // SFU has already refused to forward (see `pausedForTick`).
+          paused: pausedForTick(readPauseLevel(), pausedSinceTick),
           freezeMsInWindow: Math.max(rvfc.freezeMsInWindow, statsSignals.freezeMs),
           jitterRising: statsSignals.jitterRising,
           connectionQuality: connQuality,
           inhibited: rvfc.inhibited,
+          // Absent when the runtime exposes no sequence counters; the reducer then charges
+          // a freeze exactly as it did before this field existed.
+          ...(statsSignals.transport ? { transport: statsSignals.transport } : {}),
         };
         pausedSinceTick = false; // consume the edge
 
-        const { governor, action } = step(gov, signal, Date.now(), config);
+        const tMs = Date.now();
+        // How late this tick fired against its own schedule: a main-thread stall shows up
+        // here before it shows up anywhere in inbound-rtp.
+        const tickLateMs = lastTickAtMs === null ? 0 : Math.max(0, tMs - lastTickAtMs - tickMs);
+        lastTickAtMs = tMs;
+        // Nothing below allocates unless an observer is set.
+        const trace = onTraceRef.current;
+        const before = trace ? { state: gov.state, cap: gov.cap, failures: gov.failures, lowUnhealthy: gov.lowUnhealthy } : null;
+        const { governor, action } = step(gov, signal, tMs, config);
         gov = governor;
         if (action) applyCap(action.setCap, gov.lowUnhealthy);
+        if (trace && before) {
+          try {
+            trace({
+              tMs,
+              tickLateMs,
+              ...(statsSignals.framesDecodedInWindow !== undefined
+                ? { framesDecodedInWindow: statsSignals.framesDecodedInWindow }
+                : {}),
+              signal,
+              rvfcFreezeMs: rvfc.freezeMsInWindow,
+              statsFreezeMs: statsSignals.freezeMs,
+              sizeKey: statsSignals.sizeKey,
+              chargeable: isFreezeChargeable(signal),
+              chargedFreezeMs: chargedFreezeMs(signal, config),
+              before,
+              after: { state: gov.state, cap: gov.cap, failures: gov.failures, lowUnhealthy: gov.lowUnhealthy },
+              ...(action ? { action } : {}),
+            });
+          } catch {
+            // Telemetry must never touch the call.
+          }
+        }
       } catch {
         // A tick fault must never kill the loop or the call.
       } finally {

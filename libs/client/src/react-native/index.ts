@@ -158,6 +158,7 @@ export {
   type GovernorConfig,
   type GovernorSignal,
   type GovernorState,
+  type GovernorTraceEvent,
   type QualityCap,
 } from "../react/quality-governor";
 export {

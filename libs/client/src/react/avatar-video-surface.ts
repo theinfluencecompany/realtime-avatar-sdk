@@ -32,8 +32,16 @@ import {
 import { useAvatarPlayoutDelay } from "./livekit";
 import { useAvatarAdaptivePlayoutDelay } from "./use-adaptive-playout";
 import { useAvatarQualityGovernor, type FreezeReadingFn } from "./use-quality-governor";
-import { DEFAULT_GOVERNOR_CONFIG, type QualityCap } from "./quality-governor";
-import { FrameRecovery, StallEscalation, firstFrameWaitFreezeMs } from "./frame-recovery";
+import type { GovernorConfig, GovernorTraceEvent, QualityCap } from "./quality-governor";
+import {
+  FrameRecovery,
+  StallEscalation,
+  initialFrameSample,
+  nextFrameSample,
+  readFreezeFromSample,
+  type SettleOptions,
+  type FrameSample,
+} from "./frame-recovery";
 // The escalated hold is part of this surface's contract (see `frameStallMs`), so it is
 // re-exported from here beside DEFAULT_AVATAR_FRAME_STALL_MS.
 export { DEFAULT_AVATAR_UNSTABLE_STALL_MS } from "./frame-recovery";
@@ -52,8 +60,12 @@ export { DEFAULT_AVATAR_UNSTABLE_STALL_MS } from "./frame-recovery";
  */
 export const DEFAULT_AVATAR_FRAME_STALL_MS = 2_000;
 
-/** Ignore ordinary 15-25fps presentation spacing when scoring a freeze. */
-export const AVATAR_FRAME_GAP_FREEZE_FLOOR_MS = 100;
+// The presented-frame ledger and everything that READS it — the gap floor, the settle, the
+// inhibit rule and the freeze reading itself — live in frame-recovery.ts, which has no DOM
+// and no React, so the whole chain from "a frame landed" to "the freeze the governor sees"
+// is unit-testable. This file only supplies the clock, the <video> and the visibility state,
+// and it does not re-export any of it: one module owns the ledger, and nothing here needs a
+// second name for it.
 
 /** How the media is fit into the surface box. Mirrors CSS `object-fit`. */
 export type AvatarVideoFit = "contain" | "cover";
@@ -103,6 +115,23 @@ export type AvatarVideoSurfaceProps = {
    * opening-cap-policy.ts); everything else keeps the soft-open.
    */
   openingCap?: QualityCap;
+  /**
+   * Governor overrides merged over `DEFAULT_GOVERNOR_CONFIG` by value (the `openingCap` prop
+   * wins over `governorConfig.openingCap`). This is the app's reach into the ONE governor the
+   * surface mounts: the kill switch (`linkEvidence: "optional"`), the recovery band, the
+   * bars. Before this prop the only way to tune the governor was to disable this one and
+   * mount a second, which is the two-governor trap a consumer app fell into. A fresh object
+   * per render is fine: the hook memoises on field values, not identity.
+   */
+  governorConfig?: Partial<GovernorConfig>;
+  /**
+   * Per-tick governor observer for telemetry: the signal the reducer saw (both freeze
+   * inputs, transport evidence, the decoded rung), whether the freeze was charged to the
+   * link, and the cap action if any. Unset costs nothing. Exists because the only visible
+   * trace of a demote in production was the decoded width changing, and a receiver-side
+   * stats corpus could not reproduce 11 of 18 observed demotes after the fact.
+   */
+  onGovernorTrace?: (event: GovernorTraceEvent) => void;
   /** `object-fit` for BOTH layers. Both layers always use the SAME fit + box so
    *  the front (live) fully covers the back (idle) — no peek-through. */
   fit?: AvatarVideoFit;
@@ -215,6 +244,8 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     live = true,
     adaptiveQuality = true,
     openingCap,
+    governorConfig,
+    onGovernorTrace,
     fit = "contain",
     aspectRatio,
     idleReturnDelayMs = 700,
@@ -278,24 +309,26 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     trackProducing,
     videoTrack?.publication?.track,
     frameStallMs,
+    // The kill switch has to reach the SETTLE too. `linkEvidence: "optional"` is documented
+    // as a full revert to the pre-settle governor, and the settle runs BEFORE the reducer:
+    // it zeroes the signal `step()` would have read, so a revert that stops at the reducer
+    // leaves the opening behaving like the new build no matter what the config says.
+    useMemo(
+      () => (governorConfig?.linkEvidence === "optional" ? { settleFrames: 0 } : {}),
+      [governorConfig?.linkEvidence],
+    ),
   );
-  // Referentially STABLE across renders (memoized on the only field the surface
-  // overrides). The adapter keys its effect on config IDENTITY and re-inits the
-  // governor when it changes — a fresh object each render would wipe the governor's
-  // learned state (re-actuating the opening cap) on every re-render.
-  const governorConfig = useMemo(
-    () => ({
-      ...DEFAULT_GOVERNOR_CONFIG,
-      openingCap: openingCap ?? DEFAULT_GOVERNOR_CONFIG.openingCap,
-    }),
-    [openingCap],
-  );
+  // The app's overrides, with the `openingCap` prop winning. Identity is NOT what keeps the
+  // governor alive across renders: the hook memoises its config on field VALUES
+  // (GOVERNOR_CONFIG_MEMO_KEYS), so this may be a fresh object every render without wiping
+  // the governor's learned state. One source of truth for that rule, in the hook.
   useAvatarQualityGovernor({
     // Keep the governor alive across presentation-intent changes; resetting it on
     // every turn would re-apply LOW and a normal short turn could never earn HIGH.
     enabled: adaptiveQuality,
     freezeReading: frameFlow.freezeReading,
-    config: governorConfig,
+    config: { ...governorConfig, ...(openingCap !== undefined ? { openingCap } : {}) },
+    onTrace: onGovernorTrace,
   });
   // Is the room genuinely GONE (disconnected)? A dead room is never held — it
   // reverts to the idle floor IMMEDIATELY, bypassing the turn-end debounce.
@@ -653,47 +686,6 @@ export function isFrameFlowingAt(snapshot: FrameFlowSnapshot): boolean {
   );
 }
 
-/** Convert a presented-frame gap into a governor freeze signal.
- *
- *  CHARGES THE EXCESS OVER THE FLOOR, NOT THE WHOLE GAP. It used to return `gapMs`,
- *  which made the floor decorative: the governor's probation bar is also 100 ms, so the
- *  first gap the floor declined to forgive was already, on its own, an instant demote.
- *  There was no margin between "ordinary presentation spacing" and "kill this rung".
- *
- *  The arithmetic that matters: the sub-top simulcast rungs declare 20 fps, so frames
- *  are 50 ms apart and ONE dropped frame is a 100 ms gap. Under the old return that was
- *  forgiven by a single millisecond, and 101 ms demoted. Measured consequence, replaying
- *  the shipped reducer over a 120 s call with one such gap every 20 s: 5 rung switches
- *  and 107 of 120 seconds spent on the low cap, on a link that lost 6 packets in total.
- *  With the excess charged instead, the same series produces zero switches.
- *
- *  This is what the floor's own comment always promised ("ignore ordinary 15-25fps
- *  presentation spacing"). A 133 ms gap, which is two frames at 15 fps, now costs 33 ms
- *  of freeze budget rather than 133. */
-export function freezeMsFromFrameGap(gapMs: number): number {
-  if (!Number.isFinite(gapMs) || gapMs <= AVATAR_FRAME_GAP_FREEZE_FLOOR_MS) return 0;
-  return gapMs - AVATAR_FRAME_GAP_FREEZE_FLOOR_MS;
-}
-
-export type FrameFreezeInhibitSnapshot = {
-  hidden: boolean;
-  resumePending: boolean;
-  trackProducing: boolean;
-  seenFrame: boolean;
-  lastFrameAtMs: number | null;
-};
-
-/** Hidden/suspended playback gaps are local scheduling, not network congestion. */
-export function isFrameFreezeInhibited(snapshot: FrameFreezeInhibitSnapshot): boolean {
-  return (
-    snapshot.hidden ||
-    snapshot.resumePending ||
-    !snapshot.trackProducing ||
-    !snapshot.seenFrame ||
-    snapshot.lastFrameAtMs === null
-  );
-}
-
 type LiveFrameFlow = {
   flowing: boolean;
   seenFrame: boolean;
@@ -710,6 +702,7 @@ function useLiveFrameFlow(
   trackProducing: boolean,
   trackIdentity: unknown,
   stallAfterMs: number,
+  settle: SettleOptions,
 ): LiveFrameFlow {
   const boundedStallMs = normalizeFrameStallMs(stallAfterMs);
   // Keep recovery evidence across mute/unmute on the SAME track: a network mute
@@ -722,35 +715,13 @@ function useLiveFrameFlow(
   const [flowing, setFlowing] = useState(false);
   const [seenFrame, setSeenFrame] = useState(false);
   const flowingRef = useRef(false);
-  const sampleRef = useRef<{
-    seenFrame: boolean;
-    lastFrameAtMs: number | null;
-    maxGapMs: number;
-    resumePending: boolean;
-    /** When the track began producing (this binding) — the clock the first-frame wait runs on. */
-    producingSinceMs: number | null;
-    /** Decoded size of the previous frame, as "WxH". A CHANGE here means the SFU moved us to a
-     *  different simulcast layer, which costs a decoder reconfigure and a wait for that layer's
-     *  keyframe. See `markFrame` for why that gap must not be charged to the link. */
-    lastSizeKey: string | null;
-  }>({
-    seenFrame: false,
-    lastFrameAtMs: null,
-    maxGapMs: 0,
-    resumePending: false,
-    producingSinceMs: null,
-    lastSizeKey: null,
-  });
+  const sampleRef = useRef<FrameSample>(initialFrameSample(null, false));
 
   useEffect(() => {
-    sampleRef.current = {
-      seenFrame: false,
-      lastFrameAtMs: null,
-      maxGapMs: 0,
-      resumePending: document.visibilityState !== "visible",
-      producingSinceMs: trackProducing ? Date.now() : null,
-      lastSizeKey: null,
-    };
+    sampleRef.current = initialFrameSample(
+      trackProducing ? Date.now() : null,
+      document.visibilityState !== "visible",
+    );
     flowingRef.current = false;
     setSeenFrame(false);
     setFlowing(false);
@@ -770,37 +741,11 @@ function useLiveFrameFlow(
       // Advance both cursors together so a poll cannot extend a stopped burst.
       lastCurrentTime = video?.currentTime ?? lastCurrentTime;
       const firstFrame = !previous.seenFrame;
-      // A CHANGE OF DECODED SIZE IS A SIMULCAST LAYER SWITCH, and the gap that straddles it is
-      // the switch's own cost: the decoder reconfigures and then waits for the new layer's
-      // keyframe. Nothing was lost, it simply had not been sent yet.
-      //
-      // Charging that gap to the link made the governor punish the stream for the cost of its
-      // own decision, and the punishment was another switch. Measured on production: the top
-      // rung arrived at t=10.98s and was demoted 0.43s later with ZERO packets lost, then took
-      // 21.8s to come back (dwellBase 8s x 2^1 for the failure, plus the clean window). From the
-      // viewer's side that is one second of a sharp face and then twenty of a blurry one.
-      //
-      // Treated exactly like a bfcache resume, which is the same class of event: a gap that is
-      // real, local, and says nothing about the network. The first frame at the new size becomes
-      // the new baseline.
+      // The decoded size identifies the simulcast layer; the ledger transition (bfcache
+      // resume, layer switch and opening settle are NOT charged as gaps) is the pure
+      // `nextFrameSample` in frame-recovery, which carries the reasoning and the tests.
       const sizeKey = `${video?.videoWidth ?? 0}x${video?.videoHeight ?? 0}`;
-      const layerSwitched = previous.lastSizeKey !== null && sizeKey !== previous.lastSizeKey;
-      sampleRef.current = {
-        producingSinceMs: previous.producingSinceMs,
-        seenFrame: true,
-        lastFrameAtMs: now,
-        // A hidden tab/bfcache resume is a local scheduling gap, not network
-        // congestion. The first fresh frame becomes the new baseline.
-        maxGapMs:
-          previous.resumePending || layerSwitched
-            ? 0
-            : Math.max(
-                previous.maxGapMs,
-                previous.lastFrameAtMs === null ? 0 : now - previous.lastFrameAtMs,
-              ),
-        resumePending: false,
-        lastSizeKey: sizeKey,
-      };
+      sampleRef.current = nextFrameSample(previous, now, sizeKey, settle);
       if (firstFrame) setSeenFrame(true);
       // The recovery's own gap detector must agree with the watchdog's threshold, or a
       // gap the watchdog holds through would still force a recovery dwell here.
@@ -895,33 +840,22 @@ function useLiveFrameFlow(
   }, [wrapRef, trackProducing, trackIdentity, boundedStallMs, recovery, escalation]);
 
   const freezeReading = useCallback<FreezeReadingFn>(() => {
-    const sample = sampleRef.current;
-    const lastFrameAtMs = sample.lastFrameAtMs;
-    const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
-    // NO FIRST FRAME YET is the one freeze the frame clock cannot see, and the one a HIGH
-    // opening on a starved link most needs the governor to act on (see
-    // firstFrameWaitFreezeMs). Report the wait itself, past the grace, so the probation
-    // bar can demote a layer whose keyframes never land instead of holding it forever.
-    if (!hidden && !sample.resumePending && trackProducing && !sample.seenFrame && sample.producingSinceMs !== null) {
-      return { freezeMsInWindow: firstFrameWaitFreezeMs(Date.now() - sample.producingSinceMs), inhibited: false };
-    }
-    const inhibited = isFrameFreezeInhibited({
-      hidden,
-      resumePending: sample.resumePending,
-      trackProducing,
-      seenFrame: sample.seenFrame,
-      lastFrameAtMs,
-    });
-    if (inhibited || lastFrameAtMs === null) {
-      sample.maxGapMs = 0;
-      return { freezeMsInWindow: 0, inhibited: true };
-    }
-    const ongoingGapMs = Math.max(0, Date.now() - lastFrameAtMs);
-    const freezeMsInWindow = freezeMsFromFrameGap(Math.max(sample.maxGapMs, ongoingGapMs));
-    // Consume recovered gaps once sampled; an ongoing stall remains observable via age.
-    sample.maxGapMs = 0;
-    return { freezeMsInWindow, inhibited: false };
-  }, [trackProducing]);
+    // The whole decision is `readFreezeFromSample` (pure, in frame-recovery). This supplies
+    // the clock and the visibility state, and stores the ledger the read returns — the
+    // recorded gap is consumed by a read, so a recovered gap is never charged twice while an
+    // ongoing stall stays observable through its age.
+    const { reading, sample } = readFreezeFromSample(
+      sampleRef.current,
+      Date.now(),
+      {
+        hidden: typeof document !== "undefined" && document.visibilityState !== "visible",
+        trackProducing,
+      },
+      settle,
+    );
+    sampleRef.current = sample;
+    return reading;
+  }, [trackProducing, settle]);
 
   return { flowing, seenFrame, freezeReading };
 }

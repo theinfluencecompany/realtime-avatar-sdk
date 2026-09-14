@@ -126,6 +126,7 @@ export {
   type GovernorConfig,
   type GovernorSignal,
   type GovernorState,
+  type GovernorTraceEvent,
   type QualityCap,
 } from "./quality-governor";
 export {

@@ -48,6 +48,7 @@ import {
 import { useAvatarPlayoutDelay } from "../react/livekit";
 import { useAvatarAdaptivePlayoutDelay } from "../react/use-adaptive-playout";
 import { useAvatarQualityGovernor } from "../react/use-quality-governor";
+import type { GovernorConfig, GovernorTraceEvent } from "../react/quality-governor";
 
 // Android's <VideoTrack> renders an RTCView backed by a SurfaceView — a separate
 // hardware layer, NOT a normal view in the RN tree. Two SurfaceView facts break the
@@ -111,6 +112,11 @@ export type AvatarVideoSurfaceProps = {
   live?: boolean;
   /** Enable the subscriber-side quality governor (stats + SFU-pause tiers). Default true. */
   adaptiveQuality?: boolean;
+  /** Governor overrides merged over DEFAULT_GOVERNOR_CONFIG by value (same contract as the web
+   *  surface: the one governor this surface mounts is tuned here, never by mounting a second). */
+  governorConfig?: Partial<GovernorConfig>;
+  /** Per-tick governor observer for telemetry (same contract as the web surface). */
+  onGovernorTrace?: (event: GovernorTraceEvent) => void;
   /** How media fits the box — mirrors CSS object-fit. Both layers share it. Default "contain". */
   fit?: AvatarVideoFit;
   /** Crossfade duration (ms) between idle and live. Default 500. */
@@ -165,6 +171,8 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     poster = null,
     live = true,
     adaptiveQuality = true,
+    governorConfig,
+    onGovernorTrace,
     fit = "contain",
     crossfadeMs = 500,
     idleReturnDelayMs = 700,
@@ -203,7 +211,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     videoTrack,
     IS_ANDROID ? isNativeLiveTrackSubscribed : undefined,
   );
-  useAvatarQualityGovernor({ enabled: adaptiveQuality });
+  useAvatarQualityGovernor({ enabled: adaptiveQuality, config: governorConfig, onTrace: onGovernorTrace });
 
   // No rVFC on native → no frame-flow stall gate; producing + connected is the
   // liveness signal. A disconnect bypasses the idle-return debounce (a dead
