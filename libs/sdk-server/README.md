@@ -4,7 +4,7 @@ A live character your users can talk to — voice, or voice and video. She liste
 speaks, so you can interrupt her mid-sentence and she stops, the way a person stops.
 
 ```bash
-npm install --save-exact realtime-avatar@0.15.0
+npm install --save-exact realtime-avatar@0.16.0
 ```
 
 ```ts
@@ -24,6 +24,61 @@ return call.raw;   // relay to the browser byte-for-byte
 ```
 
 That is the whole server half. The client joins with the payload and renders her.
+
+## Optional call recordings
+
+Your server decides whether to record after your application obtains consent:
+
+```ts
+const call = await rta.startCall({ avatarId, recording: "audio_video" });
+if (!isQueued(call) && call.recording) {
+  await saveRecordingId(call.sessionId, call.recording.recordingId);
+}
+
+// Later, in your authenticated admin backend:
+const recording = await rta.getRecording(recordingId);
+if (recording.status === "ready") {
+  const { url, expiresAt } = await rta.getRecordingAccess(recordingId);
+  // Return this short-lived access to the authorized viewer.
+}
+```
+
+Omitted or `"off"` disables recording. `"audio"` records published user and avatar audio;
+`"video"` records published video without audio; `"audio_video"` keeps both on one media timeline.
+Recording does not enable the microphone, camera, or screen sharing. Only tracks that participants
+authorize and publish can be recorded. Camera controls remain a future SDK feature.
+
+Recordings may finish processing after a call ends. Use `listRecordings({ sessionId })` to find
+them, or refresh `getRecording(recordingId)` while processing. These methods and
+`getRecordingAccess` require a server key with `usage:read`.
+
+Save `recordingId`, not a playback URL. Files are retained until `retainedUntil` (30 days by
+default); each URL expires at `expiresAt` (up to one hour, capped by retention). Obtain fresh
+access before replaying or seeking after expiry. An expired URL does not delete the file.
+Treat the URL as private: anyone who has it can play that file until it expires.
+
+Transcript delivery remains the signed `transcript` webhook configured on `startCall`. Join the
+transcript and recordings by `sessionId`; keep your own script revision with that call. Transcript
+timestamps describe conversation turns and do not by themselves establish frame-accurate media
+alignment for lip-sync analysis.
+
+Client-safe Zod schemas and derived types are available from `realtime-avatar/recording`.
+They are the same executable contract used by the service, verified against the published digest.
+
+```mermaid
+---
+title: Recording ownership and private playback
+---
+flowchart LR
+  App[Application server: consent and recording policy] --> RTA[RTA: call and recording lifecycle]
+  RTA --> Media[Media provider: record published tracks]
+  Media --> Storage[Private media storage]
+  RTA --> Metadata[Recording ID and session ID]
+  Admin[Authorized admin backend] --> RTA
+  RTA --> Access[Temporary playback URL]
+  Access --> Player[Video or audio player]
+  Storage --> Player
+```
 
 New here? The [quickstart](https://realtimeavatar.ai/docs/quickstart) goes from an API key to a
 working call, and a [sandbox key](https://realtimeavatar.ai/signup) is free with no card. Mount
@@ -82,8 +137,13 @@ all), and the `video` policy types are deliberately not one-to-one with the wire
 
 ```ts
 // calls
-rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, transcript?, metadata? })
+rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, transcript?, metadata? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
+
+// optional recordings; server only, requires usage:read
+rta.listRecordings({ sessionId, limit?, cursor? })
+rta.getRecording(recordingId)
+rta.getRecordingAccess(recordingId)
 
 // avatars
 rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // the only lane
@@ -141,6 +201,7 @@ Browser — these never can:
 | `realtime-avatar/react-native` | The same surface for Expo / React Native |
 | `realtime-avatar/browser` | `enableMicrophone`, `attachRemoteAudio`, `prepareAvatarRoom` — no React |
 | `realtime-avatar/tools` | `attachAvatarTools` — the browser tool plane |
+| `realtime-avatar/recording` | Client-safe Zod recording schemas and derived types |
 
 Every adapter takes the same two hooks: `authorize` gates the request, `session` decides the
 call. Policy — `instructions`, `maxSeconds`, `voice`, `video` — is decided in `session`, on

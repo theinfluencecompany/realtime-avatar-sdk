@@ -11,6 +11,7 @@
  * https://realtimeavatar.ai/docs.
  */
 import { z } from "zod";
+import { recordingArtifactSchema } from "../../http-client/src/generated/recording.ts";
 
 const DEFAULT_AVATAR_ID = "maria";
 const DEFAULT_BACKGROUND_ID = "plain_white";
@@ -369,6 +370,7 @@ export const liveKitSessionRequestSchema = z
 
 export const liveKitSessionGrantSchema = z
   .object({
+    recording: recordingArtifactSchema.optional(),
     status: z.literal("ready").default("ready"),
     session_id: z.string().min(1),
     room_name: z.string().min(1),

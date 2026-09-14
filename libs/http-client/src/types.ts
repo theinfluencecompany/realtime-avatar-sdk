@@ -32,6 +32,8 @@
  */
 
 import type { components } from "./generated/openapi.ts";
+import type { RecordingMode, RecordingArtifact } from "./generated/recording.ts";
+export type { RecordingMode, RecordingArtifactStatus, RecordingArtifact, ListRecordingsQuery, ListRecordingsResponse, RecordingAccessResponse } from "./generated/recording.ts";
 
 /**
  * The wire shapes, from the published contract at https://realtimeavatar.ai/openapi.json.
@@ -141,6 +143,8 @@ export type VideoPolicy =
 
 /** What YOUR SERVER decides about a call. Never accept any of this from a browser. */
 export interface CallPolicy {
+  /** Optional server recording policy. Omitted means off; obtain user consent before enabling. */
+  recording?: RecordingMode;
   /** Her behavior contract — who she is and how she speaks. Max 8000 chars. */
   instructions?: string;
   /** Up to 32 prior messages, replayed as memory. */
@@ -178,6 +182,8 @@ export interface CallPolicy {
 type Grant = Wire["LiveKitSessionGrant"];
 
 export interface CallConnection {
+  /** Durable recording metadata. Retrieve a temporary playback URL separately after it is ready. */
+  recording?: RecordingArtifact;
   status: Grant["status"];
   sessionId: Grant["session_id"];
   roomName: Grant["room_name"];

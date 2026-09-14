@@ -13,9 +13,11 @@ const files = [
   "spec/realtime-avatar.openapi.json",
   "libs/http-client/src/generated/character-motion.ts",
   "libs/http-client/src/generated/clip-library-schema.ts",
+  "libs/http-client/src/generated/recording.ts",
 ] as const;
 const specBytes = await readFile(new URL(files[0], root));
 const vendorBytes = await readFile(new URL(files[1], root));
+const recordingBytes = await readFile(new URL(files[3], root));
 const script = "scripts/generate-clip-schema.mjs";
 
 async function fixture() {
@@ -47,13 +49,15 @@ function mockPull(spec: Buffer = specBytes, artifact: Buffer = vendorBytes) {
       assert.equal(options.redirect, 'error');
       calls.push(String(url));
       assert.deepEqual(calls, ['https://realtimeavatar.ai/openapi.json',
-        ${JSON.stringify(`https://realtimeavatar.ai${source}`)}].slice(0, calls.length));
-      assert.ok(calls.length <= 2);
+        ${JSON.stringify(`https://realtimeavatar.ai${source}`)},
+        'https://realtimeavatar.ai/recording.contract.ts'].slice(0, calls.length));
+      assert.ok(calls.length <= 3);
       return new Response(Buffer.from(calls.length === 1
         ? ${JSON.stringify(spec.toString("base64"))}
-        : ${JSON.stringify(artifact.toString("base64"))}, 'base64'));
+        : calls.length === 2 ? ${JSON.stringify(artifact.toString("base64"))}
+        : ${JSON.stringify(recordingBytes.toString("base64"))}, 'base64'));
     };
-    process.on('exit', code => { if (code === 0) assert.equal(calls.length, 2); });
+    process.on('exit', code => { if (code === 0) assert.equal(calls.length, 3); });
   `;
 }
 
@@ -132,6 +136,8 @@ test("--sync requires an absolute platform root and verifies published bytes aga
     const owner = "packages/realtime-avatar-contracts/src/character-motion.ts";
     for (const [file, bytes] of [
       [artifact, vendorBytes], [owner, vendorBytes],
+      ["apps/web/public/recording.contract.ts", recordingBytes],
+      ["packages/realtime-avatar-contracts/src/product/recording.ts", recordingBytes],
       ["packages/realtime-avatar-contracts/openapi/realtime-avatar.openapi.json", specBytes],
     ] as const) {
       const target = join(platform, file);

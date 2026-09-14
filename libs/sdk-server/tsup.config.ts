@@ -86,6 +86,7 @@ export default defineConfig([
       "react-native": "src/react-native.ts",
       browser: "src/browser.ts",
       tools: "src/tools.ts",
+      recording: "src/recording.ts",
     },
     clean: false,
     splitting: false,

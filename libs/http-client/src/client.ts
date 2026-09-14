@@ -8,6 +8,8 @@ import {
 } from "./retry.ts";
 import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
 import { clipLibraryResponseSchema, clipLibraryUpdateSchema } from "./generated/clip-library-schema.ts";
+import { recordingModeSchema, recordingArtifactSchema, listRecordingsQuerySchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
+import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 import type {
   Asset,
   ListSessionsOptions,
@@ -26,12 +28,16 @@ import type {
   CreditBalance,
   EndCallOptions,
   StartCallResult,
+  ListRecordingsQuery,
+  ListRecordingsResponse,
+  RecordingArtifact,
+  RecordingAccessResponse,
 } from "./types.ts";
 
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.15.0";
+export const SDK_VERSION = "0.16.0";
 
 
 
@@ -130,6 +136,7 @@ export class RealtimeAvatar {
     if (options.maxSeconds !== undefined) body.max_session_seconds = Math.floor(options.maxSeconds);
     if (options.voice !== undefined) body.voice = options.voice;
     if (options.metadata !== undefined) body.client_metadata = options.metadata;
+    if (options.recording !== undefined) body.recording = recordingModeSchema.parse(options.recording);
     // The grant is the gate: the worker only exposes tool registration for a session whose
     // mint carried this capability.
     if (options.clientTools) body.capabilities = ["client_tools"];
@@ -156,20 +163,23 @@ export class RealtimeAvatar {
       }
     }
 
-    const grant = (await this.#json(response)) as Record<string, unknown>;
+    const raw = await this.#json(response);
+    const grant = liveKitSessionGrantSchema.parse(raw);
+    if (!isRecord(raw)) throw new RealtimeAvatarError("Invalid session grant");
     return {
       status: "ready",
-      sessionId: String(grant.session_id),
-      roomName: String(grant.room_name),
-      livekitUrl: String(grant.livekit_url),
-      participantToken: String(grant.participant_token),
-      participantIdentity: String(grant.participant_identity),
-      maxSessionSeconds: Number(grant.max_session_seconds ?? 0),
-      idleTimeoutSeconds: Number(grant.idle_timeout_seconds ?? 0),
-      reservationExpiresAt: String(grant.reservation_expires_at),
+      ...(grant.recording === undefined ? {} : { recording: grant.recording }),
+      sessionId: grant.session_id,
+      roomName: grant.room_name,
+      livekitUrl: grant.livekit_url,
+      participantToken: grant.participant_token,
+      participantIdentity: grant.participant_identity,
+      maxSessionSeconds: grant.max_session_seconds,
+      idleTimeoutSeconds: grant.idle_timeout_seconds,
+      reservationExpiresAt: grant.reservation_expires_at,
       // The parsed fields above are for YOUR logic. Relay `raw` to the client untouched:
       // the browser SDK validates the grant strictly and rejects an added or renamed key.
-      raw: grant,
+      raw,
     };
   }
 
@@ -546,6 +556,27 @@ export class RealtimeAvatar {
       yield* page.sessions;
       cursor = page.nextCursor ?? undefined;
     } while (cursor);
+  }
+
+  /** Recording metadata for this account, optionally limited to one call. Requires usage:read. */
+  async listRecordings(options: ListRecordingsQuery = {}): Promise<ListRecordingsResponse> {
+    const parsed = listRecordingsQuerySchema.parse(options);
+    const query = new URLSearchParams();
+    if (parsed.sessionId !== undefined) query.set("sessionId", parsed.sessionId);
+    if (options.limit !== undefined) query.set("limit", String(parsed.limit));
+    if (parsed.cursor !== undefined) query.set("cursor", parsed.cursor);
+    const suffix = query.size ? `?${query}` : "";
+    return listRecordingsResponseSchema.parse(await this.#json(await this.#request("GET", `/recordings${suffix}`)));
+  }
+
+  /** Current recording status. Final media can become ready after the call has ended. */
+  async getRecording(recordingId: string): Promise<RecordingArtifact> {
+    return recordingArtifactSchema.parse(await this.#json(await this.#request("GET", `/recordings/${encodeURIComponent(recordingId)}`)));
+  }
+
+  /** Renewable playback access. Keep recordingId in storage; URLs expire at expiresAt. */
+  async getRecordingAccess(recordingId: string): Promise<RecordingAccessResponse> {
+    return recordingAccessResponseSchema.parse(await this.#json(await this.#request("GET", `/recordings/${encodeURIComponent(recordingId)}/access`)));
   }
 
   async creditBalance(): Promise<CreditBalance> {

@@ -25,30 +25,37 @@ const specBytes = pull ? await fetchBytes(specUrl) : await readFile(sync
   ? resolve(args[1], "packages/realtime-avatar-contracts/openapi/realtime-avatar.openapi.json")
   : specTarget);
 const spec = JSON.parse(specBytes.toString("utf8"));
-const reference = spec["x-clip-contract"];
-if (!reference || typeof reference.source !== "string" || !/^\/[\w./-]+\.ts$/.test(reference.source)
-  || reference.source.startsWith("//") || reference.source.split("/").some(part => part === "." || part === "..")
-  || typeof reference.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(reference.sha256)) {
-  throw new Error("Missing or invalid x-clip-contract source/sha256");
-}
-const sourceUrl = new URL(reference.source, specUrl);
-if (sourceUrl.origin !== specUrl.origin) throw new Error("Clip contract must use the trusted spec origin");
+async function readContract(key, ownerPath, targetPath) {
+  const reference = spec[key];
+  if (!reference || typeof reference.source !== "string" || !/^\/[\w./-]+\.ts$/.test(reference.source)
+    || reference.source.startsWith("//") || reference.source.split("/").some(part => part === "." || part === "..")
+    || typeof reference.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(reference.sha256)) {
+    throw new Error(`Missing or invalid ${key} source/sha256`);
+  }
+  const sourceUrl = new URL(reference.source, specUrl);
+  if (sourceUrl.origin !== specUrl.origin) throw new Error(`${key} must use the trusted spec origin`);
 
-let vendorBytes;
-if (pull) {
-  vendorBytes = await fetchBytes(sourceUrl);
-} else if (sync) {
-  const publicRoot = resolve(args[1], "apps/web/public");
-  const artifact = resolve(publicRoot, `.${reference.source}`);
-  if (relative(publicRoot, artifact).startsWith(`..${sep}`)) throw new Error("Clip artifact escapes public root");
-  vendorBytes = await readFile(artifact);
-  const ownerBytes = await readFile(resolve(args[1], "packages/realtime-avatar-contracts/src/character-motion.ts"));
-  if (!vendorBytes.equals(ownerBytes)) throw new Error("Published clip artifact differs from its canonical owner");
-} else {
-  vendorBytes = await readFile(vendorTarget);
+  let bytes;
+  if (pull) {
+    bytes = await fetchBytes(sourceUrl);
+  } else if (sync) {
+    const publicRoot = resolve(args[1], "apps/web/public");
+    const artifact = resolve(publicRoot, `.${reference.source}`);
+    if (relative(publicRoot, artifact).startsWith(`..${sep}`)) throw new Error(`${key} escapes public root`);
+    bytes = await readFile(artifact);
+    const ownerBytes = await readFile(resolve(args[1], ownerPath));
+    if (!bytes.equals(ownerBytes)) throw new Error(`${key} differs from its canonical owner`);
+  } else {
+    bytes = await readFile(targetPath);
+  }
+  const hash = createHash("sha256").update(bytes).digest("hex");
+  if (hash !== reference.sha256) throw new Error(`${key} SHA-256 mismatch: expected ${reference.sha256}, got ${hash}`);
+  return { bytes, hash };
 }
-const hash = createHash("sha256").update(vendorBytes).digest("hex");
-if (hash !== reference.sha256) throw new Error(`Clip contract SHA-256 mismatch: expected ${reference.sha256}, got ${hash}`);
+
+const { bytes: vendorBytes, hash } = await readContract("x-clip-contract", "packages/realtime-avatar-contracts/src/character-motion.ts", vendorTarget);
+const recordingTarget = new URL("../libs/http-client/src/generated/recording.ts", import.meta.url);
+const recording = await readContract("x-recording-contract", "packages/realtime-avatar-contracts/src/product/recording.ts", recordingTarget);
 
 const supported = new Set([
   "$schema", "type", "properties", "required", "additionalProperties",
@@ -187,6 +194,7 @@ if (check) {
   // No files change until the executable digest and response generation have succeeded.
   if (pull || sync) {
     await writeFile(vendorTarget, vendorBytes);
+    await writeFile(recordingTarget, recording.bytes);
     await writeFile(specTarget, specBytes);
   }
   await writeFile(target, output);

@@ -34,7 +34,7 @@ function resolve(subpath: string, conditions: string[]): string {
 
 const GUARD = "./dist/server-only-guard.js";
 const GUARDED = [".", "./server", "./nextjs", "./hono", "./express", "./tanstack-start"];
-const KEYLESS = ["./react", "./react-native", "./browser", "./tools"];
+const KEYLESS = ["./react", "./react-native", "./browser", "./tools", "./recording"];
 
 // The condition sets the real consumers resolve with.
 const NODE = ["node", "import"];

@@ -3,7 +3,14 @@ export { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
 export { verifyTranscript } from "./webhook.ts";
 export { isQueued } from "./types.ts";
 export { clipLibraryDeclarationSchema } from "./generated/clip-library-schema.ts";
+export { recordingModeSchema, recordingArtifactSchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
 export type {
+  RecordingMode,
+  RecordingArtifactStatus,
+  RecordingArtifact,
+  ListRecordingsQuery,
+  ListRecordingsResponse,
+  RecordingAccessResponse,
   Asset,
   AssetKind,
   Avatar,

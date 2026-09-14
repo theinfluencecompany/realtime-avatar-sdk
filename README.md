@@ -22,7 +22,7 @@ mid-sentence the moment someone cuts in, the way a person stops.
 ## Quickstart
 
 ```bash
-npm install --save-exact realtime-avatar@0.15.0
+npm install --save-exact realtime-avatar@0.16.0
 ```
 
 Start the call on your **server**. Your key never touches a browser.
@@ -114,7 +114,7 @@ live instead of reading about them.
 
 ## Packages
 
-**One.** `npm install --save-exact realtime-avatar@0.15.0` and you have the server client, the route adapters, the
+**One.** `npm install --save-exact realtime-avatar@0.16.0` and you have the server client, the route adapters, the
 React bindings and the browser helpers. Everything is a subpath, treeshaken per entry, so a
 server-only app still ships 18.8 KB with no React and no LiveKit in it.
 
@@ -143,6 +143,7 @@ are optional peers — install the one for your platform.
 | | `realtime-avatar/react-native` | The same, for Expo and React Native |
 | | `realtime-avatar/browser` | Mic and playback, with the six failure modes turned into values |
 | | `realtime-avatar/tools` | The browser tool plane — your functions, called mid-conversation |
+| | `realtime-avatar/recording` | Client-safe recording schemas and derived types |
 | [`libs/mcp`](./libs/mcp) | `realtime-avatar-mcp` | MCP server for coding agents |
 
 ---
@@ -185,8 +186,13 @@ One class, one types file. The full surface is
 
 ```ts
 // calls
-rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, transcript?, metadata? })
+rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, transcript?, metadata? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
+
+// optional recordings; server only, requires usage:read
+rta.listRecordings({ sessionId, limit?, cursor? })
+rta.getRecording(recordingId)          // durable metadata and processing state
+rta.getRecordingAccess(recordingId)    // { recordingId, url, expiresAt }; renew when needed
 
 // avatars
 rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // the only lane
@@ -217,6 +223,12 @@ rta.iterateSessions({ from, to })                   // the same, paging handled
 // webhooks
 verifyTranscript(rawBytes, headers, secret)
 ```
+
+Recording defaults to off. Your server can choose `"audio"`, `"video"`, or `"audio_video"`
+after obtaining consent. Keep `recordingId` and `sessionId` for your admin views; fetch temporary
+playback access when needed. File retention (`retainedUntil`, normally 30 days) is independent
+of URL expiry (`expiresAt`, up to one hour). Join transcripts and your script revisions by
+session ID. See [recording details](./libs/sdk-server/README.md#optional-call-recordings).
 
 ### Errors worth branching on
 
