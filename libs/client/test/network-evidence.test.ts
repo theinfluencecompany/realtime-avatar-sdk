@@ -3,6 +3,8 @@ import { test } from "node:test";
 import { ConnectionQuality, ConnectionState, Track } from "livekit-client";
 import {
   createNetworkEvidenceSession,
+  MAX_NETWORK_EVIDENCE_SAMPLES,
+  NETWORK_EVIDENCE_DURATION_MS,
   networkEvidenceSchemaVersion,
   summarizeRtcStats,
   summarizeRtcStatsReports,
@@ -246,4 +248,29 @@ test("the shared sample uses LiveKit's own state vocabulary", () => {
   assert.equal(sample.livekit.quality, "good");
   assert.equal(sample.livekit.connectionState, "connected");
   assert.equal(sample.livekit.videoStreamState, "active");
+});
+
+test("sample limits reject invalid inputs without consuming sequence slots and retain final disconnect", async () => {
+  const samples: AvatarNetworkEvidenceSample[] = [];
+  const manifest = {
+    schemaVersion: networkEvidenceSchemaVersion,
+    correlation: { evidenceId: "580c0052-a0c9-47a7-8e52-2b85788743b3", sessionId: "rts_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", surface: "web" as const, mode: "avatar" as const },
+    livekit: {}, createdAtUnixMs: 1_000,
+  };
+  const sample = {
+    trigger: "interval" as const, elapsedMs: 0,
+    livekit: { connectionState: ConnectionState.Connected, quality: ConnectionQuality.Good,
+      videoStreamState: Track.StreamState.Unknown, audioStreamState: Track.StreamState.Unknown },
+    identity: {}, statsStatus: "unavailable" as const, stats: { source: "none" as const },
+  };
+  const session = createNetworkEvidenceSession(manifest, (item) => { samples.push(item); });
+  session.sample({ ...sample, elapsedMs: Number.NaN });
+  session.sample({ ...sample, elapsedMs: NETWORK_EVIDENCE_DURATION_MS + 1 });
+  session.sample({ ...sample, trigger: "disconnected", elapsedMs: NETWORK_EVIDENCE_DURATION_MS + 1 });
+  for (let index = 0; index < MAX_NETWORK_EVIDENCE_SAMPLES + 10; index++) session.sample(sample);
+  await Promise.resolve();
+  assert.equal(samples.length, MAX_NETWORK_EVIDENCE_SAMPLES);
+  assert.equal(samples[0]?.sampleSeq, 1);
+  assert.equal(samples[0]?.trigger, "disconnected");
+  assert.equal(samples.at(-1)?.sampleSeq, MAX_NETWORK_EVIDENCE_SAMPLES);
 });

@@ -9,7 +9,6 @@ import {
   summarizeRtcStatsReports,
   type AvatarNetworkEvidenceObserver,
   type LiveKitEvidenceIdentity,
-  type NetworkEvidenceSession,
   type NetworkEvidenceTrigger,
   type PresentationEvidence,
 } from "./network-evidence.ts";
@@ -46,7 +45,8 @@ export function useAvatarNetworkEvidence(input: UseAvatarNetworkEvidenceInput): 
     const correlation = { ...observer.context };
     const startedAt = monotonicNowMs();
     const createdAtUnixMs = Date.now();
-    const intervalMs = Math.min(30_000, Math.max(2_000, observer.intervalMs ?? 5_000));
+    const requestedInterval = observer.intervalMs ?? 5_000;
+    const intervalMs = Number.isFinite(requestedInterval) ? Math.min(30_000, Math.max(2_000, requestedInterval)) : 5_000;
     let disposed = false;
     let reading = false;
     let connectionEpoch = 0;
@@ -73,27 +73,29 @@ export function useAvatarNetworkEvidence(input: UseAvatarNetworkEvidenceInput): 
       livekit: identity(),
       createdAtUnixMs,
     };
+    const segmentObserver = (): AvatarNetworkEvidenceObserver => {
+      const current = observerRef.current;
+      // Queued terminal evidence belongs to its original sink after a remint.
+      return current?.context.evidenceId === evidenceId && current.context.sessionId === sessionId ? current : observer;
+    };
     const session = createNetworkEvidenceSession(manifest, (sample) => {
-      try {
-        // A rerender may replace the sink, but a remint changes evidenceId and must
-        // never receive samples from the retired segment.
-        const current = observerRef.current;
-        if (current?.context.evidenceId === sample.evidenceId) current.onSample(sample);
-      } catch {
-        // Evidence callbacks are never permitted to affect media.
-      }
+      return segmentObserver().onSample(sample);
     });
     const publishManifest = (): void => {
       if (manifestSent || disposed || !roomSid) return;
       manifestSent = true;
-      try {
-        observerRef.current?.onManifest?.({ ...manifest, livekit: identity() });
-      } catch {
-        // Evidence callbacks are never permitted to affect media.
-      }
+      const capturedManifest = { ...manifest, livekit: identity() };
+      queueMicrotask(() => {
+        try {
+          void Promise.resolve(segmentObserver().onManifest?.(capturedManifest)).catch(() => {});
+        } catch {
+          // Evidence callbacks are never permitted to affect media.
+        }
+      });
     };
     const readReports = async (): Promise<RTCStatsReport[]> => {
       const reports: RTCStatsReport[] = [];
+      const publications = [tracksRef.current.videoTrack?.publication, tracksRef.current.audioTrack?.publication];
       // A full subscriber PC report contains transport/candidate-pair facts. Keep the
       // receiver reports too: the PC report may contain several participants, while the
       // receiver report is scoped to the bound avatar track.
@@ -103,7 +105,7 @@ export function useAvatarNetworkEvidence(input: UseAvatarNetworkEvidenceInput): 
       } catch {
         // Native shims and rooms without a subscriber PC may not expose this report.
       }
-      for (const publication of [tracksRef.current.videoTrack?.publication, tracksRef.current.audioTrack?.publication]) {
+      for (const publication of publications) {
         try {
           const track = publication?.track;
           const report = track && isRemoteTrack(track) ? await track.getRTCStatsReport() : undefined;
@@ -121,7 +123,6 @@ export function useAvatarNetworkEvidence(input: UseAvatarNetworkEvidenceInput): 
     const emit = async (trigger: NetworkEvidenceTrigger): Promise<void> => {
       if (disposed || !observerRef.current) return;
       const current = tracksRef.current;
-      const avatarSid = current.agent?.sid ?? current.videoTrack?.participant?.sid ?? current.audioTrack?.participant?.sid;
       const state = {
         connectionState: room.state,
         quality: current.agent?.connectionQuality ?? current.videoTrack?.participant?.connectionQuality ?? current.audioTrack?.participant?.connectionQuality ?? quality,
@@ -164,8 +165,8 @@ export function useAvatarNetworkEvidence(input: UseAvatarNetworkEvidenceInput): 
         if (trackIdentifier(currentAfter.videoTrack?.publication) !== observedVideoTrackId ||
           trackIdentifier(currentAfter.audioTrack?.publication) !== observedAudioTrackId) return;
         const stats = summarizeRtcStatsReports(reports, {
-          videoTrackId: observedVideoTrackId,
-          audioTrackId: observedAudioTrackId,
+          videoTrackId: observedVideoTrackId ?? null,
+          audioTrackId: observedAudioTrackId ?? null,
         });
         const stateAfter = {
           connectionState: room.state,

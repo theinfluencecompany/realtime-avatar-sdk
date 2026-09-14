@@ -90,7 +90,7 @@ export function monotonicNowMs(): number {
 /** Observer options shared by the web and React Native surfaces. */
 export type AvatarNetworkEvidenceObserver = {
   context: NetworkEvidenceContext;
-  /** Called once after the room identity is available, best effort. */
+  /** Delivered asynchronously once the room identity is available, best effort. */
   onManifest?: (manifest: AvatarNetworkEvidenceManifest) => void;
   /** Called on a bounded interval and selected LiveKit transitions. The SDK delivers from an
    * async task; a slow sink cannot block LiveKit's event dispatch. */
@@ -135,7 +135,7 @@ export function createNetworkEvidenceSession(
       sampleSeq += 1;
       queueMicrotask(() => {
         try {
-          onSample(sample);
+          void Promise.resolve(onSample(sample)).catch(() => {});
         } catch {
           // Evidence is strictly observational. A broken analytics sink cannot break a call.
         }
@@ -156,7 +156,7 @@ export function summarizeRtcStats(report: RTCStatsReport): RtcStatsEvidence {
  * tracks from attributing another participant's RTP to the avatar. */
 export function summarizeRtcStatsReports(
   reports: Iterable<RTCStatsReport>,
-  selection: { videoTrackId?: string; audioTrackId?: string } = {},
+  selection: { videoTrackId?: string | null; audioTrackId?: string | null } = {},
 ): RtcStatsEvidence {
   const entries: Record<string, unknown>[] = [];
   let source: RtcStatsEvidence["source"] = "none";
@@ -222,7 +222,9 @@ function compactTransport(input: Record<string, unknown>): TransportEvidence | u
   return Object.keys(output).length > 0 ? output : undefined;
 }
 
-function findInbound(inbound: Record<string, unknown>[], kind: "audio" | "video", trackId?: string) {
+function findInbound(inbound: Record<string, unknown>[], kind: "audio" | "video", trackId?: string | null) {
+  // An explicitly absent binding must never borrow another participant's only track.
+  if (trackId === null) return undefined;
   const candidates = inbound.filter((stat) => kindOf(stat) === kind);
   if (!trackId) return candidates.length === 1 ? candidates[0] : undefined;
   return candidates.find((stat) => stringValue(stat.trackIdentifier) === trackId);
