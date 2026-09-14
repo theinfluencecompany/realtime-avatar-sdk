@@ -156,6 +156,7 @@ export {
   type LiveKitEvidenceIdentity,
 } from "./network-evidence";
 export { useAvatarNetworkEvidence, type UseAvatarNetworkEvidenceInput } from "./use-network-evidence";
+export { NETWORK_QUALITY_POLICY, type NetworkQualityStatus } from "./network-quality";
 // Multi-clip choreography protocol pieces apps need to build clip libraries + narrow states.
 export {
   knownBehaviorStates,
