@@ -3,6 +3,7 @@ import { z } from "zod";
 /** The JSON contract shared by the SDK collector and first-party platform ingestion. */
 export const networkEvidenceSchemaVersion = 1 as const;
 export const MAX_NETWORK_EVIDENCE_SAMPLES = 480;
+export const MAX_NETWORK_EVIDENCE_BATCH = 20;
 export const NETWORK_EVIDENCE_DURATION_MS = 30 * 60_000;
 
 const boundedIdSchema = z.string().min(1).max(160);
@@ -148,7 +149,7 @@ export const networkEvidenceSampleSchema = z.strictObject({
 
 export const networkEvidenceUploadSchema = z.strictObject({
   manifest: networkEvidenceManifestSchema,
-  samples: z.array(networkEvidenceSampleSchema).min(1).max(20),
+  samples: z.array(networkEvidenceSampleSchema).min(1).max(MAX_NETWORK_EVIDENCE_BATCH),
 }).superRefine(({ manifest, samples }, ctx) => {
   const seen = new Set<number>();
   for (const [index, sample] of samples.entries()) {
@@ -184,6 +185,7 @@ export type PresentationEvidence = z.infer<typeof networkPresentationEvidenceSch
 export type AvatarNetworkEvidenceManifest = z.infer<typeof networkEvidenceManifestSchema>;
 export type AvatarNetworkEvidenceSample = z.infer<typeof networkEvidenceSampleSchema>;
 export type AvatarNetworkEvidenceUpload = z.infer<typeof networkEvidenceUploadSchema>;
+export type AvatarNetworkEvidenceAccepted = z.infer<typeof networkEvidenceAcceptedSchema>;
 export type NetworkEvidenceAnalytics = z.infer<typeof networkEvidenceAnalyticsSchema>;
 
 export type NetworkEvidenceSampleInput = Omit<
