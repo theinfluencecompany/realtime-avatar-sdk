@@ -6,6 +6,11 @@ import {
   ConnectionErrorReason,
   DisconnectReason,
   RoomEvent,
+  type Participant,
+  type RemoteTrack,
+  type RemoteTrackPublication,
+  type Room,
+  type Track,
 } from "livekit-client";
 import {
   useChat,
@@ -1150,7 +1155,25 @@ export type RealtimeSessionRoomSinks = Partial<{
   setMedia: (media: { video: "live" | "stalled" | "connecting"; audio: "flowing" | "silent" }) => void;
 }>;
 
+type PublisherConnectionDetails = Readonly<{
+  publisherQuality: Participant["connectionQuality"];
+  streamState: Track["streamState"] | null;
+}>;
+
+/** Current native connection facts. Track activity does not prove rendered or audible media. */
+export type AvatarConnectionDetails = Readonly<{
+  connectionState: Room["state"];
+  localQuality: Participant["connectionQuality"];
+  audio: PublisherConnectionDetails | null;
+  video: PublisherConnectionDetails | null;
+}>;
+
 export type SessionLifecycleRoomBridgeProps = {
+  /**
+   * Opt in to an initial snapshot and changed facts. Null clears a retired binding.
+   * Callback failures never affect the call; no stats polling or uploads are added.
+   */
+  onConnectionDetailsChange?: (details: AvatarConnectionDetails | null) => void;
   lifecycle: Pick<
     SessionLifecycleApi,
     | "onConnectionStateChange"
@@ -1158,6 +1181,7 @@ export type SessionLifecycleRoomBridgeProps = {
     | "registerLeaveRoom"
     | "markActivity"
   > &
+    Partial<Pick<SessionLifecycleApi, "grant">> &
     RealtimeSessionRoomSinks;
 };
 
@@ -1178,7 +1202,10 @@ export type SessionLifecycleRoomBridgeProps = {
  *
  * Renders nothing. Mount it once inside RealtimeAvatarLiveKitRoom.
  */
-export function SessionLifecycleRoomBridge({ lifecycle }: SessionLifecycleRoomBridgeProps): null {
+export function SessionLifecycleRoomBridge({
+  lifecycle,
+  onConnectionDetailsChange,
+}: SessionLifecycleRoomBridgeProps): null {
   const {
     onConnectionStateChange,
     setAgentPresent,
@@ -1204,6 +1231,109 @@ export function SessionLifecycleRoomBridge({ lifecycle }: SessionLifecycleRoomBr
   // spoke) counts as activity — a stable transcript array must not keep resetting
   // the clock forever (that would defeat the silent-call reap).
   const prevTranscriptionCountRef = useRef(0);
+
+  const audio = assistant.audioTrack;
+  const video = assistant.videoTrack;
+  // The room stays mounted while a cleared grant is replaced. Retire its facts too.
+  const detailsEnabled = onConnectionDetailsChange !== undefined && lifecycle.grant !== null;
+  const detailsSessionId = lifecycle.grant?.session_id;
+  const updateDetailsRef = useRef<((
+    callback: NonNullable<SessionLifecycleRoomBridgeProps["onConnectionDetailsChange"]>,
+    audio: typeof assistant.audioTrack,
+    video: typeof assistant.videoTrack,
+  ) => void) | null>(null);
+
+  useEffect(() => {
+    if (!detailsEnabled || !onConnectionDetailsChange) return;
+    let callback = onConnectionDetailsChange;
+    let audioSource = audio;
+    let videoSource = video;
+    let closed = false;
+    let pending = false;
+    let previous: AvatarConnectionDetails | undefined;
+    const deliver = (details: AvatarConnectionDetails | null): void => {
+      try {
+        void Promise.resolve(callback(details)).catch(() => {});
+      } catch {
+        /* Observational only. */
+      }
+    };
+    const publisher = (source: typeof audio): PublisherConnectionDetails | null => source
+      ? {
+          publisherQuality: source.participant.connectionQuality,
+          streamState: source.publication.track?.streamState ?? null,
+        }
+      : null;
+    const schedule = (): void => {
+      if (pending) return;
+      pending = true;
+      queueMicrotask(() => {
+        pending = false;
+        if (closed) return;
+        const next: AvatarConnectionDetails = {
+          connectionState: room.state,
+          localQuality: room.localParticipant.connectionQuality,
+          audio: publisher(audioSource),
+          video: publisher(videoSource),
+        };
+        const last = previous;
+        if (
+          last?.connectionState === next.connectionState &&
+          last.localQuality === next.localQuality &&
+          (["audio", "video"] as const).every((kind) =>
+            last[kind]?.publisherQuality === next[kind]?.publisherQuality &&
+            last[kind]?.streamState === next[kind]?.streamState)
+        ) return;
+        previous = next;
+        deliver(next);
+      });
+    };
+    const onQuality = (_quality: Participant["connectionQuality"], participant: Participant): void => {
+      if (
+        participant === room.localParticipant ||
+        participant === audioSource?.participant ||
+        participant === videoSource?.participant
+      ) schedule();
+    };
+    const onPublication = (publication: RemoteTrackPublication): void => {
+      if (publication === audioSource?.publication || publication === videoSource?.publication) schedule();
+    };
+    const onTrack = (_track: RemoteTrack, publication: RemoteTrackPublication): void =>
+      onPublication(publication);
+    room.on(RoomEvent.ConnectionStateChanged, schedule);
+    room.on(RoomEvent.ConnectionQualityChanged, onQuality);
+    room.on(RoomEvent.TrackStreamStateChanged, onPublication);
+    room.on(RoomEvent.TrackSubscribed, onTrack);
+    room.on(RoomEvent.TrackUnsubscribed, onTrack);
+    updateDetailsRef.current = (nextCallback, nextAudio, nextVideo) => {
+      callback = nextCallback;
+      audioSource = nextAudio;
+      videoSource = nextVideo;
+      schedule();
+    };
+    schedule();
+    return () => {
+      closed = true;
+      updateDetailsRef.current = null;
+      room.off(RoomEvent.ConnectionStateChanged, schedule);
+      room.off(RoomEvent.ConnectionQualityChanged, onQuality);
+      room.off(RoomEvent.TrackStreamStateChanged, onPublication);
+      room.off(RoomEvent.TrackSubscribed, onTrack);
+      room.off(RoomEvent.TrackUnsubscribed, onTrack);
+      // Clear the retiring call's handler before a replacement binding can publish.
+      deliver(null);
+    };
+  }, [room, detailsSessionId, detailsEnabled]);
+
+  useEffect(() => {
+    if (onConnectionDetailsChange) updateDetailsRef.current?.(onConnectionDetailsChange, audio, video);
+  }, [
+    onConnectionDetailsChange,
+    detailsEnabled ? audio?.participant : undefined,
+    detailsEnabled ? audio?.publication : undefined,
+    detailsEnabled ? video?.participant : undefined,
+    detailsEnabled ? video?.publication : undefined,
+  ]);
 
   useEffect(() => {
     onConnectionStateChange(connectionState);

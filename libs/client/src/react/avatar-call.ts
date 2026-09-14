@@ -18,7 +18,7 @@
 import { createElement, useEffect, useRef, type ReactNode } from "react";
 import { AvatarVideoSurface, type AvatarVideoFit } from "./avatar-video-surface";
 import { RealtimeAvatarLiveKitRoom } from "./livekit";
-import { SessionLifecycleRoomBridge } from "./session-lifecycle";
+import { SessionLifecycleRoomBridge, type SessionLifecycleRoomBridgeProps } from "./session-lifecycle";
 import { useRealtimeSession, type RealtimeSessionApi } from "./use-realtime-session";
 import type { AvatarSessionClient } from "../session-client";
 
@@ -64,7 +64,7 @@ export type AvatarCallHandle = {
   end: () => void;
 };
 
-export type AvatarCallProps = {
+export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectionDetailsChange"> & {
   client: AvatarSessionClient;
   /** Which character. */
   avatarId: string;
@@ -173,7 +173,11 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
       onDisconnected: session.onDisconnected,
       onError: session.onConnectionError,
     },
-    createElement(SessionLifecycleRoomBridge, { key: "bridge", lifecycle: session }),
+    createElement(SessionLifecycleRoomBridge, {
+      key: "bridge",
+      lifecycle: session,
+      onConnectionDetailsChange: props.onConnectionDetailsChange,
+    }),
     createElement(
       AvatarVideoSurface,
       {

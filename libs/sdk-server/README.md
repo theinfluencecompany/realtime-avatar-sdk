@@ -147,16 +147,58 @@ call. Policy — `instructions`, `maxSeconds`, `voice`, `video` — is decided i
 your server. A route that spreads the request body into `startCall` hands your caller your
 system prompt and your bill.
 
-### Native connection facts
+### Optional connection details
 
-LiveKit owns media transport, connection state, and reconnection. Use its
-`useConnectionState()` and `useConnectionQualityIndicator({ participant })` hooks, or
-`RoomEvent` callbacks, to build your product's network UI. Their values already use
-`ConnectionState`, `ConnectionQuality`, and `Track.StreamState` from `livekit-client`.
-For current receiver measurements, `RemoteVideoTrack.getReceiverStats()` and
-`RemoteAudioTrack.getReceiverStats()` return LiveKit's exported `VideoReceiverStats` and
-`AudioReceiverStats` types.
-Keep these native types in process; there is no SDK-specific JSON mirror to maintain.
+`AvatarCall` provides call status, actions and end reasons for your default UI. To show
+connection diagnostics, opt in with `onConnectionDetailsChange`. It supplies data for
+your own UI; enabling it adds no built-in network notice or controls.
+
+```tsx
+import { useState } from "react";
+import { AvatarCall, type AvatarCallProps, type AvatarConnectionDetails } from "realtime-avatar/react";
+
+function CallWithDetails(props: Pick<AvatarCallProps, "client" | "avatarId">) {
+  const [details, setDetails] = useState<AvatarConnectionDetails | null>(null);
+
+  return (
+    <>
+      <AvatarCall {...props} onConnectionDetailsChange={setDetails} />
+      {details && <p>Connection: {details.connectionState}. Local quality: {details.localQuality}.</p>}
+    </>
+  );
+}
+```
+
+Once bound to a call, the callback receives an initial snapshot, then changed facts only. It receives `null`
+when its room or session binding is retired, before a replacement binding's snapshot.
+Clearing the session grant keeps details reset until a new grant arrives.
+Keep this state scoped to one call and clear it on `null`, as the example does. This is
+a current snapshot, not a lossless event history. Replacing the handler does not restart
+the call, and errors in your handler do not interrupt it. Omitting the callback adds no
+reporting listeners; the callback adds no timers, stats polling or uploads.
+
+Each field preserves LiveKit's native type and meaning:
+
+| Field | Source |
+| --- | --- |
+| `connectionState` | The bound room's `state`. |
+| `localQuality` | The local participant's `connectionQuality`. |
+| `audio.publisherQuality` | The selected audio publisher's `connectionQuality`. |
+| `video.publisherQuality` | The selected video publisher's `connectionQuality`. |
+| `audio.streamState`, `video.streamState` | The corresponding remote track's `streamState`, or `null` before the track exists. |
+
+Audio and video publishers are selected independently and can differ. Neither field
+substitutes the control agent or an arbitrary remote participant. `audio` or `video` is
+`null` when no corresponding track reference is selected; LiveKit's `Unknown` quality
+means a publisher exists but its quality is unknown. An active or subscribed track does
+not prove that video has rendered or audio is audible. Continue using call status for
+the call lifecycle.
+
+Native and custom integrations pass the same optional callback to their existing
+`SessionLifecycleRoomBridge` inside `RealtimeAvatarLiveKitRoom`. Both
+`realtime-avatar/react` and `realtime-avatar/react-native` export `AvatarConnectionDetails`.
+For deeper receiver measurements, use LiveKit's public `RemoteVideoTrack.getReceiverStats()`
+and `RemoteAudioTrack.getReceiverStats()` methods and their native return types.
 
 Retain the app's session-to-room association (`room_name`, timestamps and participant
 identity), adding the server-observed room SID when exact room-lifetime lookup needs it.

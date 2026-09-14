@@ -109,6 +109,7 @@ export {
   MAX_RECONNECT_ATTEMPTS,
   RECONNECT_BACKOFF_MS,
   SessionLifecycleRoomBridge,
+  type AvatarConnectionDetails,
   useSessionLifecycle,
   type ReconnectPolicy,
   type RecoveryState,
