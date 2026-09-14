@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // quality-governor — the PURE core of the adaptive video-quality mechanism
-// (ZERO React, ZERO vendor imports). Table/trace-tested exactly like grace-window
+// (ZERO React, ZERO vendor runtime imports). Table/trace-tested exactly like grace-window
 // and the session-lifecycle classifiers. The hook (use-quality-governor.ts) wires
 // this onto a 1s tick + LiveKit events + getStats + the player's rVFC freeze feed,
 // and is the ONLY place `publication.setVideoQuality` is called.
@@ -16,6 +16,8 @@
 // authoritative + instant); setVideoQuality(HIGH) only RAISES the cap and lets BWE
 // choose up to it (up is PERMISSION, not delivery — must be observed on probation).
 // ---------------------------------------------------------------------------
+
+import type { ConnectionQuality } from "livekit-client";
 
 /** The subscriber-cap levels we drive (map to LiveKit VideoQuality LOW/HIGH). */
 export type QualityCap = "low" | "high";
@@ -33,7 +35,7 @@ export type GovernorState =
 /**
  * One normalized input the hook feeds each tick. The hook translates ALL of
  * {TrackStreamStateChanged, ConnectionQualityChanged, getStats, rVFC freeze} into
- * this shape, so the core never sees a vendor type.
+ * this shape. LiveKit owns the connection-quality vocabulary.
  */
 export interface GovernorSignal {
   /** SFU congestion controller paused the track since the last tick — Tier-0, the
@@ -44,9 +46,8 @@ export interface GovernorSignal {
   freezeMsInWindow: number;
   /** jitterBufferDelay is trending up — the earliest LEADING pre-freeze sign. */
   jitterRising: boolean;
-  /** LiveKit ConnectionQuality — a LAGGING corroborator only (jitter/RTT are disabled
-   *  in its score + known false-Poor bugs). Blocks up-probes; never a sole trigger. */
-  connectionQuality: "excellent" | "good" | "poor" | "lost" | "unknown";
+  /** LiveKit connection quality blocks up-probes; it is never a sole downgrade trigger. */
+  connectionQuality: `${ConnectionQuality}`;
   /** The tab is hidden / track muted / freezes correlate with local CPU not network —
    *  the false-positive fence (our own Dia-freeze lesson). When true the machine is
    *  frozen: no signal is trusted, no transition fires. */

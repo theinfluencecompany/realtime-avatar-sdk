@@ -147,6 +147,23 @@ call. Policy — `instructions`, `maxSeconds`, `voice`, `video` — is decided i
 your server. A route that spreads the request body into `startCall` hands your caller your
 system prompt and your bill.
 
+### Native connection facts
+
+LiveKit owns media transport, connection state, and reconnection. Use its
+`useConnectionState()` and `useConnectionQualityIndicator({ participant })` hooks, or
+`RoomEvent` callbacks, to build your product's network UI. Their values already use
+`ConnectionState`, `ConnectionQuality`, and `Track.StreamState` from `livekit-client`.
+For current receiver measurements, `RemoteVideoTrack.getReceiverStats()` and
+`RemoteAudioTrack.getReceiverStats()` return LiveKit's exported `VideoReceiverStats` and
+`AudioReceiverStats` types.
+Keep these native types in process; there is no SDK-specific JSON mirror to maintain.
+
+Retain the app's session-to-room association (`room_name`, room SID, participant identity
+and SID) for looking up details in LiveKit's own diagnostics. The existing quality governor
+and opt-in adaptive playout are product policies over LiveKit facts; setting
+`adaptiveQuality={false}` releases the manual quality ceiling while LiveKit's bandwidth
+adaptation continues. Adaptive playout reads only public LiveKit track reports.
+
 ### Importing a server entry into a browser build throws
 
 Not a lint rule and not a naming convention — the six server subpaths carry `browser` and

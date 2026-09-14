@@ -72,21 +72,6 @@ export interface UseAvatarQualityGovernorInput {
   tickMs?: number;
 }
 
-const qualityToSignal = (q: ConnectionQuality): GovernorSignal["connectionQuality"] => {
-  switch (q) {
-    case ConnectionQuality.Excellent:
-      return "excellent";
-    case ConnectionQuality.Good:
-      return "good";
-    case ConnectionQuality.Poor:
-      return "poor";
-    case ConnectionQuality.Lost:
-      return "lost";
-    default:
-      return "unknown";
-  }
-};
-
 /**
  * Drive the adaptive quality governor for the avatar's subscribed video track.
  *
@@ -143,9 +128,7 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     let pausedSinceTick = false;
     let lastFreezeStat: { frozen: number; ts: number } | null = null;
     let jitterTrend: JitterBufferTrendState | null = null;
-    let connQuality = qualityToSignal(
-      targetParticipant?.connectionQuality ?? ConnectionQuality.Unknown,
-    );
+    let connQuality = targetParticipant?.connectionQuality ?? ConnectionQuality.Unknown;
 
     // ── event adapters (Tier-0 Paused + Tier-2 ConnectionQuality) ──
     const onStreamState = (
@@ -158,7 +141,7 @@ export function useAvatarQualityGovernor(input: UseAvatarQualityGovernorInput): 
     };
     const onQuality = (q: ConnectionQuality, participant: Participant): void => {
       if (participant.sid !== targetParticipant.sid) return;
-      connQuality = qualityToSignal(q);
+      connQuality = q;
     };
 
     try {
