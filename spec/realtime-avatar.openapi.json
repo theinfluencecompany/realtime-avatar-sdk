@@ -728,6 +728,16 @@
             ],
             "additionalProperties": false
           },
+          "recording": {
+            "type": "string",
+            "enum": [
+              "off",
+              "audio",
+              "video",
+              "audio_video"
+            ],
+            "description": "Server-owned recording policy; omitted means off. Audio includes user and avatar audio."
+          },
           "client_metadata": {
             "type": "object",
             "propertyNames": {

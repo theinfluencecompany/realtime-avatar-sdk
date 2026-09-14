@@ -527,6 +527,11 @@ export interface components {
                 url: string;
                 secret: string;
             };
+            /**
+             * @description Server-owned recording policy; omitted means off. Audio includes user and avatar audio.
+             * @enum {string}
+             */
+            recording?: "off" | "audio" | "video" | "audio_video";
             client_metadata?: {
                 [key: string]: string;
             };
