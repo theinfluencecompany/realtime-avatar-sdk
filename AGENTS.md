@@ -407,6 +407,25 @@ backstop. Every app in `apps/demo/` carries the full pattern end to end.
 
 ---
 
+### 14. Network evidence has one contract and one observer per segment
+
+Pin `realtime-avatar` at `0.14.0` when using network evidence. Pass `networkEvidence`
+to `AvatarCall` / `AvatarVideoSurface`, or mount `useAvatarNetworkEvidence` inside
+the room for a custom renderer. Do not mount both for the same segment.
+
+Use the granted platform session ID and a fresh evidence UUID for each remint.
+Keep the app's call and attempt IDs as correlation, never authorization. The
+callbacks are deferred, bounded observations; buffer samples until the manifest
+is available and upload through your authenticated backend. API keys stay there.
+The SDK neither uploads evidence nor changes media in response to it.
+
+Import schemas, inferred payload types and batch limits from
+`realtime-avatar/network-evidence` on both sides of the HTTP boundary. That
+subpath only imports Zod; do not copy its schema into your server. Validate
+untrusted uploads at the route boundary, then pass the inferred type internally.
+Native receiver statistics do not prove a frame appeared on screen; leave those
+presentation fields absent without equivalent evidence.
+
 ## Deciding how she looks
 
 `video` on a call. **Two modes** — `looping` (default) animates real video you supply,
