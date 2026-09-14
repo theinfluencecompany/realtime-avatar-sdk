@@ -143,6 +143,7 @@ are optional peers — install the one for your platform.
 | | `realtime-avatar/react-native` | The same, for Expo and React Native |
 | | `realtime-avatar/browser` | Mic and playback, with the six failure modes turned into values |
 | | `realtime-avatar/tools` | The browser tool plane — your functions, called mid-conversation |
+| | `realtime-avatar/network-evidence` | Shared evidence schemas and types, with only Zod as a runtime dependency |
 | [`libs/mcp`](./libs/mcp) | `realtime-avatar-mcp` | MCP server for coding agents |
 
 ---

@@ -141,6 +141,7 @@ Browser — these never can:
 | `realtime-avatar/react-native` | The same surface for Expo / React Native |
 | `realtime-avatar/browser` | `enableMicrophone`, `attachRemoteAudio`, `prepareAvatarRoom` — no React |
 | `realtime-avatar/tools` | `attachAvatarTools` — the browser tool plane |
+| `realtime-avatar/network-evidence` | Shared Zod evidence schemas and inferred types; usable on servers, web and native |
 
 Every adapter takes the same two hooks: `authorize` gates the request, `session` decides the
 call. Policy — `instructions`, `maxSeconds`, `voice`, `video` — is decided in `session`, on
@@ -181,6 +182,26 @@ room-wide to whatever you render inside it (`playoutDelaySeconds={false}` opts o
 
 `attachAvatarTools` runs your functions in the page. Nothing is executed on the platform, and
 a tool has **2.5 seconds** to answer before the call gives up on it and tells her it failed.
+
+## Observing a call's network
+
+Pass `networkEvidence` to `AvatarCall` or `AvatarVideoSurface`, or call
+`useAvatarNetworkEvidence({ observer })` inside the room when you render your own
+surface. Use one observer per call segment. Both React entries expose the same
+observer, with `context`, `onManifest`, and `onSample` callbacks. Context identifies
+the evidence segment with a new UUID, the platform `sessionId`, `surface`, and
+`mode`; generate a new evidence ID when a session is reminted.
+
+The observer emits selected LiveKit state and WebRTC measurements every five
+seconds and on relevant events, up to 480 samples or 30 minutes. It does not alter
+media or upload data. Your authenticated server accepts batches validated by
+`networkEvidenceUploadSchema` from `realtime-avatar/network-evidence`; payload
+types are inferred from those same schemas. This entry imports only Zod.
+
+Only selected fields leave the collector: it omits addresses, candidate IDs,
+credentials, transcripts, and media. Native reports do not claim that a frame
+reached the screen; browser presentation evidence comes from the video surface's
+existing decoded-frame tracking. An absent measurement remains absent.
 
 ## What `/react` exports, and what it deliberately does not
 
