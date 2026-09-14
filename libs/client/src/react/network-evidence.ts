@@ -192,19 +192,19 @@ export function summarizeRtcStatsReports(
     (selectedPairId ? byId.get(selectedPairId) : undefined) ??
     pairs.find((candidate) => candidate.selected === true) ??
     pairs.find((candidate) => candidate.nominated === true);
-  const localType = candidateType(lookup(byId, pair?.localCandidateId)?.candidateType);
-  const remoteType = candidateType(lookup(byId, pair?.remoteCandidateId)?.candidateType);
-  const protocol = candidateProtocol(lookup(byId, pair?.localCandidateId)?.protocol);
-  const rttSeconds = measurementValue(pair?.currentRoundTripTime);
+  const localType = readField(networkCandidateTypeSchema, lookup(byId, pair?.localCandidateId)?.candidateType);
+  const remoteType = readField(networkCandidateTypeSchema, lookup(byId, pair?.remoteCandidateId)?.candidateType);
+  const protocol = readField(networkCandidateProtocolSchema, lookup(byId, pair?.localCandidateId)?.protocol);
+  const rttMs = secondsToMs(pair?.currentRoundTripTime);
   const connectionInput: Record<string, unknown> = {
     ice: readField(networkIceStateSchema, transport?.iceState),
     dtls: readField(networkDtlsStateSchema, transport?.dtlsState),
     route: localType && remoteType && protocol ? `${localType}/${protocol} -> ${remoteType}` : undefined,
     network: readField(networkTypeSchema, lookup(byId, pair?.localCandidateId)?.networkType),
-    rttMs: rttSeconds === undefined ? undefined : Math.round(rttSeconds * 1000),
-    availableOutgoingBitrate: numberValue(pair?.availableOutgoingBitrate),
-    availableIncomingBitrate: numberValue(pair?.availableIncomingBitrate),
-    selectedCandidatePairChanges: numberValue(transport?.selectedCandidatePairChanges),
+    rttMs,
+    availableOutgoingBitrate: pair?.availableOutgoingBitrate,
+    availableIncomingBitrate: pair?.availableIncomingBitrate,
+    selectedCandidatePairChanges: transport?.selectedCandidatePairChanges,
   };
   const connection = compactTransport(connectionInput);
   const video = findInbound(inbound, "video", selection.videoTrackId);
@@ -218,16 +218,8 @@ export function summarizeRtcStatsReports(
 }
 
 function compactTransport(input: Record<string, unknown>): TransportEvidence | undefined {
-  const output: Record<string, unknown> = {};
-  copyString(output, "ice", input.ice);
-  copyString(output, "dtls", input.dtls);
-  copyString(output, "route", input.route);
-  copyString(output, "network", input.network);
-  copyMeasurement(output, "rttMs", input.rttMs, 86_400_000);
-  copyNumber(output, "availableOutgoingBitrate", input.availableOutgoingBitrate, 100_000_000);
-  copyNumber(output, "availableIncomingBitrate", input.availableIncomingBitrate, 100_000_000);
-  copyNumber(output, "selectedCandidatePairChanges", input.selectedCandidatePairChanges, 10_000_000_000);
-  return Object.keys(output).length > 0 ? networkTransportEvidenceSchema.parse(output) : undefined;
+  const output = projectEvidence(networkTransportEvidenceSchema, input);
+  return Object.keys(output).length > 0 ? output : undefined;
 }
 
 function findInbound(inbound: Record<string, unknown>[], kind: "audio" | "video", trackId?: string) {
@@ -237,27 +229,33 @@ function findInbound(inbound: Record<string, unknown>[], kind: "audio" | "video"
 }
 
 function compactInbound(stat: Record<string, unknown>, codecs: Map<string, string>): InboundRtpEvidence {
-  const output: Record<string, unknown> = {};
   const codecId = stringValue(stat.codecId);
-  copyString(output, "codec", codecFamily(codecId ? codecs.get(codecId) : undefined));
-  copyNumber(output, "bytesReceived", stat.bytesReceived, 10_000_000_000);
-  copyNumber(output, "packetsReceived", stat.packetsReceived, 10_000_000_000);
-  copyNumber(output, "packetsLost", stat.packetsLost, 10_000_000_000);
-  copyScaledNumber(output, "jitterMs", stat.jitter, 1000, 86_400_000);
-  copyScaledNumber(output, "jitterBufferDelayMs", stat.jitterBufferDelay, 1000, 86_400_000);
-  copyNumber(output, "jitterBufferEmittedCount", stat.jitterBufferEmittedCount, 10_000_000_000);
-  copyNumber(output, "framesReceived", stat.framesReceived, 10_000_000_000);
-  copyNumber(output, "framesDecoded", stat.framesDecoded, 10_000_000_000);
-  copyNumber(output, "framesDropped", stat.framesDropped, 10_000_000_000);
-  copyMeasurement(output, "framesPerSecond", stat.framesPerSecond, 240);
-  copyNumber(output, "frameWidth", stat.frameWidth, 10_000);
-  copyNumber(output, "frameHeight", stat.frameHeight, 10_000);
-  copyNumber(output, "freezeCount", stat.freezeCount, 10_000_000_000);
-  copyScaledNumber(output, "totalFreezesDurationMs", stat.totalFreezesDuration, 1000, 86_400_000);
-  copyNumber(output, "keyFramesDecoded", stat.keyFramesDecoded, 10_000_000_000);
-  copyNumber(output, "concealedSamples", stat.concealedSamples, 10_000_000_000);
-  copyNumber(output, "totalSamplesReceived", stat.totalSamplesReceived, 10_000_000_000);
-  return networkInboundRtpEvidenceSchema.parse(output);
+  return projectEvidence(networkInboundRtpEvidenceSchema, {
+    ...stat,
+    codec: codecFamily(codecId ? codecs.get(codecId) : undefined),
+    jitterMs: secondsToMs(stat.jitter),
+    jitterBufferDelayMs: secondsToMs(stat.jitterBufferDelay),
+    totalFreezesDurationMs: secondsToMs(stat.totalFreezesDuration),
+  });
+}
+
+/** The contract is the allowlist and owns all bounds; malformed optional stats are omitted. */
+function projectEvidence<S extends Record<string, z.ZodType>>(
+  schema: z.ZodObject<S>,
+  input: Record<string, unknown>,
+): z.output<z.ZodObject<S>> {
+  const output: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(schema.shape)) {
+    const result = field.safeParse(input[key]);
+    if (result.success && result.data !== undefined) output[key] = result.data;
+  }
+  return schema.parse(output);
+}
+
+function secondsToMs(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value * 1000)
+    : undefined;
 }
 
 function lookup(byId: Map<string, Record<string, unknown>>, id: unknown): Record<string, unknown> | undefined {
@@ -280,16 +278,6 @@ function codecFamily(value: unknown): string | undefined {
   return undefined;
 }
 
-function candidateType(value: unknown): z.infer<typeof networkCandidateTypeSchema> | undefined {
-  const parsed = networkCandidateTypeSchema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
-}
-
-function candidateProtocol(value: unknown): z.infer<typeof networkCandidateProtocolSchema> | undefined {
-  const parsed = networkCandidateProtocolSchema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
-}
-
 function readField<S extends z.ZodType>(schema: S, value: unknown): z.output<S> | undefined {
   const result = schema.safeParse(value);
   return result.success ? result.data : undefined;
@@ -297,35 +285,6 @@ function readField<S extends z.ZodType>(schema: S, value: unknown): z.output<S> 
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 && value.length <= 160 ? value : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : undefined;
-}
-
-function copyString(target: Record<string, unknown>, key: string, value: unknown): void {
-  if (typeof value === "string") target[key] = value;
-}
-
-function copyNumber(target: Record<string, unknown>, key: string, value: unknown, max: number): void {
-  const number = numberValue(value);
-  if (number !== undefined && number <= max) target[key] = number;
-}
-
-function measurementValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function copyMeasurement(target: Record<string, unknown>, key: string, value: unknown, max: number): void {
-  const number = measurementValue(value);
-  if (number !== undefined && number <= max) target[key] = number;
-}
-
-function copyScaledNumber(target: Record<string, unknown>, key: string, value: unknown, scale: number, max: number): void {
-  const number = typeof value === "number" && Number.isFinite(value) && value >= 0 ? value * scale : undefined;
-  if (number !== undefined && Number.isSafeInteger(Math.round(number)) && Math.round(number) <= max) target[key] = Math.round(number);
 }
 
 /** Coarsen the rich callback payload at the product-analytics storage boundary. */
