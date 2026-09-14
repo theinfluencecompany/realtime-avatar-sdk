@@ -50,7 +50,7 @@ authorize and publish can be recorded. Camera controls remain a future SDK featu
 
 Recordings may finish processing after a call ends. Use `listRecordings({ sessionId })` to find
 them, or refresh `getRecording(recordingId)` while processing. These methods and
-`getRecordingAccess` require a server key with `usage:read`.
+`getRecordingAccess` require a server key with `recordings:read`.
 
 Save `recordingId`, not a playback URL. Files are retained until `retainedUntil` (30 days by
 default); each URL expires at `expiresAt` (up to one hour, capped by retention). Obtain fresh
@@ -140,7 +140,7 @@ all), and the `video` policy types are deliberately not one-to-one with the wire
 rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, transcript?, metadata? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 
-// optional recordings; server only, requires usage:read
+// optional recordings; server only, requires recordings:read
 rta.listRecordings({ sessionId, limit?, cursor? })
 rta.getRecording(recordingId)
 rta.getRecordingAccess(recordingId)

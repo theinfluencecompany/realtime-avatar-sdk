@@ -558,7 +558,7 @@ export class RealtimeAvatar {
     } while (cursor);
   }
 
-  /** Recording metadata for this account, optionally limited to one call. Requires usage:read. */
+  /** Recording metadata for this account, optionally limited to one call. Requires recordings:read. */
   async listRecordings(options: ListRecordingsQuery = {}): Promise<ListRecordingsResponse> {
     const parsed = listRecordingsQuerySchema.parse(options);
     const query = new URLSearchParams();

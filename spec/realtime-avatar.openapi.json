@@ -33,6 +33,7 @@
           "realtime:write": "Mint and release live calls, and read pool capacity.",
           "credits:read": "Read the workspace credit balance and what live calls are holding.",
           "usage:read": "Read per-session billed usage detail.",
+          "recordings:read": "Read private recording metadata and issue playback URLs.",
           "usage:write": "Report usage events. Reserved for first-party runtimes; no public operation requires it.",
           "api_keys:write": "Mint further API keys.",
           "*": "Every operation. Granted by the dashboard's default key for convenience — prefer the narrow scopes above, which are what an agent should request."
@@ -1785,6 +1786,7 @@
                 "avatars:write",
                 "realtime:write",
                 "usage:read",
+                "recordings:read",
                 "usage:write"
               ]
             }
@@ -1860,6 +1862,7 @@
                 "avatars:write",
                 "realtime:write",
                 "usage:read",
+                "recordings:read",
                 "usage:write"
               ]
             }
@@ -3788,6 +3791,7 @@
               "avatars:write",
               "realtime:write",
               "usage:read",
+              "recordings:read",
               "usage:write"
             ]
           },
@@ -3804,6 +3808,7 @@
                 "avatars:write",
                 "realtime:write",
                 "usage:read",
+                "recordings:read",
                 "usage:write"
               ]
             }
@@ -4998,7 +5003,7 @@
     "/v1/recordings": {
       "get": {
         "operationId": "listRecordings",
-        "description": "List this workspace's private recordings, newest first. Metadata uses stable recording IDs and retainedUntil; download URLs are issued separately.\n\nRequires an API key with the `usage:read` scope.",
+        "description": "List this workspace's private recordings, newest first. Metadata uses stable recording IDs and retainedUntil; download URLs are issued separately.\n\nRequires an API key with the `recordings:read` scope.",
         "parameters": [
           {
             "name": "sessionId",
@@ -5083,7 +5088,7 @@
           }
         },
         "x-required-scopes": [
-          "usage:read"
+          "recordings:read"
         ],
         "summary": "List session recordings",
         "tags": [
@@ -5094,7 +5099,7 @@
     "/v1/recordings/{recordingId}": {
       "get": {
         "operationId": "getRecording",
-        "description": "Get durable metadata for an owned recording. Pending recordings reconcile with the recording provider. Retention expiry preserves metadata and blocks media access.\n\nRequires an API key with the `usage:read` scope.",
+        "description": "Get durable metadata for an owned recording. Pending recordings reconcile with the recording provider. Retention expiry preserves metadata and blocks media access.\n\nRequires an API key with the `recordings:read` scope.",
         "parameters": [
           {
             "name": "recordingId",
@@ -5168,7 +5173,7 @@
           }
         },
         "x-required-scopes": [
-          "usage:read"
+          "recordings:read"
         ],
         "summary": "Get recording status",
         "tags": [
@@ -5179,7 +5184,7 @@
     "/v1/recordings/{recordingId}/access": {
       "get": {
         "operationId": "getRecordingAccess",
-        "description": "Issue a signed GET URL for a ready recording. The URL supports byte ranges and defaults to one hour, capped by retainedUntil. Request a new URL with this API key when it expires; URL expiry does not delete media. Keep this URL private.\n\nRequires an API key with the `usage:read` scope.",
+        "description": "Issue a signed GET URL for a ready recording. The URL supports byte ranges and defaults to one hour, capped by retainedUntil. Request a new URL with this API key when it expires; URL expiry does not delete media. Keep this URL private.\n\nRequires an API key with the `recordings:read` scope.",
         "parameters": [
           {
             "name": "recordingId",
@@ -5273,7 +5278,7 @@
           }
         },
         "x-required-scopes": [
-          "usage:read"
+          "recordings:read"
         ],
         "summary": "Get a temporary recording download URL",
         "tags": [

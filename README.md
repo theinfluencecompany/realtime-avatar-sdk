@@ -189,7 +189,7 @@ One class, one types file. The full surface is
 rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, transcript?, metadata? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 
-// optional recordings; server only, requires usage:read
+// optional recordings; server only, requires recordings:read
 rta.listRecordings({ sessionId, limit?, cursor? })
 rta.getRecording(recordingId)          // durable metadata and processing state
 rta.getRecordingAccess(recordingId)    // { recordingId, url, expiresAt }; renew when needed

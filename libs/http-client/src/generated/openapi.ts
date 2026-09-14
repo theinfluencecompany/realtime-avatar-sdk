@@ -291,7 +291,7 @@ export interface paths {
          * List session recordings
          * @description List this workspace's private recordings, newest first. Metadata uses stable recording IDs and retainedUntil; download URLs are issued separately.
          *
-         *     Requires an API key with the `usage:read` scope.
+         *     Requires an API key with the `recordings:read` scope.
          */
         get: operations["listRecordings"];
         put?: never;
@@ -313,7 +313,7 @@ export interface paths {
          * Get recording status
          * @description Get durable metadata for an owned recording. Pending recordings reconcile with the recording provider. Retention expiry preserves metadata and blocks media access.
          *
-         *     Requires an API key with the `usage:read` scope.
+         *     Requires an API key with the `recordings:read` scope.
          */
         get: operations["getRecording"];
         put?: never;
@@ -335,7 +335,7 @@ export interface paths {
          * Get a temporary recording download URL
          * @description Issue a signed GET URL for a ready recording. The URL supports byte ranges and defaults to one hour, capped by retainedUntil. Request a new URL with this API key when it expires; URL expiry does not delete media. Keep this URL private.
          *
-         *     Requires an API key with the `usage:read` scope.
+         *     Requires an API key with the `recordings:read` scope.
          */
         get: operations["getRecordingAccess"];
         put?: never;
@@ -772,7 +772,7 @@ export interface components {
              *       "avatars:read"
              *     ]
              */
-            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "usage:write")[];
+            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write")[];
             spendLimitCreditMicros?: number | null;
             expiresAt?: string | null;
         };
@@ -784,7 +784,7 @@ export interface components {
             redactedKey: string;
             /** @default false */
             canReveal: boolean;
-            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "usage:write")[];
+            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write")[];
             /** @enum {string} */
             status: "active" | "revoked" | "expired";
             spendLimitCreditMicros: number | null;
@@ -1166,9 +1166,9 @@ export interface components {
              * @description Present on `403 insufficient_scope` — the one scope this operation needed and the key did not carry. Repeated in the `WWW-Authenticate` challenge as `scope=`.
              * @enum {string}
              */
-            requiredScope?: "*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "usage:write";
+            requiredScope?: "*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write";
             /** @description Present alongside `requiredScope` — the scopes the presented key does carry. */
-            grantedScopes?: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "usage:write")[];
+            grantedScopes?: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write")[];
             /** @description Present on 402 — where to send the user to top up. */
             billingUrl?: string;
             /** @description On concurrency_limit_reached: the workspace's concurrent session limit. */
