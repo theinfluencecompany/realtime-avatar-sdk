@@ -21,6 +21,7 @@ import { RealtimeAvatarLiveKitRoom } from "./livekit";
 import { SessionLifecycleRoomBridge } from "./session-lifecycle";
 import { useRealtimeSession, type RealtimeSessionApi } from "./use-realtime-session";
 import type { AvatarSessionClient } from "../session-client";
+import type { AvatarNetworkEvidenceObserver } from "./network-evidence";
 
 /**
  * What the app renders a banner for. Deliberately NOT the internal phase union: those arms
@@ -80,6 +81,8 @@ export type AvatarCallProps = {
   className?: string;
   /** Your remaining balance in ms, if you want `onLowBalance`. */
   balanceMs?: number;
+  /** Optional, read-only LiveKit evidence. Supply stable app correlation in context. */
+  networkEvidence?: AvatarNetworkEvidenceObserver;
 
   onStatusChange?: (status: AvatarCallStatus) => void;
   onEnded?: (event: { reason: AvatarCallEndReason }) => void;
@@ -182,6 +185,7 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
         poster: props.poster ?? null,
         fit: props.fit ?? "cover",
         className: props.className,
+        networkEvidence: props.networkEvidence,
       },
       props.children ? props.children(call) : null,
     ),

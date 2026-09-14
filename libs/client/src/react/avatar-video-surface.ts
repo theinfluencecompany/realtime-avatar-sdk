@@ -32,6 +32,8 @@ import {
 import { useAvatarPlayoutDelay } from "./livekit";
 import { useAvatarAdaptivePlayoutDelay } from "./use-adaptive-playout";
 import { useAvatarQualityGovernor, type FreezeReadingFn } from "./use-quality-governor";
+import { useAvatarNetworkEvidence } from "./use-network-evidence";
+import type { AvatarNetworkEvidenceObserver } from "./network-evidence";
 import { DEFAULT_GOVERNOR_CONFIG, type QualityCap } from "./quality-governor";
 import { FrameRecovery, StallEscalation, firstFrameWaitFreezeMs } from "./frame-recovery";
 // The escalated hold is part of this surface's contract (see `frameStallMs`), so it is
@@ -94,6 +96,8 @@ export type AvatarVideoSurfaceProps = {
    * freeze, and only probes the full layer after a clean dwell. Default true.
    */
   adaptiveQuality?: boolean;
+  /** Optional, read-only LiveKit evidence. The SDK never uploads or stores samples. */
+  networkEvidence?: AvatarNetworkEvidenceObserver;
   /**
    * Opening bet for the governor when `adaptiveQuality` is on. `"high"` opens on the
    * FULL simulcast layer under probation — sharp from frame 1, no LOW→HIGH layer-walk —
@@ -214,6 +218,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     poster = null,
     live = true,
     adaptiveQuality = true,
+    networkEvidence,
     openingCap,
     fit = "contain",
     aspectRatio,
@@ -296,6 +301,15 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     enabled: adaptiveQuality,
     freezeReading: frameFlow.freezeReading,
     config: governorConfig,
+  });
+  useAvatarNetworkEvidence({
+    observer: networkEvidence,
+    presentation: {
+      liveFrameSeen: frameFlow.seenFrame,
+      liveFrameFlowing: frameFlow.flowing,
+      frameWidth: videoTrack?.publication?.dimensions?.width,
+      frameHeight: videoTrack?.publication?.dimensions?.height,
+    },
   });
   // Is the room genuinely GONE (disconnected)? A dead room is never held — it
   // reverts to the idle floor IMMEDIATELY, bypassing the turn-end debounce.

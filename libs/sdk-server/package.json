@@ -85,6 +85,10 @@
       "types": "./dist/browser.d.ts",
       "default": "./dist/browser.js"
     },
+    "./network-evidence": {
+      "types": "./dist/network-evidence.d.ts",
+      "default": "./dist/network-evidence.js"
+    },
     "./tools": {
       "types": "./dist/tools.d.ts",
       "default": "./dist/tools.js"

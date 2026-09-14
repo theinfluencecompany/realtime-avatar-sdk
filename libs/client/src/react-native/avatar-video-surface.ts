@@ -48,6 +48,8 @@ import {
 import { useAvatarPlayoutDelay } from "../react/livekit";
 import { useAvatarAdaptivePlayoutDelay } from "../react/use-adaptive-playout";
 import { useAvatarQualityGovernor } from "../react/use-quality-governor";
+import { useAvatarNetworkEvidence } from "../react/use-network-evidence";
+import type { AvatarNetworkEvidenceObserver } from "../react/network-evidence";
 
 // Android's <VideoTrack> renders an RTCView backed by a SurfaceView — a separate
 // hardware layer, NOT a normal view in the RN tree. Two SurfaceView facts break the
@@ -111,6 +113,8 @@ export type AvatarVideoSurfaceProps = {
   live?: boolean;
   /** Enable the subscriber-side quality governor (stats + SFU-pause tiers). Default true. */
   adaptiveQuality?: boolean;
+  /** Optional, read-only LiveKit evidence. The same observer contract as web. */
+  networkEvidence?: AvatarNetworkEvidenceObserver;
   /** How media fits the box — mirrors CSS object-fit. Both layers share it. Default "contain". */
   fit?: AvatarVideoFit;
   /** Crossfade duration (ms) between idle and live. Default 500. */
@@ -165,6 +169,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     poster = null,
     live = true,
     adaptiveQuality = true,
+    networkEvidence,
     fit = "contain",
     crossfadeMs = 500,
     idleReturnDelayMs = 700,
@@ -204,6 +209,13 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     IS_ANDROID ? isNativeLiveTrackSubscribed : undefined,
   );
   useAvatarQualityGovernor({ enabled: adaptiveQuality });
+  useAvatarNetworkEvidence({
+    observer: networkEvidence,
+    presentation: {
+      frameWidth: videoTrack?.publication?.dimensions?.width,
+      frameHeight: videoTrack?.publication?.dimensions?.height,
+    },
+  });
 
   // No rVFC on native → no frame-flow stall gate; producing + connected is the
   // liveness signal. A disconnect bypasses the idle-return debounce (a dead

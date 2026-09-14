@@ -133,6 +133,29 @@ export {
   type FreezeReadingFn,
   type UseAvatarQualityGovernorInput,
 } from "./use-quality-governor";
+export {
+  createNetworkEvidenceSession,
+  networkEvidenceSchemaVersion,
+  summarizeRtcStats,
+  summarizeRtcStatsReports,
+  toNetworkEvidenceAnalytics,
+  type AvatarNetworkEvidenceManifest,
+  type AvatarNetworkEvidenceObserver,
+  type AvatarNetworkEvidenceSample,
+  type NetworkEvidenceAnalytics,
+  type NetworkEvidenceContext,
+  type NetworkEvidenceMode,
+  type NetworkEvidenceSampleInput,
+  type NetworkEvidenceSession,
+  type NetworkEvidenceSurface,
+  type NetworkEvidenceTrigger,
+  type PresentationEvidence,
+  type RtcStatsEvidence,
+  type TransportEvidence,
+  type InboundRtpEvidence,
+  type LiveKitEvidenceIdentity,
+} from "./network-evidence";
+export { useAvatarNetworkEvidence, type UseAvatarNetworkEvidenceInput } from "./use-network-evidence";
 // Multi-clip choreography protocol pieces apps need to build clip libraries + narrow states.
 export {
   knownBehaviorStates,

@@ -166,6 +166,29 @@ export {
   type UseAvatarQualityGovernorInput,
 } from "../react/use-quality-governor";
 export {
+  createNetworkEvidenceSession,
+  networkEvidenceSchemaVersion,
+  summarizeRtcStats,
+  summarizeRtcStatsReports,
+  toNetworkEvidenceAnalytics,
+  type AvatarNetworkEvidenceManifest,
+  type AvatarNetworkEvidenceObserver,
+  type AvatarNetworkEvidenceSample,
+  type NetworkEvidenceAnalytics,
+  type NetworkEvidenceContext,
+  type NetworkEvidenceMode,
+  type NetworkEvidenceSampleInput,
+  type NetworkEvidenceSession,
+  type NetworkEvidenceSurface,
+  type NetworkEvidenceTrigger,
+  type PresentationEvidence,
+  type RtcStatsEvidence,
+  type TransportEvidence,
+  type InboundRtpEvidence,
+  type LiveKitEvidenceIdentity,
+} from "../react/network-evidence";
+export { useAvatarNetworkEvidence, type UseAvatarNetworkEvidenceInput } from "../react/use-network-evidence";
+export {
   knownBehaviorStates,
   sessionBehaviorSchema,
   sessionClipSchema,
