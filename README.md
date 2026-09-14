@@ -22,7 +22,7 @@ mid-sentence the moment someone cuts in, the way a person stops.
 ## Quickstart
 
 ```bash
-npm install realtime-avatar
+npm install --save-exact realtime-avatar@0.14.0
 ```
 
 Start the call on your **server**. Your key never touches a browser.
@@ -114,7 +114,7 @@ live instead of reading about them.
 
 ## Packages
 
-**One.** `npm install realtime-avatar` and you have the server client, the route adapters, the
+**One.** `npm install --save-exact realtime-avatar@0.14.0` and you have the server client, the route adapters, the
 React bindings and the browser helpers. Everything is a subpath, treeshaken per entry, so a
 server-only app still ships 18.8 KB with no React and no LiveKit in it.
 
