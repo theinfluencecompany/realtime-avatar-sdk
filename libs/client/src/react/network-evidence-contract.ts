@@ -147,9 +147,9 @@ export const networkEvidenceSampleSchema = z.strictObject({
   presentation: networkPresentationEvidenceSchema.optional(),
 });
 
-export const networkEvidenceUploadSchema = z.strictObject({
+export const networkEvidenceBundleSchema = z.strictObject({
   manifest: networkEvidenceManifestSchema,
-  samples: z.array(networkEvidenceSampleSchema).min(1).max(MAX_NETWORK_EVIDENCE_BATCH),
+  samples: z.array(networkEvidenceSampleSchema).min(1).max(MAX_NETWORK_EVIDENCE_SAMPLES),
 }).superRefine(({ manifest, samples }, ctx) => {
   const seen = new Set<number>();
   for (const [index, sample] of samples.entries()) {
@@ -158,6 +158,10 @@ export const networkEvidenceUploadSchema = z.strictObject({
     }
     seen.add(sample.sampleSeq);
   }
+});
+
+export const networkEvidenceUploadSchema = networkEvidenceBundleSchema.safeExtend({
+  samples: z.array(networkEvidenceSampleSchema).min(1).max(MAX_NETWORK_EVIDENCE_BATCH),
 });
 
 export const networkEvidenceAcceptedSchema = z.strictObject({
@@ -185,6 +189,7 @@ export type PresentationEvidence = z.infer<typeof networkPresentationEvidenceSch
 export type AvatarNetworkEvidenceManifest = z.infer<typeof networkEvidenceManifestSchema>;
 export type AvatarNetworkEvidenceSample = z.infer<typeof networkEvidenceSampleSchema>;
 export type AvatarNetworkEvidenceUpload = z.infer<typeof networkEvidenceUploadSchema>;
+export type AvatarNetworkEvidenceBundle = z.infer<typeof networkEvidenceBundleSchema>;
 export type AvatarNetworkEvidenceAccepted = z.infer<typeof networkEvidenceAcceptedSchema>;
 export type NetworkEvidenceAnalytics = z.infer<typeof networkEvidenceAnalyticsSchema>;
 
