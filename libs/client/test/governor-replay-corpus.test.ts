@@ -6,7 +6,7 @@ import { loadProbes, replayCorpus, type ProbeReplay } from "../../../scripts/rep
 // ---------------------------------------------------------------------------
 // THE 2026-09-11 PROBE CORPUS, replayed through the pure reducer.
 //
-// Eight instrumented prelulu web calls against the prod rtx6000 pool, 250 ms inbound-rtp
+// Eight instrumented consumer web calls against the production RTX 6000 pool, 250 ms inbound-rtp
 // samples (t, w, h, fps, framesDecoded, freezeCount, totalFreezesDuration, packetsLost).
 //
 // WHAT THIS PROVES AND WHAT IT DOES NOT. The corpus lacks the rVFC presented-frame clock,

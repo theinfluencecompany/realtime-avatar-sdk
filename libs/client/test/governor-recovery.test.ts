@@ -21,7 +21,7 @@ import {
 // Three rules fix it, all recovery-side (no demote decision changes; see the kill-switch
 // test for that proof):
 //   1. healthy = charged freeze within ONE FRAME INTERVAL of the slowest rung (67 ms at 15 fps)
-//   2. a jitter flicker alone is not unhealthy (prelulu's own playout hint moves jb_ms)
+//   2. a jitter flicker alone is not unhealthy (the consumer app's own playout hint moves jb_ms)
 //   3. lowUnhealthy decays on TIME: two ticks must land inside lowUnhealthyWindowMs
 // ---------------------------------------------------------------------------
 

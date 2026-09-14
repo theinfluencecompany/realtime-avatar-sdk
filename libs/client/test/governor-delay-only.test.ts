@@ -72,7 +72,7 @@ test("a single spike does not demote, and a run that breaks restarts the count",
 });
 
 test("rising jitter WITHOUT a presented gap never demotes, however long it runs", () => {
-  // prelulu's own adaptive playout hint walks the jitter-buffer average up for minutes.
+  // the consumer app's own adaptive playout hint walks the jitter-buffer average up for minutes.
   const noGap = Array.from({ length: 60 }, () => ({ ...base, jitterRising: true, transport: cleanPipe }));
   assert.deepEqual(drive(noGap), []);
 });

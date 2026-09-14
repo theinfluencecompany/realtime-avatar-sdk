@@ -120,7 +120,7 @@ export type AvatarVideoSurfaceProps = {
    * wins over `governorConfig.openingCap`). This is the app's reach into the ONE governor the
    * surface mounts: the kill switch (`linkEvidence: "optional"`), the recovery band, the
    * bars. Before this prop the only way to tune the governor was to disable this one and
-   * mount a second, which is the two-governor trap prelulu #1698 fell into. A fresh object
+   * mount a second, which is the two-governor trap a consumer app fell into. A fresh object
    * per render is fine: the hook memoises on field values, not identity.
    */
   governorConfig?: Partial<GovernorConfig>;
