@@ -90,8 +90,8 @@
       "default": "./dist/recording.js"
     },
     "./connection-history": {
-      "types": "./dist/connection-history.contract.d.ts",
-      "default": "./dist/connection-history.contract.js"
+      "types": "./dist/connection-history.d.ts",
+      "default": "./dist/connection-history.js"
     },
     "./tools": {
       "types": "./dist/tools.d.ts",

@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { defineConfig } from "tsup";
+import { ConnectionQuality, ConnectionState } from "livekit-client";
 import { prependUseClient } from "../tsup-use-client.ts";
 
 // ONE package, ten entries. The server half and the browser half used to be two npm names on the
@@ -61,6 +62,21 @@ const shared = {
   },
 };
 
+// The server entry uses the same native LiveKit enum source as the browser contract,
+// but must remain runnable for server-only consumers that do not install LiveKit. The
+// values below are materialized from the installed runtime at build time; no enum list
+// is hand-written and no LiveKit browser runtime is shipped in the server entry.
+const liveKitEnumPlugin = {
+  name: "rta-livekit-enums",
+  setup(build: { onResolve: Function; onLoad: Function }) {
+    build.onResolve({ filter: /^livekit-client$/ }, () => ({ path: "rta-livekit-enums", namespace: "rta-livekit-enums" }));
+    build.onLoad({ filter: /.*/, namespace: "rta-livekit-enums" }, () => ({
+      contents: `export const ConnectionQuality=${JSON.stringify(ConnectionQuality)};export const ConnectionState=${JSON.stringify(ConnectionState)};`,
+      loader: "js",
+    }));
+  },
+};
+
 export default defineConfig([
   {
     ...shared,
@@ -73,10 +89,15 @@ export default defineConfig([
       express: "src/express.ts",
       "tanstack-start": "src/tanstack-start.ts",
       "server-only-guard": "src/server-only-guard.ts",
+      "connection-history": "src/connection-history.contract.ts",
     },
     // Only this pass clears dist — the client pass runs after and must not wipe it.
     clean: true,
     splitting: true,
+    external: shared.external.filter((name) => name !== "livekit-client"),
+    noExternal: ["livekit-client"],
+    esbuildPlugins: [liveKitEnumPlugin],
+    dts: { resolve: ["livekit-client"] },
   },
   {
     ...shared,
@@ -87,7 +108,6 @@ export default defineConfig([
       browser: "src/browser.ts",
       tools: "src/tools.ts",
       recording: "src/recording.ts",
-      "connection-history.contract": "src/connection-history.contract.ts",
     },
     clean: false,
     splitting: false,
