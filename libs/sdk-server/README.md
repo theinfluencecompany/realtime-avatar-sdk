@@ -4,7 +4,7 @@ A live character your users can talk to — voice, or voice and video. She liste
 speaks, so you can interrupt her mid-sentence and she stops, the way a person stops.
 
 ```bash
-npm install --save-exact realtime-avatar@0.16.0
+npm install --save-exact realtime-avatar@0.17.0
 ```
 
 ```ts
