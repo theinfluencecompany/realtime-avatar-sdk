@@ -12,8 +12,14 @@ const enumValues = (name) => {
 const object = (values) => `{ ${values.map((value) => `${value[0].toUpperCase()}${value.slice(1)}: ${JSON.stringify(value)}`).join(", ")} } as const`;
 const path = new URL("../libs/http-client/src/generated/connection-history.ts", import.meta.url);
 const source = await readFile(path, "utf8");
-const body = source.replace(/^import \{ ConnectionQuality, ConnectionState \} from "livekit-client";\n/, "")
-  .replace(/^import \{ z \} from "zod";/, `import { z } from "zod";\n\nconst ConnectionQuality = ${object(enumValues("localQuality"))};\nconst ConnectionState = ${object(enumValues("connectionState"))};`);
-if (body === source) throw new Error("connection-history: native import marker missing");
-await writeFile(path, body);
-console.log(`Connection history enums materialized from OpenAPI: ${path.pathname}`);
+const header = `const ConnectionQuality = ${object(enumValues("localQuality"))};\nconst ConnectionState = ${object(enumValues("connectionState"))};`;
+const body = source
+  .replace(/^import \{ ConnectionQuality, ConnectionState \} from "livekit-client";\n/, "")
+  .replace(/^import \{ z \} from "zod";\n(?:\nconst ConnectionQuality = .*\nconst ConnectionState = .*)?/, `import { z } from "zod";\n\n${header}`);
+if (!body.includes(header)) throw new Error("connection-history: enum materialization failed");
+if (process.argv.includes("--check")) {
+  if (body !== source) throw new Error("connection-history generated source is stale; run npm run spec:types");
+} else {
+  await writeFile(path, body);
+  console.log(`Connection history enums materialized from OpenAPI: ${path.pathname}`);
+}
