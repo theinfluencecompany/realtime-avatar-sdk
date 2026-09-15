@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { RealtimeAvatar } from "../src/client.ts";
+import { ConnectionQuality, ConnectionState } from "livekit-client";
 import type { components } from "../src/generated/openapi.ts";
 import type { RecordingArtifact, RecordingAccessResponse, ListRecordingsResponse } from "../src/generated/recording.ts";
 import type { ConnectionHistoryResponse } from "../src/generated/connection-history.ts";
@@ -92,10 +93,10 @@ test("connection history is a typed, usage-scoped read", async () => {
       sequence: 1,
       elapsedMs: 0,
       clientObservedAt: "2026-09-15T10:00:00.000Z",
-      connectionState: "connected",
-      localQuality: "good",
+      connectionState: ConnectionState.Connected,
+      localQuality: ConnectionQuality.Good,
       audioQuality: null,
-      videoQuality: "excellent",
+      videoQuality: ConnectionQuality.Excellent,
     }],
   };
   let seen: Request | undefined;

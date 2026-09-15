@@ -19,7 +19,7 @@
     "spec": "npm run spec:pull && npm run spec:types",
     "spec:check": "node scripts/check-spec-drift.mjs",
     "spec:pull": "node scripts/generate-clip-schema.mjs --pull",
-    "spec:types": "openapi-typescript spec/realtime-avatar.openapi.json -o libs/http-client/src/generated/openapi.ts && node scripts/generate-clip-schema.mjs",
+    "spec:types": "openapi-typescript spec/realtime-avatar.openapi.json -o libs/http-client/src/generated/openapi.ts && node scripts/generate-clip-schema.mjs && node scripts/generate-connection-history.mjs",
     "surface": "node scripts/check-public-surface.mjs",
     "test": "node --test --experimental-transform-types libs/*/test/*.test.ts",
     "eval:web-stall": "node scripts/eval-web-stall.mjs",

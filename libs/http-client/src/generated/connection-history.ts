@@ -1,5 +1,7 @@
-import { ConnectionQuality, ConnectionState } from "livekit-client";
 import { z } from "zod";
+
+const ConnectionQuality = { Excellent: "excellent", Good: "good", Poor: "poor", Lost: "lost", Unknown: "unknown" } as const;
+const ConnectionState = { Disconnected: "disconnected", Connecting: "connecting", Connected: "connected", Reconnecting: "reconnecting", SignalReconnecting: "signalReconnecting" } as const;
 
 export const MAX_CONNECTION_HISTORY_OBSERVATIONS = 240;
 export const MAX_CONNECTION_HISTORY_BATCH = 32;
