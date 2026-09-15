@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { RealtimeAvatar } from "../src/client.ts";
 import type { components } from "../src/generated/openapi.ts";
 import type { RecordingArtifact, RecordingAccessResponse, ListRecordingsResponse } from "../src/generated/recording.ts";
+import type { ConnectionHistoryResponse } from "../src/generated/connection-history.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 const contractParity: [
@@ -82,4 +83,27 @@ test("malformed ready artifacts and temporary access never become typed success"
   await assert.rejects(rta.getRecording(pending.recordingId));
   const access = new RealtimeAvatar({ apiKey: "test-key", fetch: async () => Response.json({ recordingId: pending.recordingId, url: "not-a-url" }) });
   await assert.rejects(access.getRecordingAccess(pending.recordingId));
+});
+
+test("connection history is a typed, usage-scoped read", async () => {
+  const response: ConnectionHistoryResponse = {
+    sessionId: pending.sessionId,
+    observations: [{
+      sequence: 1,
+      elapsedMs: 0,
+      clientObservedAt: "2026-09-15T10:00:00.000Z",
+      connectionState: "connected",
+      localQuality: "good",
+      audioQuality: null,
+      videoQuality: "excellent",
+    }],
+  };
+  let seen: Request | undefined;
+  const rta = new RealtimeAvatar({ apiKey: "test-key", fetch: async (input, init) => {
+    seen = new Request(input, init);
+    return Response.json(response);
+  } });
+  assert.deepEqual(await rta.getConnectionHistory(pending.sessionId), response);
+  assert.equal(new URL(seen?.url ?? "").pathname, "/api/v1/sessions/session_test/connection-history");
+  assert.equal(seen?.headers.get("authorization"), "Bearer test-key");
 });

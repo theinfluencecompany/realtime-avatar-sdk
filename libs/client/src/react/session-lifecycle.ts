@@ -33,6 +33,7 @@ import {
   type LLMProvider,
 } from "../wire";
 import { nextBehaviorSnapshot, type BehaviorSnapshot } from "./behavior-snapshot";
+import { createConnectionHistoryCollector } from "./connection-history";
 
 // ---------------------------------------------------------------------------
 // Pure recovery classifiers (LIFTED unchanged from the studio's
@@ -1235,16 +1236,40 @@ export function SessionLifecycleRoomBridge({
   const audio = assistant.audioTrack;
   const video = assistant.videoTrack;
   // The room stays mounted while a cleared grant is replaced. Retire its facts too.
-  const detailsEnabled = onConnectionDetailsChange !== undefined && lifecycle.grant !== null;
+  const connectionHistoryGrant = lifecycle.grant?.connection_history;
+  const detailsEnabled = (onConnectionDetailsChange !== undefined || connectionHistoryGrant !== undefined) && lifecycle.grant !== null;
   const detailsSessionId = lifecycle.grant?.session_id;
+  const connectionHistoryRef = useRef<ReturnType<typeof createConnectionHistoryCollector> | null>(null);
   const updateDetailsRef = useRef<((
-    callback: NonNullable<SessionLifecycleRoomBridgeProps["onConnectionDetailsChange"]>,
+    callback: SessionLifecycleRoomBridgeProps["onConnectionDetailsChange"],
     audio: typeof assistant.audioTrack,
     video: typeof assistant.videoTrack,
   ) => void) | null>(null);
 
   useEffect(() => {
-    if (!detailsEnabled || !onConnectionDetailsChange) return;
+    const sessionId = detailsSessionId;
+    if (!sessionId || !connectionHistoryGrant) {
+      connectionHistoryRef.current = null;
+      return;
+    }
+    const collector = createConnectionHistoryCollector({ sessionId, grant: connectionHistoryGrant });
+    connectionHistoryRef.current = collector;
+    return () => {
+      if (connectionHistoryRef.current === collector) connectionHistoryRef.current = null;
+      void collector.dispose();
+    };
+  }, [connectionHistoryGrant, detailsSessionId]);
+
+  useEffect(() => {
+    const collector = connectionHistoryRef.current;
+    if (!collector || typeof window === "undefined") return;
+    const flush = (): void => { void collector.flush(); };
+    window.addEventListener("pagehide", flush, true);
+    return () => window.removeEventListener("pagehide", flush, true);
+  }, [connectionHistoryGrant, detailsSessionId]);
+
+  useEffect(() => {
+    if (!detailsEnabled || (!onConnectionDetailsChange && !connectionHistoryGrant)) return;
     let callback = onConnectionDetailsChange;
     let audioSource = audio;
     let videoSource = video;
@@ -1252,8 +1277,9 @@ export function SessionLifecycleRoomBridge({
     let pending = false;
     let previous: AvatarConnectionDetails | undefined;
     const deliver = (details: AvatarConnectionDetails | null): void => {
+      connectionHistoryRef.current?.enqueue(details);
       try {
-        void Promise.resolve(callback(details)).catch(() => {});
+        if (onConnectionDetailsChange) void Promise.resolve(callback?.(details)).catch(() => {});
       } catch {
         /* Observational only. */
       }
@@ -1326,7 +1352,7 @@ export function SessionLifecycleRoomBridge({
   }, [room, detailsSessionId, detailsEnabled]);
 
   useEffect(() => {
-    if (onConnectionDetailsChange) updateDetailsRef.current?.(onConnectionDetailsChange, audio, video);
+    updateDetailsRef.current?.(onConnectionDetailsChange, audio, video);
   }, [
     onConnectionDetailsChange,
     detailsEnabled ? audio?.participant : undefined,

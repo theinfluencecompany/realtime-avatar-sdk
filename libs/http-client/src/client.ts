@@ -9,6 +9,7 @@ import {
 import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
 import { clipLibraryResponseSchema, clipLibraryUpdateSchema } from "./generated/clip-library-schema.ts";
 import { recordingModeSchema, recordingArtifactSchema, listRecordingsQuerySchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
+import type { ConnectionHistoryResponse } from "./generated/connection-history.ts";
 import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 import type {
   Asset,
@@ -37,7 +38,7 @@ import type {
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.16.0";
+export const SDK_VERSION = "0.17.0";
 
 
 
@@ -137,6 +138,7 @@ export class RealtimeAvatar {
     if (options.voice !== undefined) body.voice = options.voice;
     if (options.metadata !== undefined) body.client_metadata = options.metadata;
     if (options.recording !== undefined) body.recording = recordingModeSchema.parse(options.recording);
+    if (options.connectionHistory !== undefined) body.connection_history = options.connectionHistory;
     // The grant is the gate: the worker only exposes tool registration for a session whose
     // mint carried this capability.
     if (options.clientTools) body.capabilities = ["client_tools"];
@@ -178,7 +180,8 @@ export class RealtimeAvatar {
       idleTimeoutSeconds: grant.idle_timeout_seconds,
       reservationExpiresAt: grant.reservation_expires_at,
       // The parsed fields above are for YOUR logic. Relay `raw` to the client untouched:
-      // the browser SDK validates the grant strictly and rejects an added or renamed key.
+      // the browser SDK accepts provider-issued capability fields through its passthrough
+      // grant schema; forwarding verbatim preserves capabilities this wrapper does not model.
       raw,
     };
   }
@@ -577,6 +580,15 @@ export class RealtimeAvatar {
   /** Renewable playback access. Keep recordingId in storage; URLs expire at expiresAt. */
   async getRecordingAccess(recordingId: string): Promise<RecordingAccessResponse> {
     return recordingAccessResponseSchema.parse(await this.#json(await this.#request("GET", `/recordings/${encodeURIComponent(recordingId)}/access`)));
+  }
+
+  /** Read one session's bounded LiveKit connection history. Requires `usage:read`. */
+  async getConnectionHistory(sessionId: string): Promise<ConnectionHistoryResponse> {
+    if (!sessionId) throw new RealtimeAvatarError("sessionId is required");
+    // Keep the server root free of the optional LiveKit peer. The contract subpath
+    // is loaded only by callers that explicitly read this feature.
+    const { connectionHistoryResponseSchema } = await import("./generated/connection-history.ts");
+    return connectionHistoryResponseSchema.parse(await this.#json(await this.#request("GET", `/sessions/${encodeURIComponent(sessionId)}/connection-history`)));
   }
 
   async creditBalance(): Promise<CreditBalance> {

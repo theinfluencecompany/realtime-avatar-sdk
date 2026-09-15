@@ -740,6 +740,9 @@
             ],
             "description": "Server-owned recording policy; omitted means off. Audio includes user and avatar audio."
           },
+          "connection_history": {
+            "type": "boolean"
+          },
           "client_metadata": {
             "type": "object",
             "propertyNames": {
@@ -1023,6 +1026,33 @@
                 "additionalProperties": false
               }
             ]
+          },
+          "connection_history": {
+            "readOnly": true,
+            "type": "object",
+            "properties": {
+              "endpoint": {
+                "type": "string",
+                "format": "starts_with",
+                "pattern": "^https:\\/\\/.*"
+              },
+              "token": {
+                "type": "string",
+                "minLength": 32,
+                "maxLength": 4096
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              }
+            },
+            "required": [
+              "endpoint",
+              "token",
+              "expiresAt"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -2614,6 +2644,117 @@
           "recordingId",
           "url",
           "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectionHistoryResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "observations": {
+            "maxItems": 240,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sequence": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 240
+                },
+                "elapsedMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400000
+                },
+                "clientObservedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "connectionState": {
+                  "type": "string",
+                  "enum": [
+                    "disconnected",
+                    "connecting",
+                    "connected",
+                    "reconnecting",
+                    "signalReconnecting"
+                  ]
+                },
+                "localQuality": {
+                  "type": "string",
+                  "enum": [
+                    "excellent",
+                    "good",
+                    "poor",
+                    "lost",
+                    "unknown"
+                  ]
+                },
+                "audioQuality": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "excellent",
+                        "good",
+                        "poor",
+                        "lost",
+                        "unknown"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "videoQuality": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "excellent",
+                        "good",
+                        "poor",
+                        "lost",
+                        "unknown"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "sequence",
+                "elapsedMs",
+                "clientObservedAt",
+                "connectionState",
+                "localQuality",
+                "audioQuality",
+                "videoQuality"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "sessionId",
+          "observations"
         ],
         "additionalProperties": false
       },
@@ -5000,6 +5141,71 @@
         ]
       }
     },
+    "/v1/sessions/{sessionId}/connection-history": {
+      "get": {
+        "operationId": "getConnectionHistory",
+        "description": "Read client-reported LiveKit connection changes for an owned session. No observations means no received data, not a healthy connection. Client timestamps are approximate and distinct from recording time.\n\nRequires an API key with the `usage:read` scope.",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session connection history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionHistoryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "usage:read"
+        ],
+        "summary": "Get session connection history",
+        "tags": [
+          "Sessions"
+        ]
+      }
+    },
     "/v1/recordings": {
       "get": {
         "operationId": "listRecordings",
@@ -5395,6 +5601,10 @@
     "source": "/character-motion.ts",
     "sha256": "418d21cab4b8d96ba5202235df03b1888d39a19615ad7ed2bd5c4bab69bd787d"
   },
+  "x-connection-history-contract": {
+    "source": "/connection-history.contract.ts",
+    "sha256": "29065e487f83c0f8345f9efb1962638ad639ce79ec1f81ed29cf083a1c881eae"
+  },
   "x-recording-contract": {
     "source": "/recording.contract.ts",
     "sha256": "a6666f0d6d34d6c19e12e43607942989effddf00aa3dadd280d47254bd418945"
@@ -5423,6 +5633,10 @@
     {
       "name": "Recordings",
       "description": "Private session recordings and renewable access URLs."
+    },
+    {
+      "name": "Sessions",
+      "description": "Connection observations associated with your sessions."
     },
     {
       "name": "Usage",

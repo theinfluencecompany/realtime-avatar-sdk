@@ -57,6 +57,24 @@ default); each URL expires at `expiresAt` (up to one hour, capped by retention).
 access before replaying or seeking after expiry. An expired URL does not delete the file.
 Treat the URL as private: anyone who has it can play that file until it expires.
 
+## Optional connection history
+
+Set `connectionHistory: true` in the server's `startCall` policy when the caller needs a
+tenant-scoped LiveKit quality timeline. The SDK enables its collector only when RTA grants the
+single-session capability. It receives the bridge's existing LiveKit connection snapshots,
+deduplicates changes, batches at most 32 observations, and stops at 240; it does not poll WebRTC
+statistics or own reconnect logic. Upload failures are bounded and never interrupt a call.
+
+```ts
+const call = await rta.startCall({ avatarId, connectionHistory: true });
+// Relay call.raw unchanged. The browser SDK uploads capability-gated observations automatically.
+const history = await rta.getConnectionHistory(call.sessionId);
+```
+
+History is an observation of native connection state and publisher quality. It is not a recording,
+packet-loss report, or proof that a device rendered or played a track. The read requires
+`usage:read`; store the session ID and fetch history from your authorized backend.
+
 Transcript delivery remains the signed `transcript` webhook configured on `startCall`. Join the
 transcript and recordings by `sessionId`; keep your own script revision with that call. Transcript
 timestamps describe conversation turns and do not by themselves establish frame-accurate media
@@ -137,13 +155,14 @@ all), and the `video` policy types are deliberately not one-to-one with the wire
 
 ```ts
 // calls
-rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, transcript?, metadata? })
+rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, connectionHistory?, transcript?, metadata? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 
 // optional recordings; server only, requires recordings:read
 rta.listRecordings({ sessionId, limit?, cursor? })
 rta.getRecording(recordingId)
 rta.getRecordingAccess(recordingId)
+rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires usage:read
 
 // avatars
 rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // the only lane

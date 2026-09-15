@@ -280,6 +280,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/sessions/{sessionId}/connection-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get session connection history
+         * @description Read client-reported LiveKit connection changes for an owned session. No observations means no received data, not a healthy connection. Client timestamps are approximate and distinct from recording time.
+         *
+         *     Requires an API key with the `usage:read` scope.
+         */
+        get: operations["getConnectionHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/recordings": {
         parameters: {
             query?: never;
@@ -533,6 +555,7 @@ export interface components {
              * @enum {string}
              */
             recording?: "off" | "audio" | "video" | "audio_video";
+            connection_history?: boolean;
             client_metadata?: {
                 [key: string]: string;
             };
@@ -610,6 +633,13 @@ export interface components {
                 status: "failed";
                 /** @enum {string} */
                 errorCode: "recording_failed" | "recording_unavailable";
+            };
+            readonly connection_history?: {
+                /** Format: starts_with */
+                endpoint: string;
+                token: string;
+                /** Format: date-time */
+                expiresAt: string;
             };
         };
         LiveKitCapacitySnapshot: {
@@ -942,6 +972,20 @@ export interface components {
             url: string;
             /** Format: date-time */
             expiresAt: string;
+        };
+        ConnectionHistoryResponse: {
+            sessionId: string;
+            observations: {
+                sequence: number;
+                elapsedMs: number;
+                clientObservedAt: string | null;
+                /** @enum {string} */
+                connectionState: "disconnected" | "connecting" | "connected" | "reconnecting" | "signalReconnecting";
+                /** @enum {string} */
+                localQuality: "excellent" | "good" | "poor" | "lost" | "unknown";
+                audioQuality: ("excellent" | "good" | "poor" | "lost" | "unknown") | null;
+                videoQuality: ("excellent" | "good" | "poor" | "lost" | "unknown") | null;
+            }[];
         };
         ListAvatarsResponse: {
             data: {
@@ -2037,6 +2081,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreditBalance"];
+                };
+            };
+            /** @description Missing, malformed, revoked, or expired key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key lacks the scope for this operation, or the tenant is not active. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getConnectionHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session connection history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionHistoryResponse"];
                 };
             };
             /** @description Missing, malformed, revoked, or expired key. */

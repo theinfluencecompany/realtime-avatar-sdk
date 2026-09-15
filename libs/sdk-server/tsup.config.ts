@@ -87,6 +87,7 @@ export default defineConfig([
       browser: "src/browser.ts",
       tools: "src/tools.ts",
       recording: "src/recording.ts",
+      "connection-history.contract": "src/connection-history.contract.ts",
     },
     clean: false,
     splitting: false,

@@ -186,13 +186,14 @@ One class, one types file. The full surface is
 
 ```ts
 // calls
-rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, transcript?, metadata? })
+rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, connectionHistory?, transcript?, metadata? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 
 // optional recordings; server only, requires recordings:read
 rta.listRecordings({ sessionId, limit?, cursor? })
 rta.getRecording(recordingId)          // durable metadata and processing state
 rta.getRecordingAccess(recordingId)    // { recordingId, url, expiresAt }; renew when needed
+rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires usage:read
 
 // avatars
 rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // the only lane
@@ -229,6 +230,11 @@ after obtaining consent. Keep `recordingId` and `sessionId` for your admin views
 playback access when needed. File retention (`retainedUntil`, normally 30 days) is independent
 of URL expiry (`expiresAt`, up to one hour). Join transcripts and your script revisions by
 session ID. See [recording details](./libs/sdk-server/README.md#optional-call-recordings).
+
+Connection history is separately opt-in: set `connectionHistory: true` in the server policy. When
+RTA grants it, the browser SDK batches existing LiveKit connection snapshots automatically (no
+WebRTC statistics polling). Read the bounded result with `getConnectionHistory(sessionId)` using
+the `usage:read` scope.
 
 ### Errors worth branching on
 

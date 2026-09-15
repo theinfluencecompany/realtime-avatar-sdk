@@ -143,6 +143,8 @@ export type VideoPolicy =
 
 /** What YOUR SERVER decides about a call. Never accept any of this from a browser. */
 export interface CallPolicy {
+  /** Ask the platform to grant the SDK's optional LiveKit connection history collector. */
+  connectionHistory?: boolean;
   /** Optional server recording policy. Omitted means off; obtain user consent before enabling. */
   recording?: RecordingMode;
   /** Her behavior contract — who she is and how she speaks. Max 8000 chars. */
