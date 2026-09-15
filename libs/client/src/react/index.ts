@@ -75,9 +75,6 @@ export {
   type UseSessionLifecycleInput,
 } from "./session-lifecycle";
 export {
-  createConnectionHistoryCollector,
-} from "./connection-history";
-export {
   DEFAULT_APPROACHING_END_LEAD_SECONDS,
   DEFAULT_CREDITS_LOW_LEAD_SECONDS,
   DEFAULT_GRACE_CEILING_SECONDS,
