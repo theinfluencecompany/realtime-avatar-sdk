@@ -1262,7 +1262,10 @@ export function SessionLifecycleRoomBridge({
 
   useEffect(() => {
     const collector = connectionHistoryRef.current;
-    if (!collector || typeof window === "undefined") return;
+    // React Native aliases window to its global object without DOM event methods.
+    if (!collector || typeof window === "undefined"
+      || typeof window.addEventListener !== "function"
+      || typeof window.removeEventListener !== "function") return;
     const flush = (): void => { void collector.flush(); };
     window.addEventListener("pagehide", flush, true);
     return () => window.removeEventListener("pagehide", flush, true);

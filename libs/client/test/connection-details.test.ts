@@ -79,8 +79,9 @@ function source(quality: ConnectionQuality) {
   };
 }
 
-function fixture() {
+function fixture(windowValue?: object) {
   const callbacks: (() => void)[] = [];
+  const uploads: Request[] = [];
   const refs: { current: unknown }[] = [];
   const effects: { deps: unknown[]; cleanup?: void | (() => void) }[] = [];
   let refIndex = 0, effectIndex = 0;
@@ -89,7 +90,9 @@ function fixture() {
   const controlled: {
     room: ReturnType<typeof room>;
     assistant: { agent: ReturnType<typeof source>["participant"]; state: string; audioTrack?: ReturnType<typeof source>; videoTrack?: ReturnType<typeof source> };
-    lifecycle: Omit<typeof legacyBridge.lifecycle, "grant"> & { grant?: { session_id: string } | null };
+    lifecycle: Omit<typeof legacyBridge.lifecycle, "grant"> & {
+      grant?: Pick<NonNullable<SessionLifecycleRoomBridgeProps["lifecycle"]["grant"]>, "session_id" | "connection_history"> | null;
+    };
     callback?: Callback;
     elements: { type: unknown; props?: Record<string, unknown> }[];
     session: object;
@@ -117,18 +120,70 @@ function fixture() {
   const module: { exports: { render?: () => void; renderAvatar?: () => void; bridge?: unknown } } = { exports: {} };
   runInNewContext(bundle.outputFiles[0].text, {
     fixture: controlled, module, exports: module.exports, require: createRequire(import.meta.url),
+    window: windowValue, AbortSignal,
+    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      uploads.push(new Request(input, init));
+      return new Response(null, { status: 204 });
+    },
     queueMicrotask: (callback: () => void) => { callbacks.push(callback); },
     setInterval() { throw new Error("connection details must not poll"); },
   });
   return {
-    controlled, received, record,
+    controlled, received, record, uploads,
     render(callback = controlled.callback) { controlled.callback = callback; refIndex = effectIndex = 0; module.exports.render?.(); },
     renderAvatar() { module.exports.renderAvatar?.(); return controlled.elements.filter((node) => node.type === module.exports.bridge); },
     pending() { return callbacks.length; },
+    flushOne() { callbacks.shift()?.(); },
     flush() { while (callbacks.length) callbacks.shift()?.(); },
     dispose() { for (const effect of effects) effect.cleanup?.(); },
   };
 }
+
+const historyGrant: NonNullable<NonNullable<SessionLifecycleRoomBridgeProps["lifecycle"]["grant"]>["connection_history"]> = {
+  endpoint: "https://rta.example.invalid/v1/connection-history",
+  token: "x".repeat(32),
+  expiresAt: "2099-01-01T00:00:00.000Z",
+};
+
+test("connection history mounts and uploads with a native window lacking DOM event methods", () => {
+  const f = fixture({});
+  f.controlled.lifecycle.grant = { session_id: "first", connection_history: historyGrant };
+  assert.doesNotThrow(() => f.render());
+  f.flush();
+  assert.equal(f.received.length, 1);
+  assert.equal(f.uploads.length, 1);
+  assert.equal(f.uploads[0].url, historyGrant.endpoint);
+  assert.doesNotThrow(() => f.dispose());
+  assert.equal(f.controlled.room.count(), 0);
+});
+
+test("connection history does not bind an event source without listener cleanup", () => {
+  let subscriptions = 0;
+  const f = fixture({ addEventListener() { subscriptions++; } });
+  f.controlled.lifecycle.grant = { session_id: "first", connection_history: historyGrant };
+  f.render();
+  assert.equal(subscriptions, 0);
+  f.flush();
+  assert.equal(f.uploads.length, 1);
+  assert.doesNotThrow(() => f.dispose());
+});
+
+test("browser pagehide still flushes history and removes the same listener on unmount", (t) => {
+  const browser = new EventTarget();
+  const add = t.mock.method(browser, "addEventListener");
+  const remove = t.mock.method(browser, "removeEventListener");
+  const f = fixture(browser);
+  f.controlled.lifecycle.grant = { session_id: "first", connection_history: historyGrant };
+  f.render();
+  assert.equal(add.mock.callCount(), 1);
+  f.flushOne();
+  assert.equal(f.uploads.length, 0);
+  browser.dispatchEvent(new Event("pagehide"));
+  assert.equal(f.uploads.length, 1);
+  f.dispose();
+  assert.equal(remove.mock.callCount(), 1);
+  assert.deepEqual(remove.mock.calls[0].arguments, add.mock.calls[0].arguments);
+});
 
 test("details are opt-in, initial delivery is deferred, and publishers are selected independently", () => {
   const off = fixture(); off.controlled.callback = undefined;

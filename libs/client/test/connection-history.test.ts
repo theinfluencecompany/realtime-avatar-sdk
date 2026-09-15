@@ -48,6 +48,7 @@ test("a failed upload is bounded and never retries after the capability is retir
     sessionId: "rts_abc",
     grant,
     maxRetries: 0,
+    clock: { wallMs: () => Date.parse(grant.expiresAt) - 60_000 },
     fetch: async () => { calls++; throw new Error("offline"); },
   });
   collector.enqueue(details);
@@ -60,6 +61,7 @@ test("deduplication survives a completed batch and an empty flush does not wedge
   let calls = 0;
   const collector = createConnectionHistoryCollector({
     sessionId: "rts_abc", grant, maxRetries: 0,
+    clock: { wallMs: () => Date.parse(grant.expiresAt) - 60_000 },
     fetch: async () => { calls++; return new Response(null, { status: 204 }); },
   });
   collector.enqueue(details);
