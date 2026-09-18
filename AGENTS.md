@@ -605,6 +605,34 @@ try {
 | 429 | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Release/wait for occupied slots or back off. Not auto-retried |
 | 503 | Transient upstream | Retried for you, up to `maxRetries` |
 
+### The vocabulary is derived, never restated
+
+`libs/http-client/src/generated/error-semantics.ts` is GENERATED from the platform's OpenAPI
+document (`x-error-semantics`, `x-error-codes-uncopied`, `x-error-message-shape`) by
+`scripts/generate-error-semantics.mjs`. It owns every error code, its user-facing copy, its
+retryability, and the message-shape patterns. Do not edit it, and do not hand-write a code
+list, a copy string, a retry decision or a message regex anywhere else in this repo.
+
+This is not style. `libs/client/src/errors.ts` used to keep its own 11-code union and its own
+`userSafeMessage`; both were correct when written, and an 18-case probe found four inputs
+where this SDK and the platform gave a caller a different code or a different `retryable` for
+the same response. A 500 read as `internal_error` here and `service_unavailable` there.
+
+`npm run spec:verify` fails when the generated file is stale. Verified by mutating one code in
+it: exit 1, "generated source is stale"; restored, exit 0. Run `npm run spec:types` after any
+spec update.
+
+`RealtimeAvatarErrorCode` is `KnownErrorCode | (string & {})` on purpose — a newer server can
+send a code this build has never heard of, and that still has to type without us pretending we
+recognise it.
+
+### No casts on the error path
+
+`as`, `<T>value` and `!` assert what the compiler cannot check. On this path they hide a wrong
+ANSWER, not just a wrong type, because this code decides what a caller is told and whether
+they retry. The three casts in `errors.ts` were replaced with a single `readRecord()` guard.
+`as const` and `satisfies` are the opposite and are encouraged.
+
 ---
 
 ## Working in this repo
