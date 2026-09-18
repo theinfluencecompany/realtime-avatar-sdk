@@ -12,9 +12,14 @@
  * Compared on PARSED JSON, not bytes: key order and whitespace are not the contract, and a
  * byte compare would fail on a re-serialisation that changed nothing.
  *
- * OFFLINE IS NOT A FAILURE. A fork, a runner with no egress, or a platform deploy in flight
- * must not turn a red X on someone's PR — this reports and exits 0. It is a drift detector,
- * not an availability check, and the artifact it guards is committed either way.
+ * OFFLINE IS NOT A FAILURE, BUT AN ANSWER IS. A fork or a runner with no egress cannot reach
+ * the platform at all, and must not turn a red X on someone's PR — that case reports and exits 0.
+ * An HTTP status is the opposite: the service answered, so the comparison was possible and its
+ * outcome is real. Folding those two into one green is what let this gate pass for a whole
+ * generation while the vendored spec was genuinely behind (platform shipped `weights` on
+ * 2026-09-17; five consecutive green runs on main; a clean checkout reproduced exit 1 by hand).
+ * The edge also returns 403 to clients that send no User-Agent, which is exactly the shape of
+ * "reachable but not compared" that used to read as "no drift".
  */
 import { readFile } from "node:fs/promises";
 
@@ -23,14 +28,39 @@ const VENDORED = new URL("../spec/realtime-avatar.openapi.json", import.meta.url
 
 const vendored = JSON.parse(await readFile(VENDORED, "utf8"));
 
-let live;
+// Sent explicitly: the edge answers 403 to a request with no User-Agent, and a 403 that reads
+// as "offline" is the bug this gate is recovering from.
+const USER_AGENT = "realtime-avatar-sdk-spec-drift-check";
+
+// The catch covers ONLY the round trip. Everything after it — status, body, comparison —
+// happened because the platform answered, so every one of those outcomes is a real finding.
+// Only a genuine inability to reach the host is exempt: DNS, connect, timeout, abort.
+let response;
 try {
-  const response = await fetch(SPEC_URL, { signal: AbortSignal.timeout(20_000) });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  live = await response.json();
+  response = await fetch(SPEC_URL, {
+    signal: AbortSignal.timeout(20_000),
+    headers: { accept: "application/json", "user-agent": USER_AGENT },
+  });
 } catch (cause) {
   console.log(`· spec drift — could not reach ${SPEC_URL} (${cause.message}); skipping`);
   process.exit(0);
+}
+
+if (!response.ok) {
+  console.error(`✗ spec drift — ${SPEC_URL} answered HTTP ${response.status}`);
+  console.error("\n  The platform is reachable but did not serve the contract, so the vendored");
+  console.error("  copy could not be verified. Treat as drift until a 200 proves otherwise.");
+  process.exit(1);
+}
+
+const body = await response.text();
+let live;
+try {
+  live = JSON.parse(body);
+} catch (cause) {
+  console.error(`✗ spec drift — ${SPEC_URL} served ${body.length} byte(s) that are not JSON`);
+  console.error(`\n  ${cause.message}`);
+  process.exit(1);
 }
 
 const canonical = (value) => JSON.stringify(sortKeys(value));
