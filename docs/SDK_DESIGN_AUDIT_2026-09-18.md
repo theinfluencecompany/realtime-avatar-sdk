@@ -13,7 +13,7 @@ Provider model selection and credentials do not belong in a client camera API.
 
 | Public entry | Owner | Assessment |
 | --- | --- | --- |
-| Server client | HTTP auth, grant validation, retry, call policy | Keep; replay protection and secret guards are tested |
+| Server client | HTTP auth, grant validation, retry, call policy | Keep credential guards and grant validation; creation retries need a safer default |
 | Framework proxy adapters | App authorization and policy callbacks | Keep adapters thin; ownership default needs separate correction |
 | React session hooks | Join/reconnect/release/turn clocks | One shared lifecycle; do not add a camera session controller |
 | React Native room | Native audio session and native media views | Share call/device behavior, preserve native rendering |
@@ -67,6 +67,7 @@ eligibility, not a request to turn the camera on. Close is terminal for a contro
 
 | Priority | Finding and evidence | Disposition |
 | --- | --- | --- |
+| P1 | The server client's default retries also apply to startCall, although its own options documentation says creation is not deduplicated server-side (`libs/http-client/src/client.ts`, maxRetries and request loop). Replaying an Idempotency-Key alone is not proof of deduplication. | Use maxRetries: 0 for creation-sensitive integrations until per-operation retry defaults or server deduplication are introduced. Changing the global transport policy is separate from camera capture. |
 | P1 | Proxy's default ownership map is handler-wide, not user-scoped (`libs/proxy/src/config.ts`, minted/delete path). Being minted by this process does not prove that the current authenticated caller owns it. | Multi-user and serverless integrations must supply ownsSession. Prelulu uses its own authenticated proxy. Removing this fallback needs a separately reviewed adapter migration; do not call the fallback secure per-user ownership. |
 | P2 | Proxy JSON is asserted to a type before passing avatarId to the application policy callback (`libs/proxy/src/config.ts`). Arrays/non-string IDs can reach app callbacks even though the upstream later rejects them. | Add explicit input validation in a separate behavior change; no callback should receive a value its declared type excludes. |
 | P2 | HTTP output validation is uneven: session grants and recording responses are validated, but credits, assets and some avatar fields still use assertions (`libs/http-client/src/client.ts`). | Extend canonical response parsing endpoint by endpoint. Do not hand-write another mirror schema. |
@@ -81,6 +82,11 @@ Both use `useAvatarCamera({ allowed: grant.camera === true, active })`. Render
 enabled/pending/error and call toggle from an explicit user action. Preview uses
 the returned participant and publication. Do not create a second LiveKit room,
 independent getUserMedia loop, or a second camera-state copy in the application.
+
+Keep naming directional: CallPolicy.video controls the avatar's rendered output;
+camera and useAvatarCamera control the human's input. A voice-output session may
+still accept user camera input. Do not introduce a generic toggleVideo that could
+mean either direction or force a new session just to change a local device.
 
 React supplies page visibility/pagehide policy and uses the web VideoTrack.
 React Native supplies AppState policy and uses the native VideoTrack. The existing

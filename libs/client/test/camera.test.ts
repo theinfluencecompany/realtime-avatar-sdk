@@ -103,3 +103,19 @@ test("signaling cleanup is attempted even when the capture driver cannot stop", 
   await assert.rejects(control.setEnabled(false));
   assert.equal(unpublished, true);
 });
+
+test("one controller can repeatedly enable and disable without closing the session", async () => {
+  const published: object[] = [];
+  const unpublished: object[] = [];
+  const control = createCameraControl({
+    capture: async () => ({ stop() {} }),
+    publish: async (track) => { published.push(track); },
+    unpublish: async (track) => { unpublished.push(track); }, onPending: () => {},
+  });
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    await control.setEnabled(true);
+    await control.setEnabled(false);
+  }
+  assert.equal(new Set(published).size, 3);
+  assert.deepEqual(unpublished, published);
+});
