@@ -55,6 +55,14 @@ async function coreWire(options: Parameters<RealtimeAvatar["startCall"]>[0]): Pr
   return body;
 }
 
+test("camera authorization survives both translators", async () => {
+  const core = await coreWire({ avatarId: "ava_parity", camera: true });
+  const react = toLiveKitSessionWireRequest({ avatarId: "ava_parity", camera: true });
+  assert.equal(core.camera, true);
+  assert.equal(react.camera, true);
+  assert.equal((await coreWire({ avatarId: "ava_parity" })).camera, undefined);
+});
+
 test("both packages ask the platform to listen, for the same minimal call", async () => {
   const core = await coreWire({ avatarId: "ava_parity" });
   const react = toLiveKitSessionWireRequest({ avatarId: "ava_parity" });

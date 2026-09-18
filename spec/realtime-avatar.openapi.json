@@ -774,6 +774,9 @@
           },
           "require_ready_clip_library": {
             "type": "boolean"
+          },
+          "camera": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1165,6 +1168,9 @@
               "expiresAt"
             ],
             "additionalProperties": false
+          },
+          "camera": {
+            "type": "boolean"
           }
         },
         "required": [

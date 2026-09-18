@@ -20,6 +20,7 @@ import { AudioSession, LiveKitRoom, type LiveKitRoomProps } from "@livekit/react
 import { createElement, useEffect } from "react";
 import type { ReactElement, ReactNode } from "react";
 import type { LiveKitSessionGrant } from "../livekit-grant";
+import { cameraPublishOptions } from "../camera";
 
 export type RealtimeAvatarLiveKitRoomProps = Omit<
   LiveKitRoomProps,
@@ -86,7 +87,7 @@ export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps)
       token: grant?.participant_token,
       connect: shouldConnect,
       audio: audio ?? (grant?.stt_mode === "server"),
-      video,
+      video: cameraPublishOptions(grant, video),
       options: roomOptions,
     },
     children,

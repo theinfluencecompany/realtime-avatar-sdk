@@ -27,6 +27,7 @@ import {
   applyPlayoutDelay,
   DEFAULT_AVATAR_PLAYOUT_DELAY_SECONDS,
 } from "../../../browser/src/playout-delay";
+import { cameraPublishOptions } from "../camera";
 import { RealtimeAvatarCapacityError } from "../errors";
 import type { AvatarSessionClient, RealtimeAvatarRequestOptions } from "../session-client";
 import type { LiveKitSessionGrant, LiveKitSessionRequest } from "../livekit-grant";
@@ -808,7 +809,7 @@ export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps)
       token: grant?.participant_token,
       connect: shouldConnect,
       audio: audio ?? (grant?.stt_mode === "server"),
-      video,
+      video: cameraPublishOptions(grant, video),
       options: roomOptions,
     },
     createElement(Fragment, null, cushion, children, roomAudio),

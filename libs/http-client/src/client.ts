@@ -38,7 +38,7 @@ import type {
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.18.0";
+export const SDK_VERSION = "0.19.0";
 
 
 
@@ -131,6 +131,7 @@ export class RealtimeAvatar {
       stt_mode: options.listen === false ? "off" : "server",
     };
     if (options.instructions !== undefined) body.instructions = options.instructions;
+    if (options.camera !== undefined) body.camera = options.camera;
     if (options.context !== undefined) {
       body.initial_context = options.context.map((m) => ({ role: m.role, content: m.content }));
     }

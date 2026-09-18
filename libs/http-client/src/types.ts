@@ -155,6 +155,7 @@ export interface CallPolicy {
   maxSeconds?: number;
   /** Speech recognition. `server` for a spoken conversation, `off` if you drive turns. */
   listen?: boolean;
+  camera?: Wire["LiveKitSessionRequest"]["camera"];
   /** How she is rendered. */
   video?: VideoPolicy;
   /** Voice override for this call; omit to use the avatar's default. */

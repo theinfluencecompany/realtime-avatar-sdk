@@ -565,6 +565,7 @@ export interface components {
             /** @description DEPRECATED, no-op. Accepted and ignored. The faster hesitation ceiling this requested is now the default for every session, so sending it changes nothing. Safe to stop sending; the field is retained only so existing callers do not break. */
             fast_endpointing?: boolean;
             require_ready_clip_library?: boolean;
+            camera?: boolean;
         };
         LiveKitSessionGrant: {
             /** @description Returned only for X-RTA-Release-Evidence: 1. Omitted by default for strict SDK compatibility. Missing deployment or worker evidence remains null. */
@@ -657,6 +658,7 @@ export interface components {
                 /** Format: date-time */
                 expiresAt: string;
             };
+            camera?: boolean;
         };
         LiveKitCapacitySnapshot: {
             capacity_pool: string;

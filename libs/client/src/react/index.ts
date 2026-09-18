@@ -5,6 +5,7 @@
 // our code changing. 24 names came out on 2026-08-26.
 
 export { useCharacterTools } from "./use-character-tools";
+export { useAvatarCamera } from "./use-avatar-camera";
 export {
   AvatarCall,
   useAvatarCall,
