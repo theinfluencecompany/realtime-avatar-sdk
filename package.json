@@ -21,6 +21,7 @@
     "spec:pull": "node scripts/generate-clip-schema.mjs --pull",
     "spec:types": "openapi-typescript spec/realtime-avatar.openapi.json -o libs/http-client/src/generated/openapi.ts && node scripts/generate-clip-schema.mjs && node scripts/generate-connection-history.mjs && node scripts/generate-error-semantics.mjs",
     "surface": "node scripts/check-public-surface.mjs",
+    "pretest": "npm run build",
     "test": "node --test --experimental-transform-types libs/*/test/*.test.ts",
     "eval:web-stall": "node scripts/eval-web-stall.mjs",
     "eval:quality": "node scripts/eval-quality-governor.mjs",
