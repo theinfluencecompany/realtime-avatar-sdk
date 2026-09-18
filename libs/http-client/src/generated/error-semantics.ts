@@ -181,8 +181,15 @@ export function normalizeError(
     };
   }
 
+  // Status-only resolution is for 4xx, never 5xx. The `statuses` lists OVERLAP in the 500
+  // range — 500 is in `internal_error` and `upstream_failed`; 502 in `upstream_failed`,
+  // `upstream_unreachable` and `invalid_upstream_response`; 503 in six — so with no code to
+  // disambiguate, `semanticsForStatus` returns whichever key was DECLARED FIRST. That is
+  // table order, not a decision. Measured 2026-09-18: a bodiless 502 answered `upstream_failed`
+  // and a 504 answered `http_504`. A coded 5xx is unaffected; the `rawCode` branch above
+  // resolves it before this point.
   const recognised = !rawCode || isKnownErrorCode(rawCode);
-  const byStatus = recognised ? semanticsForStatus(status) : undefined;
+  const byStatus = recognised && status < 500 ? semanticsForStatus(status) : undefined;
   if (byStatus) {
     // 503 answers `service_unavailable` rather than the contract's `unavailable`: the outward
     // name both surfaces have always published for a busy service. The contract owns the COPY.

@@ -167,3 +167,36 @@ test("warming is recognised by code, not by sniffing prose", () => {
   assert.equal(coded.message, "Realtime Avatar is warming up. Try again in a moment.");
   assert.equal(coded.retryable, true);
 });
+
+/**
+ * A bodiless 5xx must answer `service_unavailable`, not whichever entry lists that status
+ * first.
+ *
+ * `semanticsForStatus` is a `.find()` over entries whose `statuses` lists OVERLAP in the 500
+ * range: 500 is in `internal_error` and `upstream_failed`; 502 in `upstream_failed`,
+ * `upstream_unreachable` and `invalid_upstream_response`; 503 in six of them. With no code to
+ * disambiguate, the answer is whichever key was declared first, which is table order rather
+ * than a decision.
+ *
+ * Measured 2026-09-18 on the platform side, where the same arm answered `upstream_failed` for
+ * a bodiless 502 and `http_504` for a 504. Kept here so parity is asserted on both sides
+ * rather than assumed from a shared generator.
+ */
+test("a 5xx without a code normalizes to service_unavailable", () => {
+  for (const status of [500, 502, 503, 504, 599]) {
+    const normalized = normalizeRealtimeAvatarError({ status, code: null, message: "" });
+    assert.equal(normalized.code, "service_unavailable", `status ${status}`);
+    assert.equal(normalized.retryable, true, `status ${status} retryable`);
+  }
+});
+
+test("a coded 5xx keeps its own identity", () => {
+  assert.equal(
+    normalizeRealtimeAvatarError({ status: 502, code: "upstream_unreachable", message: "" }).code,
+    "upstream_unreachable",
+  );
+  assert.equal(
+    normalizeRealtimeAvatarError({ status: 500, code: "internal_error", message: "" }).code,
+    "internal_error",
+  );
+});
