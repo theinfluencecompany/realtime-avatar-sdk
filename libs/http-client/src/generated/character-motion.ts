@@ -39,20 +39,37 @@ export const clipListSchema = z.array(motionIdSchema).min(1).max(32)
   });
 
 /**
- * VARIATIONS ON RESTING, weighted against resting itself.
- *
- * The avatar's stored source is the rest state — it always exists, it is where cold media
- * degrades to, and it is the one clip that may play twice running. So it is not a candidate
- * an author lists; `weight` says how often a variation happens INSTEAD of resting (absent
- * ⇒ 1 ⇒ half the time, 0 ⇒ declared but currently off).
- *
- * A variation never immediately follows itself, so the same motion cannot stutter. With
- * every variation filtered out — cold, or the one already playing — she simply keeps
- * resting, which needs no fallback branch because resting IS the other side of the draw.
+ * Backward-compatible authoring input for one weighted idle pool.
+ * The stored source is a normal candidate named `primary`; member weights may disable it.
+ * Explicit `weights` default each omitted member to 1.
+ * `weight` remains the aggregate weight of the authored clips and is divided
+ * equally among them with source weight 1 before availability filtering.
+ * There is no separate rest coin.
+ * Repetition is avoided for every member when another candidate is available;
+ * a sole available member may complete another traversal.
  */
+export const idleWeightSchema = z.number().min(0).max(100);
+
 export const idleSchema = z.strictObject({
   clips: clipListSchema,
-  weight: z.number().min(0).max(100).optional(),
+  /** Legacy aggregate weight. Mutually exclusive with member weights. */
+  weight: idleWeightSchema.optional(),
+  /** Per-member weights, including `primary`; omitted members default to 1. */
+  weights: motionRecord(idleWeightSchema).optional(),
+}).superRefine((idle, ctx) => {
+  if (idle.weights === undefined) return;
+  if (idle.weight !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["weight"], message: "Use weight or weights, not both" });
+  }
+  const members = new Set(["primary", ...idle.clips]);
+  for (const clip of Object.keys(idle.weights)) {
+    if (!members.has(clip)) {
+      ctx.addIssue({ code: "custom", path: ["weights", clip], message: "Unknown idle member" });
+    }
+  }
+  if (![...members].some(clip => (idle.weights?.[clip] ?? 1) > 0)) {
+    ctx.addIssue({ code: "custom", path: ["weights"], message: "Idle pool needs a positive member" });
+  }
 });
 
 export const clipActionSchema = z.strictObject({
@@ -112,21 +129,39 @@ export type ClipAction = z.infer<typeof clipActionSchema>;
 export type ClipBehavior = z.infer<typeof clipBehaviorFields>;
 export type ClipLibraryDeclaration = z.infer<typeof clipLibraryDeclarationSchema>;
 
-/** `null` ⇒ keep resting. Resting is the other side of the draw, not a fallback branch. */
+/** Compile legacy input before filtering; the source is an ordinary pool member. */
+export function idlePoolWeights(idle: ClipIdle | undefined): ReadonlyMap<string, number> {
+  if (idle?.weights !== undefined) {
+    return new Map(["primary", ...idle.clips].flatMap(clip => {
+      const weight = idle.weights?.[clip] ?? 1;
+      return weight > 0 ? [[clip, weight]] : [];
+    }));
+  }
+  const pool = new Map<string, number>([["primary", 1]]);
+  const weight = idle?.weight ?? 1;
+  const members = [...new Set((idle?.clips ?? []).filter(clip => clip !== "primary"))];
+  if (weight > 0 && members.length > 0) {
+    for (const clip of members) pool.set(clip, weight / members.length);
+  }
+  return pool;
+}
+
+/** `primary` addresses idleUrl; null means no available candidate, not a rest draw. */
 export function selectIdleClip(
   idle: ClipIdle | undefined,
   options: { available: (clip: string) => boolean; current: string | null; random?: () => number },
 ): string | null {
-  if (!idle) return null;
-  const random = options.random ?? Math.random;
-  // A variation never immediately follows itself; resting always may.
-  const candidates = idle.clips.filter(clip => options.available(clip) && clip !== options.current);
+  const available = [...idlePoolWeights(idle)].filter(([clip]) => options.available(clip));
+  const alternatives = available.filter(([clip]) => clip !== options.current);
+  const candidates = alternatives.length > 0 ? alternatives : available;
   if (candidates.length === 0) return null;
-  const weight = idle.weight ?? 1;
-  // Filtered BEFORE the draw, so cold or excluded members shrink the CHOICE, never the
-  // odds of doing something at all — that share is authored, not derived from a count.
-  if (weight <= 0 || random() * (weight + 1) >= weight) return null;
-  return candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
+  if (candidates.length === 1) return candidates[0][0];
+  let draw = (options.random ?? Math.random)() * candidates.reduce((sum, [, weight]) => sum + weight, 0);
+  for (const [clip, weight] of candidates) {
+    draw -= weight;
+    if (draw < 0) return clip;
+  }
+  return candidates[candidates.length - 1][0];
 }
 
 /** A listening reaction or an action's variant: uniform, never excluded for repeating. */

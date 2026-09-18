@@ -502,6 +502,9 @@ export interface components {
                 idle?: {
                     clips: string[];
                     weight?: number;
+                    weights?: {
+                        [key: string]: number;
+                    };
                 };
                 on?: {
                     userSpeechStarted?: {
@@ -564,6 +567,19 @@ export interface components {
             require_ready_clip_library?: boolean;
         };
         LiveKitSessionGrant: {
+            /** @description Returned only for X-RTA-Release-Evidence: 1. Omitted by default for strict SDK compatibility. Missing deployment or worker evidence remains null. */
+            readonly releaseIdentity?: {
+                deploymentId: string | null;
+                workerRevision: string | null;
+                provenance: {
+                    /** @constant */
+                    deploymentSource: "cloudflare-worker-version";
+                    workerSource: "authenticated-worker-heartbeat" | null;
+                    workerId: string | null;
+                    podStartedAtMs: number | null;
+                    workerObservedAt: string | null;
+                };
+            };
             /**
              * @default ready
              * @constant
@@ -863,6 +879,19 @@ export interface components {
         ListUsageSessionsResponse: {
             data: {
                 sessionId: string;
+                /** @description Returned only for X-RTA-Release-Evidence: 1. Omitted by default for strict client compatibility. Evidence is stored against this session; missing evidence remains null. */
+                readonly releaseIdentity?: {
+                    deploymentId: string | null;
+                    workerRevision: string | null;
+                    provenance: {
+                        /** @constant */
+                        deploymentSource: "cloudflare-worker-version";
+                        workerSource: "authenticated-worker-heartbeat" | null;
+                        workerId: string | null;
+                        podStartedAtMs: number | null;
+                        workerObservedAt: string | null;
+                    };
+                };
                 avatarId: string | null;
                 avatarName: string | null;
                 /** @enum {string} */
@@ -1059,6 +1088,9 @@ export interface components {
                 idle?: {
                     clips: string[];
                     weight?: number;
+                    weights?: {
+                        [key: string]: number;
+                    };
                 };
                 on?: {
                     userSpeechStarted?: {
@@ -1095,6 +1127,9 @@ export interface components {
             idle?: {
                 clips: string[];
                 weight?: number;
+                weights?: {
+                    [key: string]: number;
+                };
             };
             on?: {
                 userSpeechStarted?: {
@@ -1155,6 +1190,9 @@ export interface components {
                 idle?: {
                     clips: string[];
                     weight?: number;
+                    weights?: {
+                        [key: string]: number;
+                    };
                 };
                 on?: {
                     userSpeechStarted?: {
@@ -1287,7 +1325,10 @@ export interface operations {
     createLiveKitSession: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Send 1 to include optional session-bound releaseIdentity in this response. Without this opt-in the field is omitted for strict client compatibility. Capture and storage are independent of this header; missing evidence remains null. Older servers may ignore this header. */
+                "X-RTA-Release-Evidence"?: "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -2389,7 +2430,10 @@ export interface operations {
                 /** @description Narrow to one of YOUR users — matches the `client_metadata.user_id` the call was minted with. Untagged calls still return, with empty metadata. */
                 endUserId?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Send 1 to include optional session-bound releaseIdentity in this response. Without this opt-in the field is omitted for strict client compatibility. Capture and storage are independent of this header; missing evidence remains null. Older servers may ignore this header. */
+                "X-RTA-Release-Evidence"?: "1";
+            };
             path?: never;
             cookie?: never;
         };
