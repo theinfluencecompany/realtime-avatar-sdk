@@ -65,6 +65,16 @@ eligibility, not a request to turn the camera on. Close is terminal for a contro
 
 ## Findings outside this feature
 
+The published 0.19.0 package exposed another release integration defect: Zod was
+a private dependency even though public schema values expose its types. A consumer
+on Zod 4.4.3 installed SDK-local Zod 4.5.4 and declaration emission failed with
+TS2883. Version 0.20.0 makes Zod a required peer so compatible consumers share one
+runtime/type identity. This is a JavaScript dependency boundary, not a native ABI
+change. Ordinary no-emit type checking alone did not reveal it; consumer declaration
+generation did. This is a new peer requirement, so it uses a minor release while
+the SDK is pre-1.0. Existing applications using an incompatible Zod major must
+align that dependency before upgrading.
+
 | Priority | Finding and evidence | Disposition |
 | --- | --- | --- |
 | P1 | The server client's default retries also apply to startCall, although its own options documentation says creation is not deduplicated server-side (`libs/http-client/src/client.ts`, maxRetries and request loop). Replaying an Idempotency-Key alone is not proof of deduplication. | Use maxRetries: 0 for creation-sensitive integrations until per-operation retry defaults or server deduplication are introduced. Changing the global transport policy is separate from camera capture. |

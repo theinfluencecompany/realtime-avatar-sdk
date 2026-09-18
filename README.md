@@ -112,6 +112,11 @@ live instead of reading about them.
 
 ---
 
+The SDK exports composable validation schemas, so Zod 4.4.3 or a compatible newer
+Zod 4 is a required peer. Modern npm/Bun installs peers automatically; applications
+that already use Zod should declare one compatible version at their root. This is
+a JavaScript dependency and introduces no native module.
+
 ## Packages
 
 **One.** `npm install --save-exact realtime-avatar@0.17.0` and you have the server client, the route adapters, the
