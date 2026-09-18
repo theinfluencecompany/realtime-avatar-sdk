@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useConnectionState, useLocalParticipant } from "@livekit/components-react";
-import { ConnectionState, Track } from "livekit-client";
+import { ConnectionState, Track, createLocalVideoTrack, type LocalVideoTrack } from "livekit-client";
 import { createCameraControl } from "../camera";
 
 export function useAvatarCamera({ allowed, active = true }: { allowed: boolean; active?: boolean }) {
@@ -8,16 +8,17 @@ export function useAvatarCamera({ allowed, active = true }: { allowed: boolean; 
   const connection = useConnectionState();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<"permission_denied" | "unavailable" | null>(null);
-  const control = useRef<ReturnType<typeof createCameraControl> | null>(null);
+  const control = useRef<ReturnType<typeof createCameraControl<LocalVideoTrack>> | null>(null);
   const available = allowed && active && connection === ConnectionState.Connected;
 
   useEffect(() => {
     let alive = true;
-    const current = createCameraControl(
-      (enabled, options) => localParticipant.setCameraEnabled(enabled, options),
-      () => localParticipant.getTrackPublication(Track.Source.Camera)?.track?.stop(),
-      (value) => { if (alive) setPending(value); },
-    );
+    const current = createCameraControl({
+      capture: createLocalVideoTrack,
+      publish: (track) => localParticipant.publishTrack(track, { source: Track.Source.Camera }),
+      unpublish: (track) => localParticipant.unpublishTrack(track, true),
+      onPending: (value) => { if (alive) setPending(value); },
+    });
     control.current = current;
     return () => {
       alive = false;

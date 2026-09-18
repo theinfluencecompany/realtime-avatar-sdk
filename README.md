@@ -265,17 +265,15 @@ const call = await rta.startCall({ avatarId, camera: true, maxSeconds: 600 });
 ```
 
 This permits sharing; it does not open the camera. Keep `camera` in your server
-policy rather than forwarding it from an end-user request. On the web,
-`<AvatarCall cameraEnabled={cameraEnabled} ... />` takes the user's explicit choice.
-With the lower-level web or native room bridge, use
-`<RealtimeAvatarLiveKitRoom grant={grant} video={cameraEnabled}>`.
+policy rather than forwarding it from an end-user request. Use the in-room
+`useAvatarCamera` hook for camera controls on web and native. With `AvatarCall`,
+render your camera control as a child; with a custom view, place it inside the
+existing `RealtimeAvatarLiveKitRoom`.
 
-Capture defaults to off. When enabled with `true`, it uses a front camera at
-640×360, 5 fps; explicit LiveKit video capture options remain supported. The server
-grant must allow camera publication. Use the existing LiveKit local participant
-and video primitives for preview/device selection. Stop sharing when your app
-goes into the background, including native AppState transitions, and surface
-permission/device errors through the room's media error callback.
+Capture defaults to off and uses a front camera at 640×360, 5 fps. The server grant
+must allow camera publication. Use the hook's participant/publication with the
+platform's VideoTrack for preview. Stop sharing when your app goes into the
+background, including native AppState transitions, and render the hook's error.
 
 The character receives short-lived visual observations while normal conversation
 continues. Sharing does not enable recording. This requires the matching platform
@@ -286,8 +284,10 @@ For an in-room control on either web or native, use
 returns `enabled`, `pending`, `error`, `toggle`, `setEnabled`, `publication` and
 `participant`. Bind `active` to your page/app foreground and live-call state.
 Capture stays off until an explicit action, stops when inactive or unmounted,
-and cancelled permission requests cannot reopen it. Do not simultaneously drive
-the room's `video` prop and this hook; choose one camera controller.
+and cancelled permission requests cannot publish it. Capture and publication are
+separate operations; a late captured track is stopped before it reaches the room.
+The existing room `video` prop remains a lower-level LiveKit escape hatch. Do not
+drive it alongside this hook; choose one camera controller.
 
 ## Contributing
 

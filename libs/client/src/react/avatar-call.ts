@@ -65,7 +65,6 @@ export type AvatarCallHandle = {
 };
 
 export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectionDetailsChange"> & {
-  cameraEnabled?: boolean;
   client: AvatarSessionClient;
   /** Which character. */
   avatarId: string;
@@ -170,7 +169,6 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
     {
       grant: session.grant,
       audio: props.listen !== false,
-      video: props.cameraEnabled === true,
       onConnected: session.onConnected,
       onDisconnected: session.onDisconnected,
       onError: session.onConnectionError,
