@@ -52,7 +52,7 @@ These are the ones that cost real time when broken. Each has been observed, not 
 
 ### 1. Never accept call policy from the client
 
-`instructions`, `context`, `maxSeconds`, `voice`, `video` are **your server's decisions**.
+`instructions`, `context`, `transcription`, `maxSeconds`, `voice`, `video` are **your server's decisions**.
 A request body that supplies them is a request body that owns your character and your bill.
 
 ```ts
@@ -130,6 +130,23 @@ duplex was then served by a separate audio-only path. Both modes are full duplex
 trade-off it forced no longer exists. If you wrote code around it, delete the workaround.
 
 If you are drawing your own visuals on `mode: "voice"`, render from the audio level.
+
+Speech recognition hints belong in `transcription`, separately from character instructions:
+
+```ts
+await rta.startCall({
+  avatarId: character.avatarId,
+  instructions: character.prompt,
+  transcription: { customVocabulary: [character.name] },
+  maxSeconds: secondsTheBalanceAffords(user),
+});
+```
+
+Use a small set of relevant names, aliases or terms already known to your server.
+Omit `languageCodes` for automatic multilingual recognition. Recognition languages
+do not choose the character's response language; that policy belongs in `instructions`.
+Hints bias recognition without requiring those words to appear, and are set when
+the call starts. Do not put a whole persona or conversation history in the vocabulary.
 
 ### 5. The browser half is not free: the mic can fail six ways, and none of them throw where you are looking
 
