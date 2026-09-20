@@ -156,6 +156,12 @@ export interface CallPolicy {
   /** Speech recognition. `server` for a spoken conversation, `off` if you drive turns. */
   listen?: boolean;
   camera?: Wire["LiveKitSessionRequest"]["camera"];
+  /** Optional language and vocabulary hints for speech recognition. Omit languages for automatic detection. */
+  transcription?: {
+    languageCodes?: NonNullable<Wire["LiveKitSessionRequest"]["transcription"]>["language_codes"];
+    /** Prefer at most 100 relevant names or terms; these are recognition hints, not instructions. */
+    customVocabulary?: NonNullable<Wire["LiveKitSessionRequest"]["transcription"]>["custom_vocabulary"];
+  };
   /** How she is rendered. */
   video?: VideoPolicy;
   /** Voice override for this call; omit to use the avatar's default. */

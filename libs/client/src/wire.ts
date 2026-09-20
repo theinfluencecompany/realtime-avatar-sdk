@@ -13,6 +13,7 @@
 import { z } from "zod";
 import { recordingArtifactSchema } from "../../http-client/src/generated/recording.ts";
 import { connectionHistoryGrantSchema } from "../../http-client/src/generated/connection-history.ts";
+import { transcriptionOptionsSchema, transcriptionWireSchema, transcriptionToWire } from "../../http-client/src/generated/transcription.ts";
 
 const DEFAULT_AVATAR_ID = "maria";
 const DEFAULT_BACKGROUND_ID = "plain_white";
@@ -267,6 +268,7 @@ export const liveKitSessionWireRequestSchema = z
     source_kind: avatarSourceKindSchema.default("portrait"),
     source_video_url: nullableUrlSchema.optional(),
     stt_mode: liveKitSttModeSchema.default("server"),
+    transcription: transcriptionWireSchema.optional(),
     camera: z.boolean().optional(),
     video_cache_id: z.string().min(1).max(240).nullable().optional(),
     voice: voiceSpecSchema.nullable().optional(),
@@ -353,6 +355,7 @@ export const liveKitSessionRequestSchema = z
     queueTicketId: z.string().min(1).max(160).optional(),
     roomName: z.string().min(1).max(160).optional(),
     sttMode: liveKitSttModeSchema.default("server"),
+    transcription: transcriptionOptionsSchema.optional(),
     camera: z.boolean().optional(),
     voice: voiceSpecSchema.nullable().optional(),
     voiceId: z.string().min(1).max(240).nullable().optional(),
@@ -566,6 +569,7 @@ export const toLiveKitSessionWireRequest = (
     queue_ticket_id: request.queueTicketId,
     room_name: request.roomName,
     stt_mode: request.sttMode,
+    transcription: request.transcription === undefined ? undefined : transcriptionToWire(request.transcription),
     camera: request.camera,
     voice: request.voice,
     voice_id: request.voiceId,

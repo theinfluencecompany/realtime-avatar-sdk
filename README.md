@@ -191,7 +191,7 @@ One class, one types file. The full surface is
 
 ```ts
 // calls
-rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, connectionHistory?, transcript?, metadata? })
+rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, transcription?, video?, recording?, connectionHistory?, transcript?, metadata? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 
 // optional recordings; server only, requires recordings:read
@@ -260,6 +260,26 @@ the correlation ID at `.requestId`; the proxy and browser client preserve the re
 Showing an error there is the most common bad first impression.
 
 ---
+
+## Speech recognition hints
+
+Your server can supply the languages and names relevant to a call:
+
+```ts
+const call = await rta.startCall({
+  avatarId,
+  transcription: {
+    languageCodes: ["en-US", "zh-CN"],
+    customVocabulary: ["Mira", "Acme"],
+  },
+});
+```
+
+Omit `languageCodes`, or use `[]`, for automatic multilingual detection. Prefer
+at most 100 relevant vocabulary terms; the limit is 1,000 terms, 160 characters
+each. Hints bias recognition rather than guaranteeing a spelling or faster
+response. They do not change character instructions. This configuration is set
+when the call starts; changing the object does not update an active call.
 
 ## Let the character see your camera
 

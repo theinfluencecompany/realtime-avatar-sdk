@@ -206,6 +206,34 @@
               "off"
             ]
           },
+          "transcription": {
+            "description": "Optional speech recognition hints. Omit language_codes or send [] for automatic multilingual detection. Custom vocabulary biases recognition; at most 100 relevant terms is recommended. It is not a character instruction or a guarantee of recognition accuracy or latency.",
+            "type": "object",
+            "properties": {
+              "language_codes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 64
+                }
+              },
+              "custom_vocabulary": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "pattern": "\\S"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "camera": {
+            "type": "boolean"
+          },
           "video_cache_id": {
             "anyOf": [
               {
@@ -774,9 +802,6 @@
           },
           "require_ready_clip_library": {
             "type": "boolean"
-          },
-          "camera": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -938,6 +963,9 @@
               "server",
               "off"
             ]
+          },
+          "camera": {
+            "type": "boolean"
           },
           "room_created": {
             "default": false,
@@ -1168,9 +1196,6 @@
               "expiresAt"
             ],
             "additionalProperties": false
-          },
-          "camera": {
-            "type": "boolean"
           }
         },
         "required": [

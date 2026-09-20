@@ -188,8 +188,34 @@ ${definitions.join("\n\n")}
 
 ${roots.join("\n\n")}
 `;
+
+definitions.length = 0;
+names.clear();
+const { description: _transcriptionDescription, ...transcriptionSchema } = spec.components.schemas.LiveKitSessionRequest.properties.transcription;
+const transcriptionRoot = expression(transcriptionSchema);
+const transcriptionTarget = new URL("../libs/http-client/src/generated/transcription.ts", import.meta.url);
+const transcriptionOutput = `import { z } from "zod";
+import type { components } from "./openapi.ts";
+
+${definitions.join("\n\n")}
+
+export const transcriptionWireSchema = ${transcriptionRoot} satisfies z.ZodType<NonNullable<components["schemas"]["LiveKitSessionRequest"]["transcription"]>>;
+export const transcriptionOptionsSchema = z.object({
+  languageCodes: transcriptionWireSchema.shape.language_codes,
+  customVocabulary: transcriptionWireSchema.shape.custom_vocabulary,
+}).strict();
+
+export function transcriptionToWire(input: z.input<typeof transcriptionOptionsSchema>) {
+  const options = transcriptionOptionsSchema.parse(input);
+  return {
+    ...(options.languageCodes !== undefined ? { language_codes: options.languageCodes } : {}),
+    ...(options.customVocabulary !== undefined ? { custom_vocabulary: options.customVocabulary } : {}),
+  };
+}
+`;
 if (check) {
   if (await readFile(target, "utf8") !== output) throw new Error("Clip schemas are stale; run npm run spec:types");
+  if (await readFile(transcriptionTarget, "utf8") !== transcriptionOutput) throw new Error("Transcription schemas are stale; run npm run spec:types");
 } else {
   // No files change until the executable digest and response generation have succeeded.
   if (pull || sync) {
@@ -198,5 +224,6 @@ if (check) {
     await writeFile(specTarget, specBytes);
   }
   await writeFile(target, output);
+  await writeFile(transcriptionTarget, transcriptionOutput);
 }
 console.log(`Clip contract SHA-256 ${hash}; response schemas ${check ? "verified" : "generated"}`);

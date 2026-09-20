@@ -63,6 +63,17 @@ test("camera authorization survives both translators", async () => {
   assert.equal((await coreWire({ avatarId: "ava_parity" })).camera, undefined);
 });
 
+test("transcription hints have identical wire values in both SDK translators", async () => {
+  const transcription = { languageCodes: ["en-US", "zh-CN"], customVocabulary: ["Mira", "RunPod", "Jev"] };
+  const core = await coreWire({ avatarId: "ava_parity", transcription });
+  const react = toLiveKitSessionWireRequest({ avatarId: "ava_parity", transcription });
+  const expected = { language_codes: transcription.languageCodes, custom_vocabulary: transcription.customVocabulary };
+  assert.deepEqual(core.transcription, expected);
+  assert.deepEqual(react.transcription, expected);
+  assert.equal("transcription" in await coreWire({ avatarId: "ava_parity" }), false);
+  assert.equal("transcription" in toLiveKitSessionWireRequest({ avatarId: "ava_parity" }), false);
+});
+
 test("both packages ask the platform to listen, for the same minimal call", async () => {
   const core = await coreWire({ avatarId: "ava_parity" });
   const react = toLiveKitSessionWireRequest({ avatarId: "ava_parity" });
