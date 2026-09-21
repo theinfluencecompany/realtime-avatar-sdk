@@ -28,7 +28,7 @@ const bundle = await build({
       import {useAvatarCall} from './avatar-call';
       export {SessionLifecycleRoomBridge as bridge};
       export const render = () => SessionLifecycleRoomBridge({lifecycle: globalThis.fixture.lifecycle,
-        onConnectionDetailsChange: globalThis.fixture.callback});
+        onConnectionDetailsChange: globalThis.fixture.callback, onMediaModeChange: globalThis.fixture.mediaModeCallback});
       export const renderAvatar = () => useAvatarCall({client: {}, avatarId: 'avatar',
         onConnectionDetailsChange: globalThis.fixture.callback});`,
     resolveDir: new URL("../src/react", import.meta.url).pathname,
@@ -89,11 +89,12 @@ function fixture(windowValue?: object) {
   const record: Callback = (details) => { received.push(details); };
   const controlled: {
     room: ReturnType<typeof room>;
-    assistant: { agent: ReturnType<typeof source>["participant"]; state: string; audioTrack?: ReturnType<typeof source>; videoTrack?: ReturnType<typeof source> };
+    assistant: { agent: ReturnType<typeof source>["participant"] & { attributes?: Record<string, string> }; state: string; audioTrack?: ReturnType<typeof source>; videoTrack?: ReturnType<typeof source> };
     lifecycle: Omit<typeof legacyBridge.lifecycle, "grant"> & {
       grant?: Pick<NonNullable<SessionLifecycleRoomBridgeProps["lifecycle"]["grant"]>, "session_id" | "connection_history"> | null;
     };
     callback?: Callback;
+    mediaModeCallback?: SessionLifecycleRoomBridgeProps["onMediaModeChange"];
     elements: { type: unknown; props?: Record<string, unknown> }[];
     session: object;
     useRef: (value: unknown) => { current: unknown };
@@ -144,6 +145,48 @@ const historyGrant: NonNullable<NonNullable<SessionLifecycleRoomBridgeProps["lif
   token: "x".repeat(32),
   expiresAt: "2099-01-01T00:00:00.000Z",
 };
+
+test("actual mode reads late-join state and trusts only the bound agent", () => {
+  const f = fixture({});
+  const modes: unknown[] = [];
+  const replacement: NonNullable<SessionLifecycleRoomBridgeProps["onMediaModeChange"]> = (mode) => { modes.push(mode); };
+  f.controlled.mediaModeCallback = (mode) => { modes.push(mode); };
+  const agent = f.controlled.assistant.agent;
+  agent.attributes = { "rta.media_mode": "voice" };
+  f.render();
+  assert.deepEqual(modes, ["voice"]);
+  f.controlled.room.emit(RoomEvent.ParticipantAttributesChanged, {}, { attributes: { "rta.media_mode": "video" } });
+  assert.deepEqual(modes, ["voice"]);
+  agent.attributes["rta.media_mode"] = "video";
+  f.controlled.room.emit(RoomEvent.ParticipantAttributesChanged, {}, agent);
+  f.controlled.room.emit(RoomEvent.ParticipantAttributesChanged, {}, agent);
+  assert.deepEqual(modes, ["voice", "avatar"]);
+  f.controlled.mediaModeCallback = replacement;
+  f.render();
+  assert.deepEqual(modes, ["voice", "avatar"]);
+  f.dispose();
+  assert.deepEqual(modes, ["voice", "avatar", null]);
+  f.controlled.room.emit(RoomEvent.ParticipantAttributesChanged, {}, agent);
+  assert.equal(modes.length, 3);
+  assert.equal(f.controlled.room.count(), 0);
+});
+
+test("missing tracks do not imply voice and replaced sessions retire their mode", () => {
+  const f = fixture({});
+  const modes: unknown[] = [];
+  f.controlled.mediaModeCallback = (mode) => { modes.push(mode); };
+  f.controlled.assistant.videoTrack = undefined;
+  f.render();
+  assert.deepEqual(modes, [null]);
+  const agent = f.controlled.assistant.agent;
+  agent.attributes = { "rta.media_mode": "voice" };
+  f.controlled.room.emit(RoomEvent.ParticipantAttributesChanged, {}, agent);
+  assert.deepEqual(modes, [null, "voice"]);
+  f.controlled.lifecycle.grant = null;
+  f.render();
+  assert.deepEqual(modes, [null, "voice", null]);
+  f.dispose();
+});
 
 test("connection history mounts and uploads with a native window lacking DOM event methods", () => {
   const f = fixture({});

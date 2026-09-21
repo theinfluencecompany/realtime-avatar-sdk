@@ -731,9 +731,16 @@ the value import with it. Measured on the built entries: `apiKey`/`Bearer` 17 oc
 the wire translator 6 → 0, and the bundles 124.4 KB → 94.3 KB (react) and 110.1 KB → 82.6 KB
 (react-native).
 
-> **Source of truth — and it is only ONE package.** `libs/client` is a scrubbed carry of the
-> upstream `@theinfluencecompany/realtime-avatar`; an edit to `libs/client/src` will not
-> survive the next sync, so take it upstream too or it lands twice and diverges.
+> **Source of truth.** `libs/client` originated as a scrubbed carry of
+> `@theinfluencecompany/realtime-avatar`. The split platform repository no longer
+> contains that client tree; the shared web/native room bindings are maintained here.
+> The platform still owns generated HTTP contracts; update those through spec generation.
+>
+> `SessionLifecycleRoomBridge.onMediaModeChange` reads the bound agent's persistent
+> `rta.media_mode` participant attribute (`video` -> public `avatar`, or `voice`).
+> Missing/unknown attributes mean unknown, never inferred voice. Workers publish their
+> selected entrypoint, including voice-floor fallback; late joiners read stored state.
+> Consumers change presentation without changing grant, room or requested transport.
 >
 > `libs/http-client`, `libs/proxy`, `libs/tools` and `libs/browser` are **hand-authored here**
 > and are the public SDK proper — 1,798 lines against the carry's 8,796. The two are easy to

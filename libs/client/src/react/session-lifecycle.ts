@@ -1171,6 +1171,12 @@ export type AvatarConnectionDetails = Readonly<{
 
 export type SessionLifecycleRoomBridgeProps = {
   /**
+   * Authoritative agent output, not the requested mode or a missing-track heuristic.
+   * Null means unknown (older worker / retired binding). Changing presentation must
+   * not re-mint the session. Shared by web and native; late joins read stored state.
+   */
+  onMediaModeChange?: (mode: "avatar" | "voice" | null) => void;
+  /**
    * Opt in to an initial snapshot and changed facts. Null clears a retired binding.
    * Callback failures never affect the call; no stats polling or uploads are added.
    */
@@ -1206,6 +1212,7 @@ export type SessionLifecycleRoomBridgeProps = {
 export function SessionLifecycleRoomBridge({
   lifecycle,
   onConnectionDetailsChange,
+  onMediaModeChange,
 }: SessionLifecycleRoomBridgeProps): null {
   const {
     onConnectionStateChange,
@@ -1222,6 +1229,37 @@ export function SessionLifecycleRoomBridge({
   const assistant = useVoiceAssistant();
   const transcriptions = useTranscriptions();
   const room = useRoomContext();
+  const mediaModeCallbackRef = useRef(onMediaModeChange);
+  mediaModeCallbackRef.current = onMediaModeChange;
+  const mediaModeEnabled = onMediaModeChange !== undefined && lifecycle.grant !== null;
+  const mediaModeSessionId = lifecycle.grant?.session_id;
+  useEffect(() => {
+    if (!mediaModeEnabled) return;
+    const agent = assistant.agent;
+    let previous: "avatar" | "voice" | null | undefined;
+    const deliver = (mode: "avatar" | "voice" | null): void => {
+      if (mode === previous) return;
+      previous = mode;
+      try {
+        void Promise.resolve(mediaModeCallbackRef.current?.(mode)).catch(() => {});
+      } catch {
+        /* A presentation callback must not interrupt the call. */
+      }
+    };
+    const read = (): void => {
+      const value = agent?.attributes?.["rta.media_mode"];
+      deliver(value === "video" ? "avatar" : value === "voice" ? "voice" : null);
+    };
+    const changed = (_attributes: Record<string, string>, participant: Participant): void => {
+      if (participant === agent) read();
+    };
+    room.on(RoomEvent.ParticipantAttributesChanged, changed);
+    read();
+    return () => {
+      room.off(RoomEvent.ParticipantAttributesChanged, changed);
+      deliver(null);
+    };
+  }, [room, assistant.agent, mediaModeEnabled, mediaModeSessionId]);
   const { send } = useChat();
   const agentPresent = Boolean(assistant.agent);
   const assistantState = assistant.state;
