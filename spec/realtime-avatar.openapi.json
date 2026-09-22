@@ -2737,12 +2737,12 @@
               "personality": {
                 "default": "",
                 "type": "string",
-                "maxLength": 2000
+                "maxLength": 4000
               },
               "background": {
                 "default": "",
                 "type": "string",
-                "maxLength": 3000
+                "maxLength": 8000
               },
               "replyStyle": {
                 "default": "short, warm, specific, and spoken",
@@ -2754,7 +2754,7 @@
           },
           "artDirection": {
             "type": "string",
-            "maxLength": 2000
+            "maxLength": 2500
           },
           "stylePreset": {
             "type": "string",
@@ -7275,7 +7275,7 @@
   },
   "x-recording-contract": {
     "source": "/recording.contract.ts",
-    "sha256": "62cda16a9fc7b85705832da2d97528a2c1848eb7d3fbcf4f718f472efeb7a8bc"
+    "sha256": "b1f407c7424e8afa7b0b3f62dc2505daccbbbedc67ab9a2ea3b25ac66a72de28"
   },
   "tags": [
     {

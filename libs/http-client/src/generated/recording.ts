@@ -5,6 +5,11 @@ import { z } from "zod";
 // Public metadata is durable; credentials and renewable download URLs are separate.
 // ---------------------------------------------------------------------------
 export const RECORDED_MEDIA_MODES = ["audio", "video", "audio_video"] as const;
+export type RecordedMediaMode = (typeof RECORDED_MEDIA_MODES)[number];
+// A per-participant file always carries that participant's own audio, so video-only is not one
+// of its modes. This narrower list is the vocabulary `platform_participant_recordings.mode`
+// CHECKs, and the annotation is what keeps it a subset of the one above.
+export const PARTICIPANT_RECORDED_MEDIA_MODES: readonly [RecordedMediaMode, ...RecordedMediaMode[]] = ["audio", "audio_video"];
 export const recordingModeSchema = z
   .enum(["off", ...RECORDED_MEDIA_MODES, "participants"])
   .describe("Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices.");
