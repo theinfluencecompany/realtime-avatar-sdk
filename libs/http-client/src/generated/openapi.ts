@@ -391,7 +391,28 @@ export interface paths {
         trace?: never;
     };
 }
-export type webhooks = Record<string, never>;
+export interface webhooks {
+    "session.transcript": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive the signed end-of-call transcript
+         * @description The worker POSTs directly to the application's mint-time transcript_webhook.url after releasing session capacity. No transcript is stored by the platform. A session with no committed segments and no tool calls sends nothing. Verify HMAC-SHA256 with transcript_webhook.secret over the timestamp, a literal dot, and the raw request body before parsing; reject stale timestamps. Delivery is best-effort and may repeat; consumers should tolerate duplicate session_id values. No delivery or retry guarantee is made. Input provenance is optional on user segments; missing legacy provenance must not be inferred as text.
+         */
+        post: operations["receiveSessionTranscript"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+}
 export interface components {
     schemas: {
         LiveKitSessionRequest: {
@@ -710,6 +731,182 @@ export interface components {
             /** @enum {string} */
             reason?: "page_hide" | "disconnected" | "superseded" | "unmount" | "manual" | "idle_timeout";
             capacity_pool?: string;
+        };
+        /**
+         * @description Input source. Missing legacy provenance is unknown, never implicitly text.
+         * @enum {string}
+         */
+        InputSource: "text" | "client_stt" | "server_stt" | "unknown";
+        /**
+         * @description Optional client declaration; a client cannot declare server_stt or unknown.
+         * @enum {string}
+         */
+        DeclaredInputSource: "text" | "client_stt";
+        /** @enum {string} */
+        InputSourceDeclarationScope: "turn" | "adapter";
+        /** @description Optional per-user-segment input provenance. A signed webhook authenticates delivery; it does not independently verify a client's declaration. Missing legacy provenance must remain absent. */
+        InputProvenance: {
+            /** @constant */
+            version: 1;
+            /**
+             * @description Source observed at ingress, kept separate from the client's declaration. SDK sendTurn observes text even when an application declares client_stt.
+             * @enum {string}
+             */
+            observed_source: "text" | "client_stt" | "server_stt" | "unknown";
+            /** @enum {string} */
+            observed_by: "sdk" | "worker" | "unknown";
+            /**
+             * @description Optional client declaration; a client cannot declare server_stt or unknown.
+             * @enum {string}
+             */
+            declared_source?: "text" | "client_stt";
+            /** @enum {string} */
+            declaration_scope?: "turn" | "adapter";
+            /** @enum {string} */
+            ingress: "room_text" | "room_audio_stt" | "unknown";
+        } & {
+            [key: string]: unknown;
+        };
+        TranscriptSegment: {
+            /** @enum {string} */
+            role: "user" | "assistant";
+            text: string;
+            ts: number;
+            /** @description The assistant was interrupted; text contains only what was spoken. */
+            interrupted?: boolean;
+            /** @description Optional user message identity. */
+            message_id?: string;
+            /** @description Optional user turn identity from rta.turn_id. */
+            turn_id?: string;
+            /** @description Original user turn identity from rta.retry_of_turn_id, present only for an explicit retry. */
+            retry_of_turn_id?: string;
+            /**
+             * @description Resolved user input source. A valid client declaration may resolve room text as client_stt; observed evidence remains in input_provenance. Absent on legacy segments; never defaults to text.
+             * @enum {string}
+             */
+            input_source?: "text" | "client_stt" | "server_stt" | "unknown";
+            /** @description Optional per-user-segment input provenance. A signed webhook authenticates delivery; it does not independently verify a client's declaration. Missing legacy provenance must remain absent. */
+            input_provenance?: {
+                /** @constant */
+                version: 1;
+                /**
+                 * @description Source observed at ingress, kept separate from the client's declaration. SDK sendTurn observes text even when an application declares client_stt.
+                 * @enum {string}
+                 */
+                observed_source: "text" | "client_stt" | "server_stt" | "unknown";
+                /** @enum {string} */
+                observed_by: "sdk" | "worker" | "unknown";
+                /**
+                 * @description Optional client declaration; a client cannot declare server_stt or unknown.
+                 * @enum {string}
+                 */
+                declared_source?: "text" | "client_stt";
+                /** @enum {string} */
+                declaration_scope?: "turn" | "adapter";
+                /** @enum {string} */
+                ingress: "room_text" | "room_audio_stt" | "unknown";
+            } & {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        /** @description Tool call history; arguments and result/error text may be truncated. */
+        TranscriptToolCall: {
+            name: string;
+            call_id: string;
+            /** @description Raw JSON arguments text; may be truncated, so it need not parse as JSON. */
+            arguments: string;
+            ts: number;
+            /** @description Absent when the call produced nothing the model saw. */
+            ok?: boolean;
+            result?: string;
+            error?: string;
+            duration_ms?: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @description Signed end-of-call transcript sent directly by the worker to transcript_webhook.url after capacity release. Optional provenance is additive; legacy payloads remain valid. */
+        TranscriptPayload: {
+            /** @constant */
+            type: "session.transcript";
+            session_id: string;
+            avatar_id: string;
+            /** @enum {string} */
+            mode: "avatar" | "voice";
+            started_at: number;
+            ended_at: number;
+            /** @description Session duration in seconds. */
+            seconds: number;
+            /** @description True when the transcript buffer overflowed and segments are partial. */
+            truncated: boolean;
+            segments: ({
+                /** @enum {string} */
+                role: "user" | "assistant";
+                text: string;
+                ts: number;
+                /** @description The assistant was interrupted; text contains only what was spoken. */
+                interrupted?: boolean;
+                /** @description Optional user message identity. */
+                message_id?: string;
+                /** @description Optional user turn identity from rta.turn_id. */
+                turn_id?: string;
+                /** @description Original user turn identity from rta.retry_of_turn_id, present only for an explicit retry. */
+                retry_of_turn_id?: string;
+                /**
+                 * @description Resolved user input source. A valid client declaration may resolve room text as client_stt; observed evidence remains in input_provenance. Absent on legacy segments; never defaults to text.
+                 * @enum {string}
+                 */
+                input_source?: "text" | "client_stt" | "server_stt" | "unknown";
+                /** @description Optional per-user-segment input provenance. A signed webhook authenticates delivery; it does not independently verify a client's declaration. Missing legacy provenance must remain absent. */
+                input_provenance?: {
+                    /** @constant */
+                    version: 1;
+                    /**
+                     * @description Source observed at ingress, kept separate from the client's declaration. SDK sendTurn observes text even when an application declares client_stt.
+                     * @enum {string}
+                     */
+                    observed_source: "text" | "client_stt" | "server_stt" | "unknown";
+                    /** @enum {string} */
+                    observed_by: "sdk" | "worker" | "unknown";
+                    /**
+                     * @description Optional client declaration; a client cannot declare server_stt or unknown.
+                     * @enum {string}
+                     */
+                    declared_source?: "text" | "client_stt";
+                    /** @enum {string} */
+                    declaration_scope?: "turn" | "adapter";
+                    /** @enum {string} */
+                    ingress: "room_text" | "room_audio_stt" | "unknown";
+                } & {
+                    [key: string]: unknown;
+                };
+            } & {
+                [key: string]: unknown;
+            })[];
+            /** @description Optional tool call sidecar; absent when no tools ran. */
+            tool_calls?: ({
+                name: string;
+                call_id: string;
+                /** @description Raw JSON arguments text; may be truncated, so it need not parse as JSON. */
+                arguments: string;
+                ts: number;
+                /** @description Absent when the call produced nothing the model saw. */
+                ok?: boolean;
+                result?: string;
+                error?: string;
+                duration_ms?: number;
+            } & {
+                [key: string]: unknown;
+            })[];
+            /** @description True when the tool call buffer overflowed and its tail is missing. */
+            tool_calls_truncated?: boolean;
+            /** @description Mint-time client_metadata echoed verbatim; an empty object when none was provided. */
+            client_metadata: {
+                [key: string]: string;
+            };
+        } & {
+            [key: string]: unknown;
         };
         Avatar: {
             id: string;
@@ -2485,6 +2682,40 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"];
                 };
+            };
+        };
+    };
+    receiveSessionTranscript: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description v1= followed by the hex HMAC-SHA256 of <timestamp>.<raw body>, keyed by transcript_webhook.secret. Compare in constant time. */
+                "x-rta-signature": string;
+                /** @description Timestamp string used verbatim in the signed message. Verify freshness to bound replay. */
+                "x-rta-timestamp": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranscriptPayload"];
+            };
+        };
+        responses: {
+            /** @description Receipt acknowledged by the application. */
+            "2XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Application response; delivery and retries are best-effort. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

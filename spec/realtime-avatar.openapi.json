@@ -1469,6 +1469,477 @@
           ]
         }
       },
+      "InputSource": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "enum": [
+          "text",
+          "client_stt",
+          "server_stt",
+          "unknown"
+        ],
+        "description": "Input source. Missing legacy provenance is unknown, never implicitly text."
+      },
+      "DeclaredInputSource": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "enum": [
+          "text",
+          "client_stt"
+        ],
+        "description": "Optional client declaration; a client cannot declare server_stt or unknown."
+      },
+      "InputSourceDeclarationScope": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "enum": [
+          "turn",
+          "adapter"
+        ]
+      },
+      "InputProvenance": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "observed_source": {
+            "type": "string",
+            "enum": [
+              "text",
+              "client_stt",
+              "server_stt",
+              "unknown"
+            ],
+            "description": "Source observed at ingress, kept separate from the client's declaration. SDK sendTurn observes text even when an application declares client_stt."
+          },
+          "observed_by": {
+            "type": "string",
+            "enum": [
+              "sdk",
+              "worker",
+              "unknown"
+            ]
+          },
+          "declared_source": {
+            "type": "string",
+            "enum": [
+              "text",
+              "client_stt"
+            ],
+            "description": "Optional client declaration; a client cannot declare server_stt or unknown."
+          },
+          "declaration_scope": {
+            "type": "string",
+            "enum": [
+              "turn",
+              "adapter"
+            ]
+          },
+          "ingress": {
+            "type": "string",
+            "enum": [
+              "room_text",
+              "room_audio_stt",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "observed_source",
+          "observed_by",
+          "ingress"
+        ],
+        "additionalProperties": {},
+        "description": "Optional per-user-segment input provenance. A signed webhook authenticates delivery; it does not independently verify a client's declaration. Missing legacy provenance must remain absent."
+      },
+      "TranscriptSegment": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "number"
+          },
+          "interrupted": {
+            "description": "The assistant was interrupted; text contains only what was spoken.",
+            "type": "boolean"
+          },
+          "message_id": {
+            "description": "Optional user message identity.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "turn_id": {
+            "description": "Optional user turn identity from rta.turn_id.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "retry_of_turn_id": {
+            "description": "Original user turn identity from rta.retry_of_turn_id, present only for an explicit retry.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "input_source": {
+            "description": "Resolved user input source. A valid client declaration may resolve room text as client_stt; observed evidence remains in input_provenance. Absent on legacy segments; never defaults to text.",
+            "type": "string",
+            "enum": [
+              "text",
+              "client_stt",
+              "server_stt",
+              "unknown"
+            ]
+          },
+          "input_provenance": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "number",
+                "const": 1
+              },
+              "observed_source": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "client_stt",
+                  "server_stt",
+                  "unknown"
+                ],
+                "description": "Source observed at ingress, kept separate from the client's declaration. SDK sendTurn observes text even when an application declares client_stt."
+              },
+              "observed_by": {
+                "type": "string",
+                "enum": [
+                  "sdk",
+                  "worker",
+                  "unknown"
+                ]
+              },
+              "declared_source": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "client_stt"
+                ],
+                "description": "Optional client declaration; a client cannot declare server_stt or unknown."
+              },
+              "declaration_scope": {
+                "type": "string",
+                "enum": [
+                  "turn",
+                  "adapter"
+                ]
+              },
+              "ingress": {
+                "type": "string",
+                "enum": [
+                  "room_text",
+                  "room_audio_stt",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "version",
+              "observed_source",
+              "observed_by",
+              "ingress"
+            ],
+            "additionalProperties": {},
+            "description": "Optional per-user-segment input provenance. A signed webhook authenticates delivery; it does not independently verify a client's declaration. Missing legacy provenance must remain absent."
+          }
+        },
+        "required": [
+          "role",
+          "text",
+          "ts"
+        ],
+        "additionalProperties": {}
+      },
+      "TranscriptToolCall": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "call_id": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "string",
+            "description": "Raw JSON arguments text; may be truncated, so it need not parse as JSON."
+          },
+          "ts": {
+            "type": "number"
+          },
+          "ok": {
+            "description": "Absent when the call produced nothing the model saw.",
+            "type": "boolean"
+          },
+          "result": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "call_id",
+          "arguments",
+          "ts"
+        ],
+        "additionalProperties": {},
+        "description": "Tool call history; arguments and result/error text may be truncated."
+      },
+      "TranscriptPayload": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "session.transcript"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "avatar_id": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "avatar",
+              "voice"
+            ]
+          },
+          "started_at": {
+            "type": "number"
+          },
+          "ended_at": {
+            "type": "number"
+          },
+          "seconds": {
+            "type": "number",
+            "description": "Session duration in seconds."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the transcript buffer overflowed and segments are partial."
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "ts": {
+                  "type": "number"
+                },
+                "interrupted": {
+                  "description": "The assistant was interrupted; text contains only what was spoken.",
+                  "type": "boolean"
+                },
+                "message_id": {
+                  "description": "Optional user message identity.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "turn_id": {
+                  "description": "Optional user turn identity from rta.turn_id.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "retry_of_turn_id": {
+                  "description": "Original user turn identity from rta.retry_of_turn_id, present only for an explicit retry.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "input_source": {
+                  "description": "Resolved user input source. A valid client declaration may resolve room text as client_stt; observed evidence remains in input_provenance. Absent on legacy segments; never defaults to text.",
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "client_stt",
+                    "server_stt",
+                    "unknown"
+                  ]
+                },
+                "input_provenance": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "observed_source": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "client_stt",
+                        "server_stt",
+                        "unknown"
+                      ],
+                      "description": "Source observed at ingress, kept separate from the client's declaration. SDK sendTurn observes text even when an application declares client_stt."
+                    },
+                    "observed_by": {
+                      "type": "string",
+                      "enum": [
+                        "sdk",
+                        "worker",
+                        "unknown"
+                      ]
+                    },
+                    "declared_source": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "client_stt"
+                      ],
+                      "description": "Optional client declaration; a client cannot declare server_stt or unknown."
+                    },
+                    "declaration_scope": {
+                      "type": "string",
+                      "enum": [
+                        "turn",
+                        "adapter"
+                      ]
+                    },
+                    "ingress": {
+                      "type": "string",
+                      "enum": [
+                        "room_text",
+                        "room_audio_stt",
+                        "unknown"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "observed_source",
+                    "observed_by",
+                    "ingress"
+                  ],
+                  "additionalProperties": {},
+                  "description": "Optional per-user-segment input provenance. A signed webhook authenticates delivery; it does not independently verify a client's declaration. Missing legacy provenance must remain absent."
+                }
+              },
+              "required": [
+                "role",
+                "text",
+                "ts"
+              ],
+              "additionalProperties": {}
+            }
+          },
+          "tool_calls": {
+            "description": "Optional tool call sidecar; absent when no tools ran.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "call_id": {
+                  "type": "string"
+                },
+                "arguments": {
+                  "type": "string",
+                  "description": "Raw JSON arguments text; may be truncated, so it need not parse as JSON."
+                },
+                "ts": {
+                  "type": "number"
+                },
+                "ok": {
+                  "description": "Absent when the call produced nothing the model saw.",
+                  "type": "boolean"
+                },
+                "result": {
+                  "type": "string"
+                },
+                "error": {
+                  "type": "string"
+                },
+                "duration_ms": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "name",
+                "call_id",
+                "arguments",
+                "ts"
+              ],
+              "additionalProperties": {},
+              "description": "Tool call history; arguments and result/error text may be truncated."
+            }
+          },
+          "tool_calls_truncated": {
+            "description": "True when the tool call buffer overflowed and its tail is missing.",
+            "type": "boolean"
+          },
+          "client_metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxProperties": 16,
+            "description": "Mint-time client_metadata echoed verbatim; an empty object when none was provided."
+          }
+        },
+        "required": [
+          "type",
+          "session_id",
+          "avatar_id",
+          "mode",
+          "started_at",
+          "ended_at",
+          "seconds",
+          "truncated",
+          "segments",
+          "client_metadata"
+        ],
+        "additionalProperties": {},
+        "description": "Signed end-of-call transcript sent directly by the worker to transcript_webhook.url after capacity release. Optional provenance is additive; legacy payloads remain valid."
+      },
       "Avatar": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4288,6 +4759,56 @@
       "bearerAuth": []
     }
   ],
+  "webhooks": {
+    "session.transcript": {
+      "post": {
+        "operationId": "receiveSessionTranscript",
+        "summary": "Receive the signed end-of-call transcript",
+        "description": "The worker POSTs directly to the application's mint-time transcript_webhook.url after releasing session capacity. No transcript is stored by the platform. A session with no committed segments and no tool calls sends nothing. Verify HMAC-SHA256 with transcript_webhook.secret over the timestamp, a literal dot, and the raw request body before parsing; reject stale timestamps. Delivery is best-effort and may repeat; consumers should tolerate duplicate session_id values. No delivery or retry guarantee is made. Input provenance is optional on user segments; missing legacy provenance must not be inferred as text.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "x-rta-signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^v1=[0-9a-f]{64}$"
+            },
+            "description": "v1= followed by the hex HMAC-SHA256 of <timestamp>.<raw body>, keyed by transcript_webhook.secret. Compare in constant time."
+          },
+          {
+            "name": "x-rta-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Timestamp string used verbatim in the signed message. Verify freshness to bound replay."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Receipt acknowledged by the application."
+          },
+          "default": {
+            "description": "Application response; delivery and retries are best-effort."
+          }
+        }
+      }
+    }
+  },
   "x-error-semantics": {
     "description": "What a failure `code` means to the caller. `statuses` is the set of HTTP statuses a code may legitimately accompany — a code arriving on any other status is a mismatch and must be answered by the status alone. `message` is authored product copy safe to show a user. `retryable` says whether the same request is worth sending again. Codes listed in `x-error-codes-uncopied` are recognised by the platform but have their copy written elsewhere, because the sentence names a number this table cannot know (a plan ceiling, an amount owed); treat them as known, and prefer the server's own `message`.",
     "codes": {

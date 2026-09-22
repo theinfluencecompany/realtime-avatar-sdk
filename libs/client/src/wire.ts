@@ -402,6 +402,11 @@ export const RTA_LIFECYCLE_TOPIC = "rta.lifecycle";
 export const RTA_TURN_INSTRUCTIONS_ATTR = "rta.turn_instructions";
 export const RTA_CLOSING_TURN_ATTR = "rta.closing_turn";
 export const RTA_TURN_ID_ATTR = "rta.turn_id";
+export const RTA_RETRY_OF_TURN_ID_ATTR = "rta.retry_of_turn_id";
+export const RTA_INPUT_SOURCE_VERSION_ATTR = "rta.input_source_version";
+export const RTA_OBSERVED_INPUT_SOURCE_ATTR = "rta.observed_input_source";
+export const RTA_DECLARED_INPUT_SOURCE_ATTR = "rta.declared_input_source";
+export const RTA_INPUT_SOURCE_DECLARATION_SCOPE_ATTR = "rta.input_source_declaration_scope";
 
 const sessionEndReasonSchema = z.enum([
   "user_ended",

@@ -420,12 +420,12 @@ export type ClipLibraryUpdate = Wire["PutAvatarClipsResponse"];
 export type LoopRedirect = Wire["PutAvatarLoopResponse"];
 
 /**
- * DERIVATION: hand-written, because the contract does not describe it.
+ * DERIVATION: preserves the SDK's existing, shipped webhook surface.
  *
- * The transcript webhook body is absent from the published document entirely — not narrowed,
- * not redacted, absent. So there is nothing to derive from, and this is the only shape here
- * whose source is a GAP rather than a decision. Fixing it means describing the webhook body
- * upstream.
+ * The public contract now describes this body plus optional provenance fields. Worker
+ * emission of that extension is still unverified, so room-message input attribution does
+ * not add it to the SDK's webhook API. Keep this declaration until that delivery path is
+ * verified; verifyTranscript continues to preserve all JSON fields at runtime.
  */
 /** The signed payload delivered to `CallPolicy.transcript.url` after a call ends. */
 export interface TranscriptPayload {

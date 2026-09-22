@@ -6,6 +6,11 @@ import {
   RTA_CLOSING_TURN_ATTR,
   RTA_TURN_ID_ATTR,
   RTA_TURN_INSTRUCTIONS_ATTR,
+  RTA_RETRY_OF_TURN_ID_ATTR,
+  RTA_INPUT_SOURCE_VERSION_ATTR,
+  RTA_OBSERVED_INPUT_SOURCE_ATTR,
+  RTA_DECLARED_INPUT_SOURCE_ATTR,
+  RTA_INPUT_SOURCE_DECLARATION_SCOPE_ATTR,
   type LLMProvider,
   type SessionEndReasonLabel,
 } from "../wire";
@@ -32,6 +37,7 @@ import {
 } from "./grace-window";
 import { nextBehaviorSnapshot, type BehaviorSnapshot } from "./behavior-snapshot";
 import type { SendTextOptions } from "./livekit";
+import type { DeclaredInputSource } from "../input-source";
 
 export type {
   ApproachingEndReason,
@@ -61,6 +67,18 @@ export type ClosingTurnResult =
   | { ok: false; reason: "window_closed" | "not_connected" | "already_spent" };
 
 export type ExtendResult = { ok: boolean };
+
+export type SendTurnOptions = {
+  instructions?: string;
+  /** Optional declaration; the SDK still observes a text transport. */
+  inputSource?: DeclaredInputSource;
+};
+export type TranscriptSenderOptions = {
+  /** Captured once for this sender. Defaults to client_stt. */
+  inputSource?: DeclaredInputSource;
+};
+/** Send an already recognized transcript. This adapter does not capture or recognize audio. */
+export type TranscriptSender = (text: string, opts?: SendTurnOptions) => Promise<void>;
 
 // the moment-callback payloads
 export type ApproachingEndEvent = { secondsLeft: number; reason: ApproachingEndReason; threshold: number };
@@ -183,8 +201,10 @@ export type RealtimeSessionApi = SessionLifecycleApi & {
   /** Request a billable, guarded cap extension (the app owns who-pays; the worker validates). */
   extend: (req: { addSeconds: number; proof?: string }) => ExtendResult;
   /** Send a normal turn THROUGH the SDK (arms the turn-timeout watchdog + enables retryTurn). */
-  sendTurn: (text: string, opts?: { instructions?: string }) => Promise<void>;
-  /** Re-send the last turn sent through the SDK (the "no response" recovery). */
+  sendTurn: (text: string, opts?: SendTurnOptions) => Promise<void>;
+  /** Bind a transcript source once; a send's explicit inputSource takes precedence. */
+  createTranscriptSender: (opts?: TranscriptSenderOptions) => TranscriptSender;
+  /** Re-send the last turn with its resolved provenance, a new ID, and retry_of_turn_id. */
   retryTurn: () => void;
   /** End gracefully now (the user tapped End). */
   end: (reason?: EndReason) => void;
@@ -208,6 +228,12 @@ export type RealtimeSessionApi = SessionLifecycleApi & {
 
 function positive(value: number | undefined, fallbackSeconds: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallbackSeconds;
+}
+
+function validateInputSource(value: unknown): asserts value is DeclaredInputSource | undefined {
+  if (value !== undefined && value !== "text" && value !== "client_stt") {
+    throw new TypeError('inputSource must be "text" or "client_stt"');
+  }
 }
 
 export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
@@ -288,10 +314,11 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
   const turnSenderRef = useRef<((text: string, opts?: SendTextOptions) => Promise<void>) | null>(null);
   const dataPublisherRef = useRef<((frame: unknown) => void) | null>(null);
   // last turn sent THROUGH the SDK — powers retryTurn + the turn-timeout watchdog.
-  const lastTurnRef = useRef<{ text: string; opts?: { instructions?: string }; id: string; sentAt: number } | null>(null);
+  const lastTurnRef = useRef<{ text: string; attributes: Record<string, string>; id: string; sentAt: number | null } | null>(null);
+  const turnSequenceRef = useRef(0);
 
   // ── clocks (derived; re-tick via clockTick) ──
-  const [clockTick, setClockTick] = useState(0);
+  const [, setClockTick] = useState(0);
   const endsAt = endsAtFrom({
     serverStartedAtUnixMs: serverClock?.startedAtUnixMs ?? null,
     maxSessionSeconds: serverClock?.maxSessionSeconds ?? null,
@@ -317,8 +344,8 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     } catch {
       /* fall through */
     }
-    return `t-${Date.now()}-${clockTick}`;
-  }, [clockTick]);
+    return `t-${Date.now()}-${++turnSequenceRef.current}`;
+  }, []);
 
   // ── inbound rta.lifecycle frames ──
   const onLifecycleData = useCallback((frame: unknown) => {
@@ -431,8 +458,9 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
 
       // per-turn no-response watchdog.
       const turnInfo = lastTurnRef.current;
-      if (turnInfo && now - turnInfo.sentAt >= turnTimeoutMs) {
-        lastTurnRef.current = null;
+      if (turnInfo && turnInfo.sentAt !== null && now - turnInfo.sentAt >= turnTimeoutMs) {
+        // Disarm this attempt's watchdog, but retain the snapshot for explicit retry.
+        turnInfo.sentAt = null;
         cbRef.current.onTurnTimeout?.({ turnId: turnInfo.id });
       }
 
@@ -468,6 +496,8 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
   // ── ended moment: fire once with the LABELED reason ──
   useEffect(() => {
     if (phaseKind === "ended") {
+      // A retained timeout snapshot belongs only to the call that produced it.
+      lastTurnRef.current = null;
       if (!endedFiredRef.current) {
         endedFiredRef.current = true;
         const inner = lifecycle.phase.kind === "ended" ? lifecycle.phase.reason : undefined;
@@ -511,25 +541,54 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     return { ok: true };
   }, []);
 
-  const sendTurn = useCallback(async (text: string, opts?: { instructions?: string }): Promise<void> => {
+  const sendResolvedTurn = useCallback(async (text: string, attributes: Record<string, string>, retryOfTurnId?: string): Promise<void> => {
     const trimmed = text.trim();
     const sender = turnSenderRef.current;
     if (!sender || !trimmed) return;
     const turnId = newTurnId();
-    lastTurnRef.current = { text: trimmed, opts, id: turnId, sentAt: Date.now() };
+    const outgoing: Record<string, string> = { ...attributes, [RTA_TURN_ID_ATTR]: turnId };
+    if (retryOfTurnId) outgoing[RTA_RETRY_OF_TURN_ID_ATTR] = retryOfTurnId;
+    // Copy before handing bytes to the transport: neither caller options nor a
+    // once-bound adapter can change the provenance of a later retry.
+    lastTurnRef.current = { text: trimmed, attributes: { ...outgoing }, id: turnId, sentAt: Date.now() };
     lifecycle.markActivity();
-    const attributes = opts?.instructions ? { [RTA_TURN_INSTRUCTIONS_ATTR]: opts.instructions } : undefined;
-    await sender(trimmed, attributes ? { attributes } : undefined);
+    await sender(trimmed, { attributes: outgoing });
   }, [lifecycle, newTurnId]);
+
+  const sendInput = useCallback(async (text: string, opts?: SendTurnOptions, adapterSource?: DeclaredInputSource): Promise<void> => {
+    const turnSource = opts?.inputSource;
+    validateInputSource(turnSource);
+    const declaredSource = turnSource ?? adapterSource;
+    const attributes: Record<string, string> = {
+      [RTA_INPUT_SOURCE_VERSION_ATTR]: "1",
+      [RTA_OBSERVED_INPUT_SOURCE_ATTR]: "text",
+    };
+    if (declaredSource !== undefined) {
+      attributes[RTA_DECLARED_INPUT_SOURCE_ATTR] = declaredSource;
+      attributes[RTA_INPUT_SOURCE_DECLARATION_SCOPE_ATTR] = turnSource !== undefined ? "turn" : "adapter";
+    }
+    if (opts?.instructions) attributes[RTA_TURN_INSTRUCTIONS_ATTR] = opts.instructions;
+    await sendResolvedTurn(text, attributes);
+  }, [sendResolvedTurn]);
+
+  const sendTurn = useCallback((text: string, opts?: SendTurnOptions): Promise<void> => sendInput(text, opts), [sendInput]);
+
+  const createTranscriptSender = useCallback((opts?: TranscriptSenderOptions): TranscriptSender => {
+    const source = opts?.inputSource;
+    validateInputSource(source);
+    const boundSource = source ?? "client_stt";
+    return (text, turnOpts) => sendInput(text, turnOpts, boundSource);
+  }, [sendInput]);
 
   const retryTurn = useCallback(() => {
     const last = lastTurnRef.current;
     if (!last) return;
-    void sendTurn(last.text, last.opts);
-  }, [sendTurn]);
+    void sendResolvedTurn(last.text, last.attributes, last.id).catch(() => undefined);
+  }, [sendResolvedTurn]);
 
   const end = useCallback((reason?: EndReason) => {
     if (reason) lastLabeledEndReasonRef.current = reason;
+    lastTurnRef.current = null;
     requestGracefulClose();
     lifecycle.reset();
   }, [lifecycle, requestGracefulClose]);
@@ -605,6 +664,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
       requestGracefulClose,
       extend,
       sendTurn,
+      createTranscriptSender,
       retryTurn,
       end,
       behavior,
@@ -618,7 +678,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     }),
     [
       lifecycle, turn, clocks, endsAt, graceWindow, media, sendClosingTurn, requestGracefulClose,
-      extend, sendTurn, retryTurn, end, behavior, performAction, onLifecycleData, registerDataPublisher,
+      extend, sendTurn, createTranscriptSender, retryTurn, end, behavior, performAction, onLifecycleData, registerDataPublisher,
       registerTurnSender, setTurnState, setMedia, reset,
     ],
   );

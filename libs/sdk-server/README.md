@@ -143,6 +143,32 @@ Two facts follow from that picture and drive everything else:
 
 ---
 
+## Input source on room messages
+
+On React and React Native, `session.sendTurn(text)` automatically observes text.
+For already recognized speech, bind
+`session.createTranscriptSender({ inputSource: "client_stt" })` once per session.
+The adapter defaults to `client_stt`; it captures its own default, and accepts a
+per-send `{ inputSource: "text" }` override. `sendTurn` accepts the same optional
+declaration. Only `text` and `client_stt` are valid client declarations. No speech
+recognition engine is included. `instructions` still work on either sender.
+
+`retryTurn()` preserves the resolved source and declaration scope after a timeout,
+with a new `turn_id` and `retry_of_turn_id` pointing to the previous attempt.
+Room consumers receive the attributes through the existing `lk.chat` text stream.
+`useChat().chatMessages` exposes them as `message.attributes`; an imperative receiver
+can read `reader.info.attributes` in `registerTextStreamHandler("lk.chat", handler)`.
+The observation is `rta.observed_input_source`; the optional declaration and scope
+are `rta.declared_input_source` and `rta.input_source_declaration_scope`. Missing
+legacy attributes remain unknown. Use one handler owner per topic; a `useChat`
+consumer should not register a duplicate raw handler on the same room.
+
+This path needs no inference or platform changes. The consumer must already be
+connected to the room, and text-stream messages are not durable webhook deliveries.
+The legacy `lk-chat-topic` compatibility path omits attributes. Automatic RTA server
+STT attribution and final transcript webhook provenance are separate work. Existing
+webhook types and behavior are unchanged.
+
 ## API
 
 Everything is on one class. The full types are in
