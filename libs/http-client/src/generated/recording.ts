@@ -5,9 +5,14 @@ import { z } from "zod";
 // Public metadata is durable; credentials and renewable download URLs are separate.
 // ---------------------------------------------------------------------------
 export const RECORDED_MEDIA_MODES = ["audio", "video", "audio_video"] as const;
+export type RecordedMediaMode = (typeof RECORDED_MEDIA_MODES)[number];
+// A per-participant file always carries that participant's own audio, so video-only is not one
+// of its modes. This narrower list is the vocabulary `platform_participant_recordings.mode`
+// CHECKs, and the annotation is what keeps it a subset of the one above.
+export const PARTICIPANT_RECORDED_MEDIA_MODES: readonly [RecordedMediaMode, ...RecordedMediaMode[]] = ["audio", "audio_video"];
 export const recordingModeSchema = z
-  .enum(["off", ...RECORDED_MEDIA_MODES])
-  .describe("Server-owned recording policy; omitted means off. Audio includes user and avatar audio.");
+  .enum(["off", ...RECORDED_MEDIA_MODES, "participants"])
+  .describe("Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices.");
 export type RecordingMode = z.infer<typeof recordingModeSchema>;
 export const DEFAULT_RECORDING_MODE: RecordingMode = "off";
 export const DEFAULT_RECORDING_RETENTION_DAYS = 30;
@@ -15,12 +20,20 @@ export const DEFAULT_RECORDING_URL_TTL_SECONDS = 3600;
 export const RECORDING_STATUSES = ["pending", "recording", "processing", "ready", "failed", "expired"] as const;
 export const recordingArtifactStatusSchema = z.enum(RECORDING_STATUSES);
 export type RecordingArtifactStatus = z.infer<typeof recordingArtifactStatusSchema>;
+export const recordingParticipantSchema = z.object({
+  participantIdentity: z.string().min(1).max(160),
+  role: z.enum(["user", "avatar"]),
+}).strict();
+export type RecordingParticipant = z.infer<typeof recordingParticipantSchema>;
 const recordingMetadataSchema = z.object({
   sessionId: z.string().min(1),
   recordingId: z.string().min(1),
-  mode: recordingModeSchema.exclude(["off"]),
+  mode: z.enum(RECORDED_MEDIA_MODES),
   createdAt: z.string().datetime({ offset: true }),
   retainedUntil: z.string().datetime({ offset: true }),
+  participant: recordingParticipantSchema.optional(),
+  mediaStartedAt: z.string().datetime({ offset: true }).optional(),
+  mediaEndedAt: z.string().datetime({ offset: true }).optional(),
 });
 export const recordingArtifactSchema = z.discriminatedUnion("status", [
   recordingMetadataSchema.extend({ status: z.enum(["pending", "recording", "processing", "expired"]) }).strict(),

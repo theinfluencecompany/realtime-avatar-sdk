@@ -597,6 +597,23 @@ Say so plainly rather than working around it:
 
 ---
 
+## Recording a call
+
+Recording policy belongs on the server. `recording: "participants"` retains one
+continuous file per participant, with only that participant's voice and permitted
+video. Camera permission is separate; camera toggles do not start new files.
+Use `call.recordings` for the initial metadata and list by session after finalization.
+`call.recording` remains the legacy single-file result.
+
+For synchronized web replay, load authorized URLs through your backend and pass
+`{ recording, url }` assets to `RecordingPlayer` from `realtime-avatar/react`.
+Each video file contains its own audio: muting both videos loses both voices,
+and adding a mixed soundtrack duplicates them. The player owns one playback clock.
+Keep original files and per-file failures visible; never infer synchronization
+from request or creation timestamps when media timestamps are missing.
+
+---
+
 ## Errors worth branching on
 
 ```ts

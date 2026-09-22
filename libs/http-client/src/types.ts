@@ -193,6 +193,8 @@ type Grant = Wire["LiveKitSessionGrant"];
 export interface CallConnection {
   /** Durable recording metadata. Retrieve a temporary playback URL separately after it is ready. */
   recording?: RecordingArtifact;
+  recordingMode?: Grant["recording_mode"];
+  recordings?: Grant["recordings"];
   status: Grant["status"];
   sessionId: Grant["session_id"];
   roomName: Grant["room_name"];

@@ -230,7 +230,7 @@ rta.iterateSessions({ from, to })                   // the same, paging handled
 verifyTranscript(rawBytes, headers, secret)
 ```
 
-Recording defaults to off. Your server can choose `"audio"`, `"video"`, or `"audio_video"`
+Recording defaults to off. `"participants"` keeps one continuous user file and one character file, each with only its own voice and permitted video. Camera toggles do not split the user file. Your server can choose `"audio"`, `"video"`, `"audio_video"`, or `"participants"`
 after obtaining consent. Keep `recordingId` and `sessionId` for your admin views; fetch temporary
 playback access when needed. File retention (`retainedUntil`, normally 30 days) is independent
 of URL expiry (`expiresAt`, up to one hour). Join transcripts and your script revisions by

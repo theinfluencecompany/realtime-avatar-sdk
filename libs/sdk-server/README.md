@@ -385,3 +385,34 @@ for building your own queue UI, and the zod schemas `sessionBehaviorSchema` / `s
 - The API is versioned at `/api/v1`; breaking changes get a new version, not a silent edit.
 
 MIT licensed.
+
+
+### Continuous participant recordings
+
+Use `recording: "participants"` on your server to retain the two participants
+separately. A camera-enabled call has four logical media tracks in two MP4 files:
+user camera/microphone and character video/voice. Each file is continuous through
+camera mute, unpublish and republish; the user's microphone continues while their
+camera is off. `camera: true` is still a separate publication permission, and
+recording alone never opens a camera. Voice-only participants get audio-only MP4s.
+
+The returned `call.recordings` contains both pending artifacts, while legacy
+modes retain `call.recording`. Once finalized, use `listRecordings({ sessionId })`
+and `getRecordingAccess(recordingId)` to retrieve authorized, renewable URLs.
+`recording.participant.role` identifies the user or character; media timestamps
+align the files without fixing their visual layout. Keep failed/missing files
+visible instead of treating the surviving participant as a complete recording.
+
+```tsx
+import { RecordingPlayer } from "realtime-avatar/react";
+
+// assets comes from your authenticated application endpoint.
+// Each item is { recording, url }; refresh expiring URLs through your server.
+<RecordingPlayer assets={assets} />
+```
+
+The player provides one play/pause control and one seek bar for both files. It
+plays each file's audio once, preserves start offsets, waits for buffering and
+refuses to guess synchronization when media timestamps are missing. Original
+files remain independently playable and editable. Participant departure ends
+that file; a new call is a new session, not an automatic concatenation.

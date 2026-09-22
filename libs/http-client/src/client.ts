@@ -39,7 +39,7 @@ import type {
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.22.0";
+export const SDK_VERSION = "0.23.0";
 
 
 
@@ -174,6 +174,8 @@ export class RealtimeAvatar {
     return {
       status: "ready",
       ...(grant.recording === undefined ? {} : { recording: grant.recording }),
+      ...(grant.recording_mode === undefined ? {} : { recordingMode: grant.recording_mode }),
+      ...(grant.recordings === undefined ? {} : { recordings: grant.recordings }),
       sessionId: grant.session_id,
       roomName: grant.room_name,
       livekitUrl: grant.livekit_url,

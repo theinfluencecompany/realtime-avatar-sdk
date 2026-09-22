@@ -11,7 +11,7 @@
  * https://realtimeavatar.ai/docs.
  */
 import { z } from "zod";
-import { recordingArtifactSchema } from "../../http-client/src/generated/recording.ts";
+import { recordingArtifactSchema, recordingModeSchema } from "../../http-client/src/generated/recording.ts";
 import { connectionHistoryGrantSchema } from "../../http-client/src/generated/connection-history.ts";
 import { transcriptionOptionsSchema, transcriptionWireSchema, transcriptionToWire } from "../../http-client/src/generated/transcription.ts";
 
@@ -379,6 +379,8 @@ export const liveKitSessionRequestSchema = z
 export const liveKitSessionGrantSchema = z
   .object({
     recording: recordingArtifactSchema.optional(),
+    recording_mode: recordingModeSchema.optional(),
+    recordings: z.array(recordingArtifactSchema).max(2).optional(),
     connection_history: connectionHistoryGrantSchema.optional(),
     status: z.literal("ready").default("ready"),
     session_id: z.string().min(1),

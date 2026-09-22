@@ -192,3 +192,4 @@ export type {
   CartesiaTtsModel,
   FishTtsModel,
 } from "../wire";
+export { RecordingPlayer, type RecordingPlaybackAsset } from "./recording-player";

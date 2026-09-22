@@ -581,10 +581,10 @@ export interface components {
                 secret: string;
             };
             /**
-             * @description Server-owned recording policy; omitted means off. Audio includes user and avatar audio.
+             * @description Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices.
              * @enum {string}
              */
-            recording?: "off" | "audio" | "video" | "audio_video";
+            recording?: "off" | "audio" | "video" | "audio_video" | "participants";
             connection_history?: boolean;
             client_metadata?: {
                 [key: string]: string;
@@ -649,6 +649,15 @@ export interface components {
                 createdAt: string;
                 /** Format: date-time */
                 retainedUntil: string;
+                participant?: {
+                    participantIdentity: string;
+                    /** @enum {string} */
+                    role: "user" | "avatar";
+                };
+                /** Format: date-time */
+                mediaStartedAt?: string;
+                /** Format: date-time */
+                mediaEndedAt?: string;
                 /** @enum {string} */
                 status: "pending" | "recording" | "processing" | "expired";
             } | {
@@ -660,6 +669,15 @@ export interface components {
                 createdAt: string;
                 /** Format: date-time */
                 retainedUntil: string;
+                participant?: {
+                    participantIdentity: string;
+                    /** @enum {string} */
+                    role: "user" | "avatar";
+                };
+                /** Format: date-time */
+                mediaStartedAt?: string;
+                /** Format: date-time */
+                mediaEndedAt?: string;
                 /** @constant */
                 status: "ready";
                 /** @enum {string} */
@@ -675,11 +693,92 @@ export interface components {
                 createdAt: string;
                 /** Format: date-time */
                 retainedUntil: string;
+                participant?: {
+                    participantIdentity: string;
+                    /** @enum {string} */
+                    role: "user" | "avatar";
+                };
+                /** Format: date-time */
+                mediaStartedAt?: string;
+                /** Format: date-time */
+                mediaEndedAt?: string;
                 /** @constant */
                 status: "failed";
                 /** @enum {string} */
                 errorCode: "recording_failed" | "recording_unavailable";
             };
+            /**
+             * @description Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices.
+             * @enum {string}
+             */
+            readonly recording_mode?: "off" | "audio" | "video" | "audio_video" | "participants";
+            readonly recordings?: ({
+                sessionId: string;
+                recordingId: string;
+                /** @enum {string} */
+                mode: "audio" | "video" | "audio_video";
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                retainedUntil: string;
+                participant?: {
+                    participantIdentity: string;
+                    /** @enum {string} */
+                    role: "user" | "avatar";
+                };
+                /** Format: date-time */
+                mediaStartedAt?: string;
+                /** Format: date-time */
+                mediaEndedAt?: string;
+                /** @enum {string} */
+                status: "pending" | "recording" | "processing" | "expired";
+            } | {
+                sessionId: string;
+                recordingId: string;
+                /** @enum {string} */
+                mode: "audio" | "video" | "audio_video";
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                retainedUntil: string;
+                participant?: {
+                    participantIdentity: string;
+                    /** @enum {string} */
+                    role: "user" | "avatar";
+                };
+                /** Format: date-time */
+                mediaStartedAt?: string;
+                /** Format: date-time */
+                mediaEndedAt?: string;
+                /** @constant */
+                status: "ready";
+                /** @enum {string} */
+                mediaType: "audio/mp4" | "video/mp4";
+                sizeBytes: number;
+                durationMs: number | null;
+            } | {
+                sessionId: string;
+                recordingId: string;
+                /** @enum {string} */
+                mode: "audio" | "video" | "audio_video";
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                retainedUntil: string;
+                participant?: {
+                    participantIdentity: string;
+                    /** @enum {string} */
+                    role: "user" | "avatar";
+                };
+                /** Format: date-time */
+                mediaStartedAt?: string;
+                /** Format: date-time */
+                mediaEndedAt?: string;
+                /** @constant */
+                status: "failed";
+                /** @enum {string} */
+                errorCode: "recording_failed" | "recording_unavailable";
+            })[];
             readonly connection_history?: {
                 /** Format: starts_with */
                 endpoint: string;
@@ -1127,6 +1226,15 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             retainedUntil: string;
+            participant?: {
+                participantIdentity: string;
+                /** @enum {string} */
+                role: "user" | "avatar";
+            };
+            /** Format: date-time */
+            mediaStartedAt?: string;
+            /** Format: date-time */
+            mediaEndedAt?: string;
             /** @enum {string} */
             status: "pending" | "recording" | "processing" | "expired";
         } | {
@@ -1138,6 +1246,15 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             retainedUntil: string;
+            participant?: {
+                participantIdentity: string;
+                /** @enum {string} */
+                role: "user" | "avatar";
+            };
+            /** Format: date-time */
+            mediaStartedAt?: string;
+            /** Format: date-time */
+            mediaEndedAt?: string;
             /** @constant */
             status: "ready";
             /** @enum {string} */
@@ -1153,6 +1270,15 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             retainedUntil: string;
+            participant?: {
+                participantIdentity: string;
+                /** @enum {string} */
+                role: "user" | "avatar";
+            };
+            /** Format: date-time */
+            mediaStartedAt?: string;
+            /** Format: date-time */
+            mediaEndedAt?: string;
             /** @constant */
             status: "failed";
             /** @enum {string} */
@@ -1168,6 +1294,15 @@ export interface components {
                 createdAt: string;
                 /** Format: date-time */
                 retainedUntil: string;
+                participant?: {
+                    participantIdentity: string;
+                    /** @enum {string} */
+                    role: "user" | "avatar";
+                };
+                /** Format: date-time */
+                mediaStartedAt?: string;
+                /** Format: date-time */
+                mediaEndedAt?: string;
                 /** @enum {string} */
                 status: "pending" | "recording" | "processing" | "expired";
             } | {
@@ -1179,6 +1314,15 @@ export interface components {
                 createdAt: string;
                 /** Format: date-time */
                 retainedUntil: string;
+                participant?: {
+                    participantIdentity: string;
+                    /** @enum {string} */
+                    role: "user" | "avatar";
+                };
+                /** Format: date-time */
+                mediaStartedAt?: string;
+                /** Format: date-time */
+                mediaEndedAt?: string;
                 /** @constant */
                 status: "ready";
                 /** @enum {string} */
@@ -1194,6 +1338,15 @@ export interface components {
                 createdAt: string;
                 /** Format: date-time */
                 retainedUntil: string;
+                participant?: {
+                    participantIdentity: string;
+                    /** @enum {string} */
+                    role: "user" | "avatar";
+                };
+                /** Format: date-time */
+                mediaStartedAt?: string;
+                /** Format: date-time */
+                mediaEndedAt?: string;
                 /** @constant */
                 status: "failed";
                 /** @enum {string} */
