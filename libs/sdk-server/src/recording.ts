@@ -1,5 +1,7 @@
 export {
   recordingModeSchema,
+  recordingParticipantSchema,
+  type RecordingParticipant,
   recordingArtifactStatusSchema,
   recordingArtifactSchema,
   listRecordingsQuerySchema,
@@ -12,3 +14,4 @@ export {
   type ListRecordingsResponse,
   type RecordingAccessResponse,
 } from "../../http-client/src/generated/recording.ts";
+export { recordingTimeline, recordingPositions } from "../../browser/src/recording-playback.ts";

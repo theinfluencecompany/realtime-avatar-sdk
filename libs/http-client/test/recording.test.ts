@@ -108,3 +108,23 @@ test("connection history is a typed, usage-scoped read", async () => {
   assert.equal(new URL(seen?.url ?? "").pathname, "/api/v1/sessions/session_test/connection-history");
   assert.equal(seen?.headers.get("authorization"), "Bearer test-key");
 });
+
+test("independent capture is server-selected, with no fictitious single recording ID", async () => {
+  const { recording: _recording, ...baseGrant } = grant;
+  const trackGrant = { ...baseGrant, recording_mode: "participants", recordings: [
+    { ...pending, recordingId: "rec_user", participant: { role: "user", participantIdentity: "caller" } },
+    { ...pending, recordingId: "rec_avatar", participant: { role: "avatar", participantIdentity: "character" } },
+  ] };
+  const rta = new RealtimeAvatar({ apiKey: "test-key", fetch: async (input, init) => {
+    const body: unknown = await new Request(input, init).json();
+    assert.ok(typeof body === "object" && body !== null && "recording" in body);
+    assert.equal(body.recording, "participants");
+    return Response.json(trackGrant);
+  } });
+  const call = await rta.startCall({ avatarId: "avatar_test", recording: "participants" });
+  assert.ok("recordingMode" in call);
+  assert.equal(call.recordingMode, "participants");
+  assert.deepEqual(call.recordings, trackGrant.recordings);
+  assert.equal("recording" in call, false);
+  assert.deepEqual(call.raw, trackGrant);
+});
