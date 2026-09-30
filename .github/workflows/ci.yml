@@ -16,8 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The floor the packages declare in `engines`, and current LTS.
-        node: ["20", "22"]
+        # Client/native tooling follows LiveKit's transitive Node floor; server-only imports remain Node 20 compatible.
+        node: ["22.22.0", "22"]
     steps:
       # fetch-depth: 0 — the commit-message scan needs the range vs main.
       # At the default depth 1 it resolves to nothing and passes vacuously.
@@ -61,13 +61,14 @@ jobs:
       # Build BEFORE test: libs/proxy resolves the client through node_modules, so its
       # tests need the built dist. This ordering caught a real failure on first CI run.
       - run: npm run build
-      # Tests are TypeScript run through --experimental-transform-types, which does not exist
-      # before Node 22.6 — on 20 the flag is a hard `bad option` exit, not a skip. Node 20
-      # is in this matrix to prove the SHIPPED artifact honours the `engines` floor, and
-      # typecheck + build + boundary above are what actually prove that: `dist` is plain
-      # JS, so a consumer on 20 never runs this suite.
       - run: npm test
-        if: matrix.node != '20'
+      - name: Server-only entry retains Node 20 support
+        if: matrix.node == '22'
+        run: >-
+          npm exec --yes --package=node@20 -- node --input-type=module -e
+          'const sdk = await import("./libs/sdk-server/dist/index.js");
+          new sdk.RealtimeAvatar({apiKey:"local-verification-only"});
+          console.log("Server entry constructed on", process.version);'
       - name: Install browser and video fixture tools
         if: matrix.node == '22'
         run: |
