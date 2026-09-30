@@ -16,8 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Client/native tooling follows LiveKit's transitive Node floor; server-only imports remain Node 20 compatible.
-        node: ["22.22.0", "22"]
+        # Keep the required Node 20 build/server check; client/native tooling is supported from 22.22.
+        node: ["20", "22.22.0", "22"]
     steps:
       # fetch-depth: 0 — the commit-message scan needs the range vs main.
       # At the default depth 1 it resolves to nothing and passes vacuously.
@@ -61,11 +61,13 @@ jobs:
       # Build BEFORE test: libs/proxy resolves the client through node_modules, so its
       # tests need the built dist. This ordering caught a real failure on first CI run.
       - run: npm run build
+      # Node 20 cannot execute the TypeScript test runner; it still runs build/type/boundary checks.
       - run: npm test
+        if: matrix.node != '20'
       - name: Server-only entry retains Node 20 support
-        if: matrix.node == '22'
+        if: matrix.node == '20'
         run: >-
-          npm exec --yes --package=node@20 -- node --input-type=module -e
+          node --input-type=module -e
           'const sdk = await import("./libs/sdk-server/dist/index.js");
           new sdk.RealtimeAvatar({apiKey:"local-verification-only"});
           console.log("Server entry constructed on", process.version);'
