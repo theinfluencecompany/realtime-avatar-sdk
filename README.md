@@ -134,10 +134,9 @@ and fails the build if it stops being true.
 One runtime dependency comes along: `zod` (4.3 MB), which `/react` and `/react-native` need for
 runtime validation. It is deliberately **not** bundled — inlining it costs every React app **+64 KB
 gzipped** in shipped bytes (15 KB → 79 KB gzip, measured), and shipped bytes are what your users
-feel, while `node_modules` is what a developer feels once. `livekit-client` (11.7 MB) is **not**
-declared here at all: `@livekit/components-react` and `@livekit/react-native` both peer-depend on
-it, so the consumers who need it get it and nobody else does. React and the `@livekit/*` packages
-are optional peers — install the one for your platform.
+feel, while `node_modules` is what a developer feels once. React, `livekit-client`, and the
+`@livekit/*` packages are optional peers — install the group for your platform. Native compatibility
+and the exact verified dependency tuple are documented in the [package README](./libs/sdk-server/README.md#react-native-compatibility).
 
 | Package | Import | What it does |
 | --- | --- | --- |

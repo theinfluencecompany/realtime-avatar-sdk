@@ -803,6 +803,37 @@
           },
           "require_ready_clip_library": {
             "type": "boolean"
+          },
+          "scene": {
+            "description": "Preview, enabled per workspace. A prepared scene from POST /v1/scenes, played forward over its full length in place of the avatar's source video; the avatar keeps the voice and persona. Cannot be combined with mode voice, render_backend generative, source_video_url, video_cache_id or a non-empty clip_library.",
+            "type": "object",
+            "properties": {
+              "video_cache_id": {
+                "type": "string",
+                "pattern": "^rtav_[0-9a-f]{32}$",
+                "description": "The prepared scene's artifact id, as returned by POST /v1/scenes when status is ready."
+              },
+              "first_frames": {
+                "description": "Frames in the first clip. The loop closes seamlessly at the wrap only when a continuation follows it.",
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 100000
+              },
+              "total_frames": {
+                "description": "Frames in the whole artifact (first plus continuation).",
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 100000
+              },
+              "attach_continuation": {
+                "description": "Preview. Set when this scene is a first clip alone: the joined scene (the same first clip plus its continuation) that this workspace prepares after the mint may then be attached to the live call. Linking needs the first clip's md5 and bytes declared on both prepares. Absent or false plays this scene for the whole call.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "video_cache_id"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -2780,6 +2811,20 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "sourceReview": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 5,
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "reason"
+            ],
+            "additionalProperties": false
           }
         },
         "additionalProperties": false,
@@ -3082,6 +3127,268 @@
           "remoteUrl"
         ],
         "additionalProperties": false
+      },
+      "CreateSceneRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "maxLength": 2048,
+                "format": "uri",
+                "description": "An https URL the builder can fetch. Hosts are allowlisted by the builder."
+              },
+              "md5": {
+                "description": "MD5 of the clip bytes. With bytes, lets an already-built scene answer ready without a download.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              "bytes": {
+                "description": "Clip size in bytes (at most 64 MiB).",
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 67108864
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "additionalProperties": false,
+            "description": "The first clip. Played forward over its full length."
+          },
+          "continuation": {
+            "description": "Optional return clip appended after the first. When its last frame matches the first clip's first frame, the loop closes seamlessly.",
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "maxLength": 2048,
+                "format": "uri",
+                "description": "An https URL the builder can fetch. Hosts are allowlisted by the builder."
+              },
+              "md5": {
+                "description": "MD5 of the clip bytes. With bytes, lets an already-built scene answer ready without a download.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              "bytes": {
+                "description": "Clip size in bytes (at most 64 MiB).",
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 67108864
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "additionalProperties": false
+          },
+          "profile": {
+            "type": "string",
+            "enum": [
+              "scene-v0"
+            ]
+          }
+        },
+        "required": [
+          "source",
+          "profile"
+        ],
+        "additionalProperties": false
+      },
+      "SceneState": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "building"
+              },
+              "scene_id": {
+                "type": "string",
+                "pattern": "^rtav_[0-9a-f]{32}$",
+                "description": "The prepared scene's artifact id, as returned by POST /v1/scenes when status is ready."
+              },
+              "timings": {
+                "type": "object",
+                "properties": {
+                  "download_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "decode_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "geometry_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "write_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "total_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "status",
+              "scene_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "ready"
+              },
+              "scene_id": {
+                "type": "string",
+                "pattern": "^rtav_[0-9a-f]{32}$",
+                "description": "The prepared scene's artifact id, as returned by POST /v1/scenes when status is ready."
+              },
+              "video_cache_id": {
+                "type": "string",
+                "pattern": "^rtav_[0-9a-f]{32}$",
+                "description": "The prepared scene's artifact id, as returned by POST /v1/scenes when status is ready."
+              },
+              "fps": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "width": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "height": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "first_frames": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "total_frames": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "duration_s": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "timings": {
+                "type": "object",
+                "properties": {
+                  "download_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "decode_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "geometry_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "write_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "total_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "status",
+              "scene_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "failed"
+              },
+              "scene_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^rtav_[0-9a-f]{32}$",
+                    "description": "The prepared scene's artifact id, as returned by POST /v1/scenes when status is ready."
+                  },
+                  {
+                    "type": "string",
+                    "const": "unresolved"
+                  }
+                ],
+                "description": "The scene id, or \"unresolved\" when the download failed before any byte was hashed and the request carried no md5 and bytes."
+              },
+              "error": {
+                "type": "string",
+                "enum": [
+                  "source_unreachable",
+                  "source_unusable",
+                  "source_mismatch",
+                  "build_failed"
+                ]
+              },
+              "timings": {
+                "type": "object",
+                "properties": {
+                  "download_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "decode_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "geometry_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "write_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "total_ms": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "status",
+              "scene_id"
+            ],
+            "additionalProperties": false
+          }
+        ]
       },
       "CreditBalance": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5863,6 +6170,157 @@
         ]
       }
     },
+    "/v1/scenes": {
+      "post": {
+        "operationId": "createScene",
+        "description": "Prepare a scene: a supplied clip registered once into an artifact a session can play in place of the avatar's source video (mint with scene.video_cache_id). The id is derived from the clip's content (md5 and size), not its URL, so the same bytes give the same id; a repeat request whose md5 and bytes are already built answers ready without a download. The answered id is bound to this workspace: only a scene the workspace prepared can be read back or minted, and a mint also requires it to be ready (409 scene_not_ready otherwise). 202 while building; poll GET /v1/scenes/{sceneId}. 200 once ready or failed. A failed state carries error: source_unreachable (the bytes never arrived; retry with a bounded backoff), source_unusable (supply a different clip), source_mismatch (the bytes differ from the declared md5 or bytes) or build_failed. Its scene_id is \"unresolved\" when the download failed before any byte was hashed and the request declared no md5 and bytes.\n\nRequires an API key with the `realtime:write` scope.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSceneRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ready or failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneState"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Building",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, the tenant is not active, or scene sessions are not enabled for the workspace — code \"scene_sessions_not_enabled\", a per-workspace preview gate. Contact support to opt in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "realtime:write"
+        ],
+        "summary": "Prepare a scene (preview)",
+        "tags": [
+          "Scenes"
+        ]
+      }
+    },
+    "/v1/scenes/{sceneId}": {
+      "get": {
+        "operationId": "getScene",
+        "description": "A scene's build state, for a scene this workspace prepared. ready carries video_cache_id and the frame facts a mint may pass through.\n\nRequires an API key with the `realtime:write` scope.",
+        "parameters": [
+          {
+            "name": "sceneId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^rtav_[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scene state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, the tenant is not active, or scene sessions are not enabled for the workspace — code \"scene_sessions_not_enabled\", a per-workspace preview gate. Contact support to opt in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No scene with this id that this workspace prepared (code \"scene_not_found\")",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "realtime:write"
+        ],
+        "summary": "Get a scene's build state (preview)",
+        "tags": [
+          "Scenes"
+        ]
+      }
+    },
     "/v1/avatars": {
       "get": {
         "operationId": "listAvatars",
@@ -7301,6 +7759,10 @@
     {
       "name": "Recordings",
       "description": "Private session recordings and renewable access URLs."
+    },
+    {
+      "name": "Scenes",
+      "description": "Preview, enabled per workspace: prepare a supplied clip once, then play it as a session's picture."
     },
     {
       "name": "Sessions",

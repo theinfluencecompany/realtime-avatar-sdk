@@ -25,6 +25,47 @@ return call.raw;   // relay to the browser byte-for-byte
 
 That is the whole server half. The client joins with the payload and renders her.
 
+## React Native compatibility
+
+The next release requires **LiveKit React Native 3** for `/react-native`; it does not claim
+compatibility with LiveKit React Native 2. Install the tested group together:
+
+```bash
+npm install --save-exact @livekit/react-native@3.0.0 @livekit/react-native-webrtc@144.2.0 livekit-client@2.22.3 @livekit/components-react@2.9.21
+```
+
+`@livekit/components-react@2.9.21` retains `@livekit/components-core@0.12.13`; both satisfy the
+native 3.0.0 peer contracts. Keep a single resolved components-react instance: the native room
+provides its context and the SDK's shared hooks consume that same context. SDK checks use React
+19.2.7 and React Native 0.81.5. The web binding also uses client 2.22.3; no components upgrade or
+stream-handling patch is required for this tuple. Peer ranges allow compatible updates, but only
+this exact tuple has been checked here. Client 2.22.3 introduces `machina@7.0.1`, whose Node
+engine is `>=22.22`; use Node 22.22 or newer for client/native tooling (verified on 22.23.1).
+This does not change the dependency-free server entry's Node floor. Node 20 tooling is not
+verified for the new LiveKit group.
+
+Call the SDK's re-exported `registerGlobals()` once at app startup, before creating rooms. RN3
+configures iOS audio natively by default; do not reintroduce the deprecated JavaScript audio
+management callback. `RealtimeAvatarLiveKitRoom` retains the existing `AudioSession.startAudioSession`
+and `stopAudioSession` lifecycle while a grant and `connect` intent are present. Apps that own audio
+configuration or coordinate overlapping calls must pass `manageAudioSession={false}` and own that
+lifecycle; the hook is not a shared audio-session lease. Camera publication still requires both the
+server grant's permission and the caller's opt-in. Room callbacks/options continue to use LiveKit's
+public types and implementation; no separate connection state machine is introduced.
+
+**This is a native build upgrade, not an OTA-only change.** Rebuild iOS and Android binaries with
+RN3/WebRTC 144.2.0 before shipping JavaScript that requires them. Retain the previous SDK group for
+installed binaries that still use RN2, and isolate their OTA runtime/channel appropriately.
+
+The packaged-entry regression suite mounts the built `/react-native` adapter with the installed
+RN3 room and audio implementations, real React/LiveKit hooks, and shared contexts. It checks room
+props, microphone/camera policy, callbacks, start/stop intent, redial, and listener cleanup. It mocks
+native module calls, network connection and media capture; it does **not** prove native binary
+linking, `registerGlobals`, RTCView rendering, permissions, Bluetooth/speaker routing, interruption
+recovery, asynchronous OS audio teardown, or overlapping-room ownership. Test these on iOS and
+Android devices, including repeated call/redial and background/foreground transitions, before a
+consumer release.
+
 ## Optional call recordings
 
 Your server decides whether to record after your application obtains consent:

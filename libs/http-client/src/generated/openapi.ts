@@ -68,6 +68,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/scenes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prepare a scene (preview)
+         * @description Prepare a scene: a supplied clip registered once into an artifact a session can play in place of the avatar's source video (mint with scene.video_cache_id). The id is derived from the clip's content (md5 and size), not its URL, so the same bytes give the same id; a repeat request whose md5 and bytes are already built answers ready without a download. The answered id is bound to this workspace: only a scene the workspace prepared can be read back or minted, and a mint also requires it to be ready (409 scene_not_ready otherwise). 202 while building; poll GET /v1/scenes/{sceneId}. 200 once ready or failed. A failed state carries error: source_unreachable (the bytes never arrived; retry with a bounded backoff), source_unusable (supply a different clip), source_mismatch (the bytes differ from the declared md5 or bytes) or build_failed. Its scene_id is "unresolved" when the download failed before any byte was hashed and the request declared no md5 and bytes.
+         *
+         *     Requires an API key with the `realtime:write` scope.
+         */
+        post: operations["createScene"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{sceneId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a scene's build state (preview)
+         * @description A scene's build state, for a scene this workspace prepared. ready carries video_cache_id and the frame facts a mint may pass through.
+         *
+         *     Requires an API key with the `realtime:write` scope.
+         */
+        get: operations["getScene"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/avatars": {
         parameters: {
             query?: never;
@@ -592,6 +636,17 @@ export interface components {
             /** @description DEPRECATED, no-op. Accepted and ignored. The faster hesitation ceiling this requested is now the default for every session, so sending it changes nothing. Safe to stop sending; the field is retained only so existing callers do not break. */
             fast_endpointing?: boolean;
             require_ready_clip_library?: boolean;
+            /** @description Preview, enabled per workspace. A prepared scene from POST /v1/scenes, played forward over its full length in place of the avatar's source video; the avatar keeps the voice and persona. Cannot be combined with mode voice, render_backend generative, source_video_url, video_cache_id or a non-empty clip_library. */
+            scene?: {
+                /** @description The prepared scene's artifact id, as returned by POST /v1/scenes when status is ready. */
+                video_cache_id: string;
+                /** @description Frames in the first clip. The loop closes seamlessly at the wrap only when a continuation follows it. */
+                first_frames?: number;
+                /** @description Frames in the whole artifact (first plus continuation). */
+                total_frames?: number;
+                /** @description Preview. Set when this scene is a first clip alone: the joined scene (the same first clip plus its continuation) that this workspace prepares after the mint may then be attached to the live call. Linking needs the first clip's md5 and bytes declared on both prepares. Absent or false plays this scene for the whole call. */
+                attach_continuation?: boolean;
+            };
         };
         LiveKitSessionGrant: {
             /** @description Returned only for X-RTA-Observability: identity-v1 after successful platform billing attachment. The authoritative billing hold tenant ID; never client metadata or provider identity. Omitted by default and on failed or queued responses. Older servers may omit it. */
@@ -1108,6 +1163,9 @@ export interface components {
             portraitUrl?: string;
             sourceAssetId?: string;
             anchorTimeMs?: number;
+            sourceReview?: {
+                reason: string;
+            };
         };
         CreateApiKeyRequest: {
             name: string;
@@ -1170,6 +1228,81 @@ export interface components {
             /** @default {} */
             metadata: {
                 [key: string]: unknown;
+            };
+        };
+        CreateSceneRequest: {
+            /** @description The first clip. Played forward over its full length. */
+            source: {
+                /**
+                 * Format: uri
+                 * @description An https URL the builder can fetch. Hosts are allowlisted by the builder.
+                 */
+                url: string;
+                /** @description MD5 of the clip bytes. With bytes, lets an already-built scene answer ready without a download. */
+                md5?: string;
+                /** @description Clip size in bytes (at most 64 MiB). */
+                bytes?: number;
+            };
+            /** @description Optional return clip appended after the first. When its last frame matches the first clip's first frame, the loop closes seamlessly. */
+            continuation?: {
+                /**
+                 * Format: uri
+                 * @description An https URL the builder can fetch. Hosts are allowlisted by the builder.
+                 */
+                url: string;
+                /** @description MD5 of the clip bytes. With bytes, lets an already-built scene answer ready without a download. */
+                md5?: string;
+                /** @description Clip size in bytes (at most 64 MiB). */
+                bytes?: number;
+            };
+            /** @enum {string} */
+            profile: "scene-v0";
+        };
+        SceneState: {
+            /** @constant */
+            status: "building";
+            /** @description The prepared scene's artifact id, as returned by POST /v1/scenes when status is ready. */
+            scene_id: string;
+            timings?: {
+                download_ms?: number;
+                decode_ms?: number;
+                geometry_ms?: number;
+                write_ms?: number;
+                total_ms?: number;
+            };
+        } | {
+            /** @constant */
+            status: "ready";
+            /** @description The prepared scene's artifact id, as returned by POST /v1/scenes when status is ready. */
+            scene_id: string;
+            /** @description The prepared scene's artifact id, as returned by POST /v1/scenes when status is ready. */
+            video_cache_id?: string;
+            fps?: number;
+            width?: number;
+            height?: number;
+            first_frames?: number;
+            total_frames?: number;
+            duration_s?: number;
+            timings?: {
+                download_ms?: number;
+                decode_ms?: number;
+                geometry_ms?: number;
+                write_ms?: number;
+                total_ms?: number;
+            };
+        } | {
+            /** @constant */
+            status: "failed";
+            /** @description The scene id, or "unresolved" when the download failed before any byte was hashed and the request carried no md5 and bytes. */
+            scene_id: string | "unresolved";
+            /** @enum {string} */
+            error?: "source_unreachable" | "source_unusable" | "source_mismatch" | "build_failed";
+            timings?: {
+                download_ms?: number;
+                decode_ms?: number;
+                geometry_ms?: number;
+                write_ms?: number;
+                total_ms?: number;
             };
         };
         CreditBalance: {
@@ -1779,6 +1912,124 @@ export interface operations {
             };
             /** @description The key lacks the scope for this operation, or the tenant is not active. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createScene: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSceneRequest"];
+            };
+        };
+        responses: {
+            /** @description Ready or failed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneState"];
+                };
+            };
+            /** @description Building */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneState"];
+                };
+            };
+            /** @description Missing, malformed, revoked, or expired key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key lacks the scope for this operation, the tenant is not active, or scene sessions are not enabled for the workspace — code "scene_sessions_not_enabled", a per-workspace preview gate. Contact support to opt in. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getScene: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sceneId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scene state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneState"];
+                };
+            };
+            /** @description Missing, malformed, revoked, or expired key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key lacks the scope for this operation, the tenant is not active, or scene sessions are not enabled for the workspace — code "scene_sessions_not_enabled", a per-workspace preview gate. Contact support to opt in. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No scene with this id that this workspace prepared (code "scene_not_found") */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
