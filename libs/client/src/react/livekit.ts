@@ -561,63 +561,75 @@ export function useLiveKitAvatarGrant<
       warmLiveKitHost(serverUrlHintRef.current ?? readLiveKitUrlHint());
       setState({ status: "requesting", grant: null, busy: null, error: null });
     }
-    void client
-      .createLiveKitSessionOrBusy(request, requestOptions)
-      .then((result) => {
-        // A GRANT THAT LANDS AFTER WE STOPPED CARING MUST STILL BE RELEASED.
-        // `cancelled` means the effect that asked for this grant is gone (unmount,
-        // avatar switch, or a version-bump retry), so nothing downstream will ever
-        // record it in `heldSessionRef` — and `releaseHeld` only frees what that ref
-        // holds. Returning here used to strand the session for the platform's whole
-        // join timeout: on a plan whose ceiling is 1 (the free tier) that is the
-        // caller's only slot, and their very next attempt is refused by a session
-        // they never even saw. Release it explicitly instead; the ref is not ours to
-        // write once the effect is dead, so this is deliberately a direct call.
-        if (cancelled) {
-          if (result.status !== "busy") {
-            void client.releaseLiveKitSession(result.grant.session_id, "superseded");
+    // ONE MINT PER MOUNT, EVEN UNDER STRICT MODE. React's StrictMode (the default in a new
+    // Next.js or Vite app while developing) runs every effect, its cleanup, and the effect
+    // again, synchronously, on mount. Posting here directly sent TWO mints for one call: two
+    // rooms, two agent dispatches, and two of the plan's concurrent-session seats, the first
+    // released "superseded" a second later. On a plan with a small session ceiling the twin is
+    // what refuses the developer's next attempt. Deferring the POST past that synchronous pair
+    // lets the first run's cleanup cancel it before anything leaves the browser. Global
+    // setTimeout, not window's: React Native has no window event target but has the timer.
+    const mintTimer = setTimeout(() => {
+      if (cancelled) return;
+      void client
+        .createLiveKitSessionOrBusy(request, requestOptions)
+        .then((result) => {
+          // A GRANT THAT LANDS AFTER WE STOPPED CARING MUST STILL BE RELEASED.
+          // `cancelled` means the effect that asked for this grant is gone (unmount,
+          // avatar switch, or a version-bump retry), so nothing downstream will ever
+          // record it in `heldSessionRef` — and `releaseHeld` only frees what that ref
+          // holds. Returning here used to strand the session for the platform's whole
+          // join timeout: on a plan whose ceiling is 1 (the free tier) that is the
+          // caller's only slot, and their very next attempt is refused by a session
+          // they never even saw. Release it explicitly instead; the ref is not ours to
+          // write once the effect is dead, so this is deliberately a direct call.
+          if (cancelled) {
+            if (result.status !== "busy") {
+              void client.releaseLiveKitSession(result.grant.session_id, "superseded");
+            }
+            return;
           }
-          return;
-        }
-        if (result.status === "busy") {
-          queueTicketRef.current = result.busy.queue_ticket_id ?? queueTicketRef.current;
-          // Commit the fresh busy snapshot so the auto-retry effect (keyed on
-          // `state.busy`) reschedules the next tick. Referential STABILITY for the
-          // UI is provided one level up by the value-memoized `capacity` signal —
-          // an unchanged queue position yields the SAME `capacity` object even
-          // though `state.busy` is a new reference, so the queued badge/banner
-          // update in place across the retry loop without remounting.
-          setState({ status: "busy", grant: null, busy: result.busy, error: null });
-          return;
-        }
-        queueTicketRef.current = null;
-        // A fresh grant supersedes any prior held lease (this is the re-mint that
-        // a tab-switch-driven reconnect triggers). Release the OLD session before
-        // adopting the new one so the reconnect swaps slots instead of stacking a
-        // second zombie reservation onto the queue.
-        if (heldSessionRef.current && heldSessionRef.current !== result.grant.session_id) {
-          releaseHeld("superseded", false);
-        }
-        heldSessionRef.current = result.grant.session_id;
-        // Remember the landed LiveKit host so the NEXT page-load can pre-warm
-        // DNS+TLS to it while its own grant POST is in flight. The room still
-        // connects to THIS grant's livekit_url exclusively (below, via
-        // RealtimeAvatarLiveKitRoom) — the hint never feeds the connect path.
-        writeLiveKitUrlHint(result.grant.livekit_url);
-        setState({ status: "ready", grant: result.grant, busy: null, error: null });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setState({
-          status: "failed",
-          grant: null,
-          busy: null,
-          error: error instanceof Error ? error : new Error(String(error)),
+          if (result.status === "busy") {
+            queueTicketRef.current = result.busy.queue_ticket_id ?? queueTicketRef.current;
+            // Commit the fresh busy snapshot so the auto-retry effect (keyed on
+            // `state.busy`) reschedules the next tick. Referential STABILITY for the
+            // UI is provided one level up by the value-memoized `capacity` signal —
+            // an unchanged queue position yields the SAME `capacity` object even
+            // though `state.busy` is a new reference, so the queued badge/banner
+            // update in place across the retry loop without remounting.
+            setState({ status: "busy", grant: null, busy: result.busy, error: null });
+            return;
+          }
+          queueTicketRef.current = null;
+          // A fresh grant supersedes any prior held lease (this is the re-mint that
+          // a tab-switch-driven reconnect triggers). Release the OLD session before
+          // adopting the new one so the reconnect swaps slots instead of stacking a
+          // second zombie reservation onto the queue.
+          if (heldSessionRef.current && heldSessionRef.current !== result.grant.session_id) {
+            releaseHeld("superseded", false);
+          }
+          heldSessionRef.current = result.grant.session_id;
+          // Remember the landed LiveKit host so the NEXT page-load can pre-warm
+          // DNS+TLS to it while its own grant POST is in flight. The room still
+          // connects to THIS grant's livekit_url exclusively (below, via
+          // RealtimeAvatarLiveKitRoom) — the hint never feeds the connect path.
+          writeLiveKitUrlHint(result.grant.livekit_url);
+          setState({ status: "ready", grant: result.grant, busy: null, error: null });
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setState({
+            status: "failed",
+            grant: null,
+            busy: null,
+            error: error instanceof Error ? error : new Error(String(error)),
+          });
         });
-      });
+    }, 0);
 
     return () => {
       cancelled = true;
+      clearTimeout(mintTimer);
     };
   }, [active, client, sessionKey, requestOptions, version, releaseHeld]);
 
