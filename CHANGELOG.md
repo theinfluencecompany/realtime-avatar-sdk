@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fix a duplicate session start under React StrictMode (the default in a new Next.js or
+  Vite app while developing): `useLiveKitAvatarGrant`, and so `useAvatarCall` and
+  `<AvatarCall>`, posted the mint straight from its effect, so StrictMode's mount, cleanup,
+  mount sent two mints for one call and used two of the plan's concurrent sessions. The
+  mint is now deferred past that synchronous pair and cancelled by the effect cleanup.
+
 ## 0.24.0 (unreleased candidate)
 
 - Require LiveKit React Native 3 for the native binding. Verify the exact
