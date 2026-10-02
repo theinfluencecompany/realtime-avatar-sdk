@@ -566,10 +566,12 @@ export function useLiveKitAvatarGrant<
     // again, synchronously, on mount. Posting here directly sent TWO mints for one call: two
     // rooms, two agent dispatches, and two of the plan's concurrent-session seats, the first
     // released "superseded" a second later. On a plan with a small session ceiling the twin is
-    // what refuses the developer's next attempt. Deferring the POST past that synchronous pair
-    // lets the first run's cleanup cancel it before anything leaves the browser. Global
-    // setTimeout, not window's: React Native has no window event target but has the timer.
-    const mintTimer = setTimeout(() => {
+    // what refuses the developer's next attempt. React runs that effect, cleanup, effect triple
+    // inside ONE synchronous passive-effects flush, so a microtask queued here runs after it:
+    // the first run's cleanup has already set `cancelled` and nothing leaves the browser. A
+    // microtask rather than a timer, because a timer is throttled to a second or more in a hidden
+    // tab and this path also carries reconnects; a microtask costs a production mint nothing.
+    queueMicrotask(() => {
       if (cancelled) return;
       void client
         .createLiveKitSessionOrBusy(request, requestOptions)
@@ -625,11 +627,10 @@ export function useLiveKitAvatarGrant<
             error: error instanceof Error ? error : new Error(String(error)),
           });
         });
-    }, 0);
+    });
 
     return () => {
       cancelled = true;
-      clearTimeout(mintTimer);
     };
   }, [active, client, sessionKey, requestOptions, version, releaseHeld]);
 

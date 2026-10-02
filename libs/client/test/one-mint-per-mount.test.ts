@@ -17,21 +17,24 @@ import { test } from "node:test";
  * extensionless internal imports that node's type-stripping runner cannot resolve.
  */
 
-test("the grant POST waits until StrictMode's synchronous effect pair is over", async () => {
+test("the grant POST waits until StrictMode's synchronous effect triple is over", async () => {
   const source = await readFile(new URL("../src/react/livekit.ts", import.meta.url), "utf-8");
 
-  // Deferred to a timer that re-checks `cancelled` before anything leaves the browser.
+  // Deferred to a microtask that re-checks `cancelled` before anything leaves the browser.
+  // React runs effect, cleanup, effect in one synchronous passive-effects flush, so the first
+  // run's microtask finds itself cancelled. A timer would also work, but it is throttled in a
+  // hidden tab, and this path carries reconnects.
   assert.match(
     source,
-    /const mintTimer = setTimeout\(\(\) => \{\s*\n\s*if \(cancelled\) return;\s*\n\s*void client\s*\n\s*\.createLiveKitSessionOrBusy\(request, requestOptions\)/,
-    "the grant POST is no longer deferred behind a cancellable timer: StrictMode's mount, cleanup, mount sends two mints for one call",
+    /queueMicrotask\(\(\) => \{\s*\n\s*if \(cancelled\) return;\s*\n\s*void client\s*\n\s*\.createLiveKitSessionOrBusy\(request, requestOptions\)/,
+    "the grant POST is no longer deferred behind a cancelled-check: StrictMode's mount, cleanup, mount sends two mints for one call",
   );
 
-  // And the effect's cleanup clears it, so the first StrictMode run never posts at all.
+  // And the effect's cleanup is what cancels it.
   assert.match(
     source,
-    /return \(\) => \{\s*\n\s*cancelled = true;\s*\n\s*clearTimeout\(mintTimer\);\s*\n\s*\};/,
-    "the effect cleanup no longer clears the pending mint: the first StrictMode run would still post",
+    /return \(\) => \{\s*\n\s*cancelled = true;\s*\n\s*\};\s*\n\s*\}, \[active, client, sessionKey, requestOptions, version, releaseHeld\]\);/,
+    "the mint effect's cleanup no longer marks it cancelled: the first StrictMode run would still post",
   );
 
   // The only mint in the hook is the deferred one.
