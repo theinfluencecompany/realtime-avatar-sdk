@@ -13,7 +13,11 @@
     // them directly. Without this the test files cannot be typechecked at all — which is how a
     // type-level gate in libs/client/test sat inert.
     "allowImportingTsExtensions": true,
-    "types": ["node"]
+    "types": ["node"],
+    // The root tsconfig's mapping, for typecheck only: test/mint-retry.test.ts drives the route
+    // handler (libs/proxy), which imports "realtime-avatar", and typecheck runs before the build
+    // that would otherwise provide its types. Runtime still resolves the built package.
+    "paths": { "realtime-avatar": ["../http-client/src/index.ts"] }
   },
   "include": ["src", "test"]
 }
