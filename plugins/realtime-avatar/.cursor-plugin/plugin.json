@@ -23,8 +23,7 @@
       "RTA_API_KEY": {
         "type": "string",
         "title": "RTA API key",
-        "description": "Server-side API key; keep it out of chat. Blank uses the editor's REALTIME_AVATAR_API_KEY environment.",
-        "default": ""
+        "description": "Your server-side RTA API key. Configure it here; keep it out of chat."
       },
       "RTA_ALLOW_WRITES": {
         "type": "string",
@@ -35,6 +34,9 @@
         ],
         "default": "0"
       }
-    }
+    },
+    "required": [
+      "RTA_API_KEY"
+    ]
   }
 }

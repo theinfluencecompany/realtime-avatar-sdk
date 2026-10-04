@@ -7,7 +7,7 @@ const configuredKey = process.env.RTA_PLUGIN_API_KEY?.trim();
 const apiKey = configuredKey && !configuredKey.includes("${")
   ? configuredKey : process.env.REALTIME_AVATAR_API_KEY;
 if (!apiKey || apiKey.includes("${")) {
-  console.error("Configure your RTA API key in the plugin settings, or set REALTIME_AVATAR_API_KEY before launching your editor. Account tools are unavailable until configured; never paste the key into chat.");
+  console.error("Configure your RTA API key in the plugin settings, or forward REALTIME_AVATAR_API_KEY in the host's MCP environment. Account tools are unavailable until configured; never paste the key into chat.");
   process.exit(1);
 }
 if (!/^realtime-avatar-mcp@\d+\.\d+\.\d+$/.test(config.mcpPackage)) {

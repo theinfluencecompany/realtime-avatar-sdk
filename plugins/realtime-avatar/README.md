@@ -17,8 +17,10 @@ Claude. Do not put the value in a prompt or command-line argument.
 
 Import this repository into your team's marketplace, or place the downloaded
 `realtime-avatar` directory inside `~/.cursor/plugins/local` and reload Cursor.
-Configure `RTA_API_KEY` in the plugin settings. Local editor processes can also
-inherit `REALTIME_AVATAR_API_KEY`. Enterprise policy may disable local imports.
+Configure `RTA_API_KEY` in the plugin settings. For direct Cursor CLI MCP config,
+map `RTA_PLUGIN_API_KEY` to `${env:REALTIME_AVATAR_API_KEY}`: the CLI filters
+inherited environment variables, so the explicit mapping is needed.
+Enterprise policy may disable local imports.
 The download page includes a separate one-click link for the hosted preview only;
 it does not configure your account or install the skill.
 
