@@ -257,15 +257,24 @@ which is why every mutating request carries one and reuses it across attempts.
 
 The numbers move run to run — the failure injection is random — but the ordering does not.
 
-**The browser client retries its mint too.** `createProxyClient` re-asks your route's
-`/connect` when it answers a 5xx (or 408) whose error is `retryable` — the platform answers
-transient upstream trouble with exactly that, a 503 carrying a `requestId`, and one blip used
-to end the user's call attempt. Three attempts in all by default, full-jitter backoff, the
-route's `Retry-After` honoured, and never past `timeoutMs`, which bounds the whole mint rather
-than each attempt. A 4xx, a queue, a 429, a body that says `retryable: false` and your own
-abort are never retried. Each retry is a fresh request through your route, so if your route
-can return a 5xx after it has already started a call, answer `retryable: false` there or pass
-`maxRetries: 0`.
+**The browser client retries its mint only when your route says so.** `createProxyClient`
+re-asks your route's `/connect` when it answers a 5xx (or 408) whose JSON body says
+`retryable: true`. Three attempts in all by default, full-jitter backoff, the route's
+`Retry-After` honoured, and never past `timeoutMs`, which bounds the whole mint rather than each
+attempt. A 4xx, a queue, a 429, a 5xx without `retryable: true` and your own abort are never
+retried. A body-less 500 (a route that threw) and a gateway 502 or 504 count as unclassified:
+the route may already have started a call, and a retry would start a second. A retry is also
+skipped when less than 5s, or less than the last attempt took, would be left of `timeoutMs`,
+because a mint aborted after your route forwarded it still starts a session the page never
+hears about.
+
+The `realtime-avatar/*` route adapters answer every platform refusal as JSON carrying its
+status, `code` and `requestId` (also in `X-Request-ID`), and `retryable: false`: the server
+client inside the route has already retried a transient failure under one idempotency key, and
+a browser retry on top would multiply each click into up to nine mints. A platform `401` is the
+route's own key, so it answers `500` rather than sending the page to sign in. A hand-rolled
+route that wants browser retries must answer `retryable: true` itself, and only when it knows no
+call was started.
 
 ```ts
 const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", maxRetries: 2, timeoutMs: 60_000 });

@@ -249,7 +249,7 @@ the `usage:read` scope.
 | `403` | Key lacks the scope | Mint one with it. Don't widen to `*`. |
 | `422` | Schema rejection | Unknown or mis-cased field — the wire is strict |
 | `429` | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Not auto-retried. |
-| `503` | Transient upstream | Retried for you, up to `maxRetries` — by the server client and by `createProxyClient` |
+| `503` | Transient upstream | Retried for you, up to `maxRetries`, by the server client. `createProxyClient` retries only a route answer marked `retryable: true` |
 
 Only a capacity-queue response returns `{ queued: true, position, retryAfterMs }`.
 `concurrency_limit_reached` throws: active, connecting and starting sessions all count toward
@@ -258,10 +258,18 @@ Avoid duplicate parallel starts. The HTTP error retains safe counts at `.concurr
 the correlation ID at `.requestId`; the proxy and browser client preserve the refusal.
 Showing an error there is the most common bad first impression.
 
-In the browser, `createProxyClient` retries a retryable 5xx from your route's `/connect`
-(three attempts by default, `Retry-After` honoured, never past `timeoutMs`), and a deadline
-that runs out throws a `RealtimeAvatarApiError` with `code: "upstream_timeout"` and
-`retryable: true`. The final error carries `.requestId`; earlier attempts hang off `.cause`.
+The `realtime-avatar/*` route adapters relay every platform refusal as JSON with its status,
+`code` and `requestId` (also in `X-Request-ID`), never its private diagnostics. A platform
+`401` is the route's own key, so it reaches the page as a `500`, not a sign-in. Those answers
+carry `retryable: false`, because the server client behind the route has already retried.
+
+In the browser, `createProxyClient` retries a 5xx from your route's `/connect` only when its
+JSON body says `retryable: true` (three attempts by default, `Retry-After` honoured). A
+body-less or unclassified 5xx is never retried, because the route may have started a call
+before it failed. A retry is also skipped when less than 5s, or less than the last attempt
+took, would be left of `timeoutMs`. A deadline that runs out throws a
+`RealtimeAvatarApiError` with `code: "upstream_timeout"` and `retryable: true`. The final
+error carries `.requestId`; earlier attempts hang off `.cause`.
 
 ---
 

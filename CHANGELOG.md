@@ -3,11 +3,18 @@
 ## 0.25.0
 
 - `createProxyClient` retries a retryable mint failure instead of ending the call attempt:
-  a 5xx (or 408) from your route's `/connect` whose error is `retryable` is re-asked up to
-  `maxRetries` times (new option, default 2, `0` disables) with full-jitter backoff,
-  honouring `Retry-After`. `timeoutMs` now bounds the whole mint, retries and waits
-  included. A 4xx, a capacity queue, a 429, a body marked `retryable: false` and the
-  caller's abort are never retried. The 429 queue path is unchanged.
+  a 5xx (or 408) from your route's `/connect` whose JSON body says `retryable: true` is
+  re-asked up to `maxRetries` times (new option, default 2, `0` disables) with full-jitter
+  backoff, honouring `Retry-After`. `timeoutMs` now bounds the whole mint, retries and waits
+  included. A 4xx, a capacity queue, a 429, a 5xx without `retryable: true` (a body-less 500,
+  a gateway 502/504) and the caller's abort are never retried, and neither is a retry that
+  would start with less than 5s, or less than the last attempt took, of `timeoutMs` left.
+  The 429 queue path is unchanged.
+- The `realtime-avatar/*` route adapters relay every platform failure as JSON with its
+  status, `code` and `requestId` (also in `X-Request-ID`) and `retryable: false`, instead of
+  throwing it into a body-less framework 500. The server client in the route has already
+  retried a transient failure, so the browser does not retry it again. A platform `401` (the
+  route's key) answers `500`; a `402` now carries the request ID too.
 - The proxy client's deadline is now a classified `RealtimeAvatarApiError`
   (`code: "upstream_timeout"`, `status: 0`, `retryable: true`, `response: null`) instead of
   a bare `TimeoutError`. A caller's abort is still an `AbortError`.

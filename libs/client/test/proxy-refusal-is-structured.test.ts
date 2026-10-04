@@ -71,7 +71,6 @@ test("401, 403 and 404 keep their status and the route's own code", async () => 
 });
 
 test("a non-JSON refusal still carries its status", async () => {
-  // A fresh body per attempt: a bare 502 is transient, so the client retries it before answering.
   const client = createProxyClient({
     proxyUrl: "/api/realtime-avatar",
     fetch: async () => new Response("Bad Gateway", { status: 502, headers: { "content-type": "text/plain", "retry-after": "0" } }),

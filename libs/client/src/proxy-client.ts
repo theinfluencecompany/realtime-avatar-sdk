@@ -50,16 +50,24 @@ export interface ProxyClientOptions {
   /**
    * Extra `connect` attempts after a retryable failure, default 2 (three in all), `0` to disable.
    *
-   * Retried: a 5xx (or 408) whose error is `retryable`, after full-jitter backoff or the
-   * `Retry-After` the route sent. Never retried: a refusal (4xx), a capacity queue or a 429, a
-   * failure the body marks `retryable: false`, a wait the deadline cannot fit, and your own
-   * abort. The thrown error is the last attempt's; earlier attempts hang off `.cause`, each with
-   * its own `.requestId`.
+   * Retried: a 5xx (or 408) whose JSON body says `retryable: true`, after full-jitter backoff or
+   * the `Retry-After` the route sent. Never retried: a refusal (4xx), a capacity queue or a 429,
+   * a 5xx without `retryable: true` (a route that threw, a gateway error), a retry that would
+   * start with under 5s (or under the last attempt's duration) of `timeoutMs` left, and your own
+   * abort. `realtime-avatar/*` route adapters answer `retryable: false`: the server client
+   * behind them has already retried. The thrown error is the last attempt's; earlier attempts
+   * hang off `.cause`, each with its own `.requestId`.
    */
   maxRetries?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000;
+
+/** The least time a retried `connect` must have left before it is sent. */
+const MIN_ATTEMPT_MS = 5_000;
+
+const routeSaysRetryable = (body: unknown): boolean =>
+  typeof body === "object" && body !== null && "retryable" in body && body.retryable === true;
 
 /** One deadline for a whole method call. A caller's abort is an unmount, never a timeout. */
 type Budget = { signal: AbortSignal | undefined; expired: () => boolean; remainingMs: () => number };
@@ -166,6 +174,7 @@ export function createProxyClient(options: ProxyClientOptions): AvatarSessionCli
       let previous: RealtimeAvatarApiError | undefined;
       for (let attempt = 0; ; attempt++) {
         let outcome: LiveKitSessionStartResult | RealtimeAvatarApiError;
+        const attemptStarted = Date.now();
         try {
           outcome = await connectOnce(body, requestOptions, call.signal, previous);
         } catch (cause) {
@@ -174,11 +183,15 @@ export function createProxyClient(options: ProxyClientOptions): AvatarSessionCli
         }
         if (!(outcome instanceof RealtimeAvatarApiError)) return outcome;
 
-        // The platform answers transient upstream trouble with a retryable 5xx, so one blip
-        // used to end the user's call attempt. A 4xx is a decision and is never re-asked.
+        // Only the route's own `retryable: true` authorises a retry. A 5xx it did not classify
+        // may come from a route that threw after starting a call, or a gateway in front of one
+        // still minting, and re-asking either can start a second call. A 4xx is never re-asked.
+        // The attempt also needs time to finish: one aborted after the route forwarded it still
+        // mints, and the page never learns the session it would have to release.
         const delay = backoffMs(attempt, outcome.response?.headers.get("retry-after") ?? null);
-        const retry = attempt < maxRetries && outcome.retryable === true && RETRYABLE_STATUS.has(outcome.status) &&
-          delay < call.remainingMs();
+        const attemptFloorMs = Math.max(MIN_ATTEMPT_MS, Date.now() - attemptStarted);
+        const retry = attempt < maxRetries && RETRYABLE_STATUS.has(outcome.status) && routeSaysRetryable(outcome.body) &&
+          delay + attemptFloorMs < call.remainingMs();
         if (!retry) throw outcome;
         void outcome.response?.body?.cancel().catch(() => {});
         try {
