@@ -249,7 +249,7 @@ the `usage:read` scope.
 | `403` | Key lacks the scope | Mint one with it. Don't widen to `*`. |
 | `422` | Schema rejection | Unknown or mis-cased field — the wire is strict |
 | `429` | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Not auto-retried. |
-| `503` | Transient upstream | Retried for you, up to `maxRetries` |
+| `503` | Transient upstream | Retried for you, up to `maxRetries` — by the server client and by `createProxyClient` |
 
 Only a capacity-queue response returns `{ queued: true, position, retryAfterMs }`.
 `concurrency_limit_reached` throws: active, connecting and starting sessions all count toward
@@ -257,6 +257,11 @@ the workspace limit. End a session or wait for pending starts to clear, then ret
 Avoid duplicate parallel starts. The HTTP error retains safe counts at `.concurrency` and
 the correlation ID at `.requestId`; the proxy and browser client preserve the refusal.
 Showing an error there is the most common bad first impression.
+
+In the browser, `createProxyClient` retries a retryable 5xx from your route's `/connect`
+(three attempts by default, `Retry-After` honoured, never past `timeoutMs`), and a deadline
+that runs out throws a `RealtimeAvatarApiError` with `code: "upstream_timeout"` and
+`retryable: true`. The final error carries `.requestId`; earlier attempts hang off `.cause`.
 
 ---
 

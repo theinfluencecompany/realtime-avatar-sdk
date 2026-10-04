@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- `createProxyClient` retries a retryable mint failure instead of ending the call attempt:
+  a 5xx (or 408) from your route's `/connect` whose error is `retryable` is re-asked up to
+  `maxRetries` times (new option, default 2, `0` disables) with full-jitter backoff,
+  honouring `Retry-After`. `timeoutMs` now bounds the whole mint, retries and waits
+  included. A 4xx, a capacity queue, a 429, a body marked `retryable: false` and the
+  caller's abort are never retried. The 429 queue path is unchanged.
+- The proxy client's deadline is now a classified `RealtimeAvatarApiError`
+  (`code: "upstream_timeout"`, `status: 0`, `retryable: true`, `response: null`) instead of
+  a bare `TimeoutError`. A caller's abort is still an `AbortError`.
+- `RealtimeAvatarApiError` gains `.requestId` (the body's `requestId`, else `X-Request-ID`),
+  and a retried mint's final error links earlier attempts through `.cause`.
+  `.response` is now `Response | null`.
+
 ## 0.24.1
 
 - Fix a duplicate session start under React StrictMode (the default in a new Next.js or

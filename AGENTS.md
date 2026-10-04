@@ -257,6 +257,27 @@ which is why every mutating request carries one and reuses it across attempts.
 
 The numbers move run to run — the failure injection is random — but the ordering does not.
 
+**The browser client retries its mint too.** `createProxyClient` re-asks your route's
+`/connect` when it answers a 5xx (or 408) whose error is `retryable` — the platform answers
+transient upstream trouble with exactly that, a 503 carrying a `requestId`, and one blip used
+to end the user's call attempt. Three attempts in all by default, full-jitter backoff, the
+route's `Retry-After` honoured, and never past `timeoutMs`, which bounds the whole mint rather
+than each attempt. A 4xx, a queue, a 429, a body that says `retryable: false` and your own
+abort are never retried. Each retry is a fresh request through your route, so if your route
+can return a 5xx after it has already started a call, answer `retryable: false` there or pass
+`maxRetries: 0`.
+
+```ts
+const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", maxRetries: 2, timeoutMs: 60_000 });
+```
+
+The thrown error is the LAST attempt's `RealtimeAvatarApiError`, with its correlation ID at
+`.requestId` (the body's `requestId`, else the `X-Request-ID` header); earlier attempts hang
+off `.cause`, each with its own. A deadline that runs out throws the same class with
+`code: "upstream_timeout"`, `status: 0` (nothing was received), `retryable: true` and
+`response: null` — route it like any other retryable failure. A caller's abort is still an
+`AbortError`, because an unmount is not a failure.
+
 ### 8. `creditBalance` is a balance, not a bill
 
 To reconcile an invoice — or to re-bill your own users — you need per-session detail, and
@@ -637,7 +658,7 @@ try {
 | 409 | `expectedRevision` is behind — someone else declared the clip library first | Re-read `listClips`, re-decide, re-declare |
 | 422 | Schema rejection | An unknown or mis-cased field — the wire is strict |
 | 429 | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Release/wait for occupied slots or back off. Not auto-retried |
-| 503 | Transient upstream | Retried for you, up to `maxRetries` |
+| 503 | Transient upstream | Retried for you, up to `maxRetries` — by the server client and by `createProxyClient` |
 
 ### The vocabulary is derived, never restated
 

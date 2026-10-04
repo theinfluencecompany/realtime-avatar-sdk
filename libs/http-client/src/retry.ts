@@ -32,7 +32,23 @@ export function backoffMs(attempt: number, retryAfter: string | null): number {
   return Math.random() * Math.min(500 * 2 ** attempt, 8_000);
 }
 
-export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+/** Extra attempts after the first, unless the caller says otherwise. */
+export const DEFAULT_MAX_RETRIES = 2;
+
+/** Rejects with the signal's reason when it aborts first, so a backoff never outlives its caller. */
+export const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 
 /** A dropped connection or a timed-out attempt. A caller's own abort is NOT transient. */
 export function isTransient(cause: unknown): boolean {

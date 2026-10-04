@@ -3,9 +3,11 @@ import {
   hasInternalDetail,
   normalizeError,
   userSafeMessage,
+  type CopiedErrorCode,
   type KnownErrorCode,
   type NormalizedError,
 } from "../../http-client/src/generated/error-semantics.ts";
+import { isRequestId } from "../../http-client/src/errors.ts";
 
 export type RealtimeAvatarApiErrorBody = unknown;
 
@@ -28,22 +30,33 @@ type RealtimeAvatarApiErrorMetadata = {
   retryable?: boolean;
   billingUrl?: string;
   rawMessage?: string | null;
+  requestId?: string;
+  /** An earlier attempt's error, when this one ended a retried request. */
+  cause?: unknown;
 };
+
+/**
+ * The code a request deadline answers with. Selected from the generated vocabulary, never
+ * restated: if the platform drops it, this line stops compiling.
+ */
+const TIMEOUT_CODE = "upstream_timeout" satisfies CopiedErrorCode;
 
 export class RealtimeAvatarApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly body: RealtimeAvatarApiErrorBody,
-    readonly response: Response,
+    /** `null` when no response arrived — the request deadline ran out first. */
+    readonly response: Response | null,
     metadata: RealtimeAvatarApiErrorMetadata = {},
   ) {
-    super(message);
+    super(message, metadata.cause === undefined ? undefined : { cause: metadata.cause });
     this.name = "RealtimeAvatarApiError";
     this.code = metadata.code;
     this.retryable = metadata.retryable;
     this.billingUrl = metadata.billingUrl;
     this.rawMessage = metadata.rawMessage ?? null;
+    this.requestId = metadata.requestId;
   }
 
   readonly code?: string;
@@ -51,25 +64,44 @@ export class RealtimeAvatarApiError extends Error {
   readonly billingUrl?: string;
   /** Debug detail returned by the API. Do not render directly in user-facing UI. */
   readonly rawMessage: string | null;
+  /** The platform's correlation ID for this attempt. Quote it to support. */
+  readonly requestId?: string;
 
   get isBillingRequired(): boolean {
     return this.status === 402 || this.code === "insufficient_credits" || this.code === "spend_limit_exceeded";
   }
 
-  static async fromResponse(response: Response): Promise<RealtimeAvatarApiError> {
+  static async fromResponse(response: Response, options: { cause?: unknown } = {}): Promise<RealtimeAvatarApiError> {
     const contentType = response.headers.get("content-type") ?? "";
     const body = contentType.includes("application/json")
       ? await response.clone().json().catch(() => null)
       : await response.clone().text().catch(() => "");
     const rawMessage = (extractErrorMessage(body) ?? response.statusText) || null;
     const metadata = extractErrorMetadata(body, response.status, rawMessage);
+    const bodyRequestId = readRecord(body)?.requestId;
+    const headerRequestId = response.headers.get("x-request-id");
     return new RealtimeAvatarApiError(
       metadata.message,
       response.status,
       body,
       response,
-      metadata,
+      {
+        ...metadata,
+        cause: options.cause,
+        requestId: isRequestId(bodyRequestId) ? bodyRequestId : isRequestId(headerRequestId) ? headerRequestId : undefined,
+      },
     );
+  }
+
+  /** A request that got no answer before its deadline. Status 0: nothing was received. */
+  static timeout(timeoutMs: number, options: { cause?: unknown } = {}): RealtimeAvatarApiError {
+    const { message, retryable } = ERROR_SEMANTICS[TIMEOUT_CODE];
+    return new RealtimeAvatarApiError(message, 0, null, null, {
+      code: TIMEOUT_CODE,
+      retryable,
+      rawMessage: `No response within ${timeoutMs}ms.`,
+      cause: options.cause,
+    });
   }
 }
 
