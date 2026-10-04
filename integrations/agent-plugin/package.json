@@ -1,0 +1,15 @@
+{
+  "name": "rta-agent-plugin-packaging",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:live": "node test/live.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.0",
+    "realtime-avatar-mcp": "0.25.0"
+  }
+}

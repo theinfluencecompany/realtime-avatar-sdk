@@ -1,0 +1,18 @@
+{
+  "name": "realtime-avatar-tools",
+  "owner": {
+    "name": "The Influence Company",
+    "email": "support@realtimeavatar.ai"
+  },
+  "metadata": {
+    "description": "Realtime Avatar account tools and integration skills for coding agents."
+  },
+  "plugins": [
+    {
+      "name": "realtime-avatar",
+      "source": "./plugins/realtime-avatar",
+      "description": "Build live AI avatar apps with your RTA account: discover avatars, inspect credits, configure characters and integrate voice/video calls.",
+      "version": "0.1.0"
+    }
+  ]
+}

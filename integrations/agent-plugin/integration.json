@@ -1,0 +1,15 @@
+{
+  "name": "realtime-avatar",
+  "displayName": "Realtime Avatar",
+  "version": "0.1.0",
+  "description": "Build live AI avatar apps with your RTA account: discover avatars, inspect credits, configure characters and integrate voice/video calls.",
+  "homepage": "https://realtimeavatar.ai",
+  "documentation": "https://realtimeavatar.ai/docs/mcp",
+  "support": "https://realtimeavatar.ai/contact",
+  "privacy": "https://realtimeavatar.ai/privacy",
+  "terms": "https://realtimeavatar.ai/terms",
+  "repository": "https://github.com/theinfluencecompany/realtime-avatar-sdk",
+  "mcpPackage": "realtime-avatar-mcp@0.25.0",
+  "previewUrl": "https://rta-chatgpt-practice-review.zjudn2013.workers.dev/mcp",
+  "previewExpiresAt": "2027-02-01T00:00:00Z"
+}
