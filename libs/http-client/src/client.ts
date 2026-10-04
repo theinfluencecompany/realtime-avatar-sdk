@@ -1,5 +1,4 @@
 import {
-  DEFAULT_MAX_RETRIES,
   MUTATING,
   RETRYABLE_STATUS,
   backoffMs,
@@ -107,7 +106,7 @@ export class RealtimeAvatar {
     // after construction (RN registerGlobals, instrumentation) is still honored.
     this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.#timeoutMs = options.timeoutMs ?? 60_000;
-    this.#maxRetries = Math.max(0, options.maxRetries ?? DEFAULT_MAX_RETRIES);
+    this.#maxRetries = Math.max(0, options.maxRetries ?? 2);
     this.#userAgent = [`realtime-avatar-sdk/${SDK_VERSION}`, runtimeTag(), options.userAgent]
       .filter(Boolean).join(" ");
   }

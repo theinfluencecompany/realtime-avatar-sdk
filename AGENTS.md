@@ -257,35 +257,34 @@ which is why every mutating request carries one and reuses it across attempts.
 
 The numbers move run to run — the failure injection is random — but the ordering does not.
 
-**The browser client retries its mint only when your route says so.** `createProxyClient`
-re-asks your route's `/connect` when it answers a 5xx (or 408) whose JSON body says
-`retryable: true`. Three attempts in all by default, full-jitter backoff, the route's
-`Retry-After` honoured, and never past `timeoutMs`, which bounds the whole mint rather than each
-attempt. A 4xx, a queue, a 429, a 5xx without `retryable: true` and your own abort are never
-retried. A body-less 500 (a route that threw) and a gateway 502 or 504 count as unclassified:
-the route may already have started a call, and a retry would start a second. A retry is also
-skipped when less than 5s, or less than the last attempt took, would be left of `timeoutMs`,
-because a mint aborted after your route forwarded it still starts a session the page never
-hears about.
+**The browser client never retries a mint.** `createProxyClient` sends `/connect` once and
+throws what your route answered. The one retry owner is the server client inside the route: it
+has already retried a transient platform failure under one idempotency key. A second retry loop
+in the browser would multiply each click into up to nine platform mints, and every re-ask of a
+route that had already forwarded the mint would risk a session the page never hears of. The `429` queue
+is unchanged: re-asking on the queue's own hint is the grant hook's queue (`autoRetryBusy`), not
+a transport retry.
 
 The `realtime-avatar/*` route adapters answer every platform refusal as JSON carrying its
-status, `code` and `requestId` (also in `X-Request-ID`), and `retryable: false`: the server
-client inside the route has already retried a transient failure under one idempotency key, and
-a browser retry on top would multiply each click into up to nine mints. A platform `401` is the
-route's own key, so it answers `500` rather than sending the page to sign in. A hand-rolled
-route that wants browser retries must answer `retryable: true` itself, and only when it knows no
-call was started.
+status, `code` and `requestId` (also in `X-Request-ID`), and `retryable: false`. A platform
+`401` is the route's own key, so it answers `500` rather than sending the page to sign in.
 
 ```ts
-const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", maxRetries: 2, timeoutMs: 60_000 });
+const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", timeoutMs: 60_000 });
 ```
 
-The thrown error is the LAST attempt's `RealtimeAvatarApiError`, with its correlation ID at
-`.requestId` (the body's `requestId`, else the `X-Request-ID` header); earlier attempts hang
-off `.cause`, each with its own. A deadline that runs out throws the same class with
-`code: "upstream_timeout"`, `status: 0` (nothing was received), `retryable: true` and
-`response: null` — route it like any other retryable failure. A caller's abort is still an
-`AbortError`, because an unmount is not a failure.
+The thrown error is a `RealtimeAvatarApiError` with `.status`, `.code`, `.retryable` and the
+correlation ID at `.requestId` (the body's `requestId`, else the `X-Request-ID` header). Show
+the message, keep the request ID for support, and offer a retry button when `.retryable` is
+true; do not loop on it.
+
+**A timed-out mint is not a failed mint.** A deadline that runs out throws the same class with
+`code: "upstream_timeout"`, `status: 504` (the status that code accompanies, so
+`normalizeRealtimeAvatarError` reads it back unchanged) and `response: null`. Your route may
+still be minting, so **never re-send a timed-out `connect` automatically**: if a session id
+reached you, release it first; otherwise wait for the server-side join timeout
+to reclaim the seat before starting another, or leave the retry to the user's button. A
+caller's abort is still an `AbortError`, because an unmount is not a failure.
 
 ### 8. `creditBalance` is a balance, not a bill
 
@@ -667,7 +666,7 @@ try {
 | 409 | `expectedRevision` is behind — someone else declared the clip library first | Re-read `listClips`, re-decide, re-declare |
 | 422 | Schema rejection | An unknown or mis-cased field — the wire is strict |
 | 429 | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Release/wait for occupied slots or back off. Not auto-retried |
-| 503 | Transient upstream | Retried for you, up to `maxRetries` — by the server client and by `createProxyClient` |
+| 503 | Transient upstream | Retried for you, up to `maxRetries`, by the server client only. `createProxyClient` never retries a mint |
 
 ### The vocabulary is derived, never restated
 

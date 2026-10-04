@@ -249,7 +249,7 @@ the `usage:read` scope.
 | `403` | Key lacks the scope | Mint one with it. Don't widen to `*`. |
 | `422` | Schema rejection | Unknown or mis-cased field — the wire is strict |
 | `429` | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Not auto-retried. |
-| `503` | Transient upstream | Retried for you, up to `maxRetries`, by the server client. `createProxyClient` retries only a route answer marked `retryable: true` |
+| `503` | Transient upstream | Retried for you, up to `maxRetries`, by the server client only. `createProxyClient` never retries a mint |
 
 Only a capacity-queue response returns `{ queued: true, position, retryAfterMs }`.
 `concurrency_limit_reached` throws: active, connecting and starting sessions all count toward
@@ -263,13 +263,13 @@ The `realtime-avatar/*` route adapters relay every platform refusal as JSON with
 `401` is the route's own key, so it reaches the page as a `500`, not a sign-in. Those answers
 carry `retryable: false`, because the server client behind the route has already retried.
 
-In the browser, `createProxyClient` retries a 5xx from your route's `/connect` only when its
-JSON body says `retryable: true` (three attempts by default, `Retry-After` honoured). A
-body-less or unclassified 5xx is never retried, because the route may have started a call
-before it failed. A retry is also skipped when less than 5s, or less than the last attempt
-took, would be left of `timeoutMs`. A deadline that runs out throws a
-`RealtimeAvatarApiError` with `code: "upstream_timeout"` and `retryable: true`. The final
-error carries `.requestId`; earlier attempts hang off `.cause`.
+In the browser, `createProxyClient` never retries a mint: the server client inside your route
+is the one retry owner, and a browser retry on top would multiply each click into up to nine
+mints. A refusal throws a `RealtimeAvatarApiError` carrying `.status`, `.code`, `.retryable`
+and `.requestId`; offer a retry button rather than looping. A deadline that runs out throws
+the same class with `code: "upstream_timeout"`, `status: 504` and `response: null`. The route
+may still be minting, so do not re-send it automatically: release the session if an id reached
+you, otherwise wait for the server-side join timeout, or leave the retry to the user.
 
 ---
 

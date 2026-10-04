@@ -31,8 +31,6 @@ type RealtimeAvatarApiErrorMetadata = {
   billingUrl?: string;
   rawMessage?: string | null;
   requestId?: string;
-  /** An earlier attempt's error, when this one ended a retried request. */
-  cause?: unknown;
 };
 
 /**
@@ -50,7 +48,7 @@ export class RealtimeAvatarApiError extends Error {
     readonly response: Response | null,
     metadata: RealtimeAvatarApiErrorMetadata = {},
   ) {
-    super(message, metadata.cause === undefined ? undefined : { cause: metadata.cause });
+    super(message);
     this.name = "RealtimeAvatarApiError";
     this.code = metadata.code;
     this.retryable = metadata.retryable;
@@ -71,7 +69,7 @@ export class RealtimeAvatarApiError extends Error {
     return this.status === 402 || this.code === "insufficient_credits" || this.code === "spend_limit_exceeded";
   }
 
-  static async fromResponse(response: Response, options: { cause?: unknown } = {}): Promise<RealtimeAvatarApiError> {
+  static async fromResponse(response: Response): Promise<RealtimeAvatarApiError> {
     const contentType = response.headers.get("content-type") ?? "";
     const body = contentType.includes("application/json")
       ? await response.clone().json().catch(() => null)
@@ -87,20 +85,21 @@ export class RealtimeAvatarApiError extends Error {
       response,
       {
         ...metadata,
-        cause: options.cause,
         requestId: isRequestId(bodyRequestId) ? bodyRequestId : isRequestId(headerRequestId) ? headerRequestId : undefined,
       },
     );
   }
 
-  /** A request that got no answer before its deadline. Status 0: nothing was received. */
-  static timeout(timeoutMs: number, options: { cause?: unknown } = {}): RealtimeAvatarApiError {
-    const { message, retryable } = ERROR_SEMANTICS[TIMEOUT_CODE];
-    return new RealtimeAvatarApiError(message, 0, null, null, {
+  /**
+   * A request that got no answer before its deadline. The status is the one the vocabulary pairs
+   * with the code, so `normalizeRealtimeAvatarError` reads it back as the same failure.
+   */
+  static timeout(timeoutMs: number): RealtimeAvatarApiError {
+    const { message, retryable, statuses: [status] } = ERROR_SEMANTICS[TIMEOUT_CODE];
+    return new RealtimeAvatarApiError(message, status, null, null, {
       code: TIMEOUT_CODE,
       retryable,
       rawMessage: `No response within ${timeoutMs}ms.`,
-      cause: options.cause,
     });
   }
 }
