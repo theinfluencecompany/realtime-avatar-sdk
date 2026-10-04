@@ -9,9 +9,16 @@
 - The `realtime-avatar/*` route adapters relay every platform failure as JSON with its
   `status`, `code`, `requestId` (also in `X-Request-ID`) and the platform's own `retryable`
   verdict, instead of throwing it into a body-less framework 500. A platform `401` or `403`
-  (the route's own key) answers `500`. Because these are answered rather than thrown, a
+  (the route's own key) answers `500` with `code: "internal_error"` and `retryable: false`,
+  because a refused key does not fix itself. Because these are answered rather than thrown, a
   framework error handler no longer sees them; the route logs each once with `console.error`
   (operation, status, `code`, `requestId`, no secrets).
+- The route adapters take `timeoutMs` (default 50s): the most the route spends on one
+  platform request, every retry and backoff included. A retry starts only if it can take as long
+  as the attempt before it and still finish inside the budget; a platform that has not answered
+  by then is answered `504` `upstream_timeout`. The default sits inside `createProxyClient`'s 60s
+  wait, so a route can no longer still be retrying, and minting, after the page stopped listening.
+  The server client gains the option underneath it as `totalTimeoutMs` (default unbounded).
 - The Express adapter now forwards the handler's headers, so `X-Request-ID` and
   `cache-control: no-store` reach the browser as they do through the Fetch adapters.
 - `RealtimeAvatarHttpError` gains `.retryable`: the platform's verdict, when its body gave one.

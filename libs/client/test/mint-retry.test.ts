@@ -133,12 +133,12 @@ test("the caller's abort stays an abort, never a timeout", async () => {
  */
 const PLATFORM_REQUEST_ID = "123e4567-e89b-42d3-a456-426614174009";
 
-function platform(answer: () => Response) {
+function platform(answer: (init?: RequestInit) => Response | Promise<Response>) {
   const seen = { calls: 0 };
   const original = globalThis.fetch;
-  globalThis.fetch = async () => {
+  globalThis.fetch = async (_input, init) => {
     seen.calls += 1;
-    return answer();
+    return answer(init);
   };
   return { seen, restore: () => { globalThis.fetch = original; } };
 }
@@ -149,16 +149,41 @@ const platformFailure = (status: number, body: Record<string, unknown>): Respons
     headers: { "content-type": "application/json", "retry-after": "0", "x-request-id": PLATFORM_REQUEST_ID },
   });
 
-async function mintThroughHandler(answer: () => Response) {
+/** A platform that answers `respond()` after `latencyMs`, or never when `latencyMs` is null. */
+const after = (latencyMs: number | null, respond: () => Response = () => new Response(null, { status: 200 })) =>
+  (init?: RequestInit): Promise<Response> =>
+    new Promise<Response>((resolve, reject) => {
+      // Held so node keeps the loop alive the way an open socket would.
+      const answer = setTimeout(
+        () => latencyMs === null ? reject(new Error("nobody gave up on the platform")) : resolve(respond()),
+        latencyMs ?? 30_000,
+      );
+      init?.signal?.addEventListener("abort", () => {
+        clearTimeout(answer);
+        reject(init.signal?.reason);
+      }, { once: true });
+    });
+
+async function mintThroughHandler(
+  answer: (init?: RequestInit) => Response | Promise<Response>,
+  deadlines: { routeTimeoutMs?: number; browserTimeoutMs?: number } = {},
+) {
   const upstreamPlatform = platform(answer);
-  const handler = createProxyHandler({ apiKey: "k" });
+  const handler = createProxyHandler({ apiKey: "k", timeoutMs: deadlines.routeTimeoutMs });
   const browser = { attempts: 0 };
   const client = createProxyClient({
     proxyUrl: "http://app.test/api/realtime-avatar",
+    timeoutMs: deadlines.browserTimeoutMs,
     fetch: async (input, init) => {
       browser.attempts += 1;
       // What Next.js, Hono and Express answer for a handler that throws: a 500 with no body.
-      return handler(new Request(input, init)).catch(() => new Response(null, { status: 500 }));
+      const answered = handler(new Request(input, init)).catch(() => new Response(null, { status: 500 }));
+      // The browser stops waiting at its deadline whether or not the route is still working.
+      const signal = init?.signal;
+      if (!signal) return answered;
+      return Promise.race([answered, new Promise<never>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      })]);
     },
   });
   try {
@@ -184,14 +209,40 @@ test("a platform refusal reaches the browser once, with its status, code and req
   assert.ok(!JSON.stringify(error.body).includes("PRIVATE_DIAGNOSTIC"));
 });
 
-test("a platform 401 or 403 is the route's own key, so the page sees a 500, not a sign-in or plan wall", async () => {
+test("a platform 401 or 403 is the route's own key: the page sees a non-retryable 500, not a sign-in wall or a blip", async () => {
+  // The platform's real refusal body (jsonError): it carries no `retryable` verdict at all.
   for (const [status, code] of [[401, "unauthorized"], [403, "forbidden"]] as const) {
-    const { error, browserAttempts } = await mintThroughHandler(() => platformFailure(status, { code, retryable: false }));
+    const { error, browserAttempts } = await mintThroughHandler(() =>
+      platformFailure(status, { error: "Invalid API key", code, documentation: "https://realtimeavatar.ai/docs" }));
     assert.equal(browserAttempts, 1);
     assert.equal(error.status, 500, `the route's own credential failure reached the page as ${error.status}`);
-    assert.equal(error.retryable, false);
+    assert.equal(error.code, "internal_error", `a revoked route key reached the page as ${String(error.code)}`);
+    assert.equal(error.retryable, false, "a revoked route key was offered to the user as a retry");
+    const normalized = normalizeRealtimeAvatarError({ status: error.status, code: error.code });
+    assert.equal(normalized.code, error.code, "the relayed code is not one the vocabulary pairs with its status");
     assert.equal(error.requestId, PLATFORM_REQUEST_ID);
   }
+});
+
+test("the route answers inside its own budget, before the browser's deadline, as the same classified timeout", async () => {
+  const started = Date.now();
+  const { error, platformCalls } = await mintThroughHandler(after(null), { routeTimeoutMs: 150, browserTimeoutMs: 3_000 });
+  assert.ok(error.response !== null, `the browser gave up after ${Date.now() - started}ms; the route never answered it`);
+  assert.equal(error.status, 504);
+  assert.equal(error.code, "upstream_timeout");
+  assert.equal(error.retryable, true);
+  assert.equal(platformCalls, 1, "a mint the platform never answered was sent again past the budget");
+});
+
+test("a slow retryable 503 that leaves no room in the route's budget is relayed, not retried", async () => {
+  const { error, platformCalls } = await mintThroughHandler(
+    after(100, () => platformFailure(503, { code: "admission_unavailable", retryable: true })),
+    { routeTimeoutMs: 150, browserTimeoutMs: 3_000 },
+  );
+  assert.equal(platformCalls, 1, "the route started a retry that could only finish after its budget");
+  assert.equal(error.status, 503);
+  assert.equal(error.code, "admission_unavailable");
+  assert.equal(error.retryable, true);
 });
 
 test("a platform 503 is retried by the server client only, and its verdict reaches the page unchanged", async () => {

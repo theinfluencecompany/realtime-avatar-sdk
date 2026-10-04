@@ -19,6 +19,13 @@ export interface ProxyConfig {
   /** Server-only. `tic_live_…` / `tic_test_…`. */
   apiKey: string | (() => string | Promise<string>);
   baseUrl?: string;
+  /**
+   * How long this route spends on one platform request, every retry and backoff included.
+   * Default 50s, below `createProxyClient`'s default 60s wait so the page hears the answer. Raise
+   * the browser's `timeoutMs` if you raise this, and keep it under your host's max function
+   * duration. Running out answers `504` `upstream_timeout`.
+   */
+  timeoutMs?: number;
 
   /**
    * Who may do this. Return a `Response` to refuse, or nothing to allow.

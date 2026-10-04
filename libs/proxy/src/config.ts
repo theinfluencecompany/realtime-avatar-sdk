@@ -1,5 +1,14 @@
-import { RealtimeAvatar, RealtimeAvatarHttpError, isQueued } from "realtime-avatar";
+import { RealtimeAvatar, RealtimeAvatarError, RealtimeAvatarHttpError, isQueued } from "realtime-avatar";
+import { ERROR_SEMANTICS, type CopiedErrorCode } from "../../http-client/src/generated/error-semantics.ts";
+import { ROUTE_TIMEOUT_MS } from "../../http-client/src/retry.ts";
 import type { ProxyConfig, ProxyOperation } from "./types.ts";
+
+/**
+ * The route's own failures, named from the generated vocabulary with the status it pairs each
+ * code with, so the page's `normalizeRealtimeAvatarError` reads them back unchanged.
+ */
+const MISCONFIGURED = "internal_error" satisfies CopiedErrorCode;
+const TIMED_OUT = "upstream_timeout" satisfies CopiedErrorCode;
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -14,19 +23,34 @@ const json = (body: unknown, status = 200): Response =>
  * lost. Because it is answered, a framework error handler never sees it, so it is logged here.
  */
 function relayFailure(operation: ProxyOperation, error: RealtimeAvatarHttpError): Response {
-  // A platform 401 or 403 is about this route's own key, never the visitor's sign-in or plan.
-  const status = error.status === 401 || error.status === 403 ? 500 : error.status;
+  // A platform 401 or 403 is about this route's own key, never the visitor's sign-in or plan, and
+  // a refused key does not fix itself: the page must not offer a retry the platform never judged.
+  const misconfigured = error.status === 401 || error.status === 403;
+  const status = misconfigured ? ERROR_SEMANTICS[MISCONFIGURED].statuses[0] : error.status;
   const verdict = error.retryable === undefined ? {} : { retryable: error.retryable };
-  const body = error.status === 429
-    ? throttled(error)
-    : { code: error.isBilling ? error.code ?? "insufficient_credits" : error.code, status, ...verdict };
+  const body = misconfigured
+    ? { code: MISCONFIGURED, status, retryable: false }
+    : error.status === 429
+      ? throttled(error)
+      : { code: error.isBilling ? error.code ?? "insufficient_credits" : error.code, status, ...verdict };
   console.error(
     `realtime-avatar: platform answered ${operation} with ${error.status} ` +
-      `(code ${error.code ?? "none"}, requestId ${error.requestId ?? "none"}); relayed as ${status}`,
+      `(code ${error.code ?? "none"}, requestId ${error.requestId ?? "none"}); relayed as ${status}` +
+      (misconfigured ? " — the platform refused this route's API key" : ""),
   );
   const response = json({ ...body, ...(error.requestId ? { requestId: error.requestId } : {}) }, status);
   if (error.requestId) response.headers.set("X-Request-ID", error.requestId);
   return response;
+}
+
+/**
+ * The platform gave no answer inside the route's budget. Answered as the same classified timeout
+ * the browser raises at its own deadline, so the page routes it one way whichever ran out first.
+ */
+function timedOut(operation: ProxyOperation): Response {
+  const { retryable, statuses: [status] } = ERROR_SEMANTICS[TIMED_OUT];
+  console.error(`realtime-avatar: platform did not answer ${operation} inside the route's budget; answered ${status}`);
+  return json({ code: TIMED_OUT, status, retryable }, status);
 }
 
 function throttled(error: RealtimeAvatarHttpError): Record<string, unknown> {
@@ -86,7 +110,7 @@ export function createProxyHandler(config: ProxyConfig): (request: Request) => P
     if (refusal instanceof Response) return refusal;
 
     const apiKey = typeof config.apiKey === "function" ? await config.apiKey() : config.apiKey;
-    const rta = new RealtimeAvatar({ apiKey, baseUrl: config.baseUrl });
+    const rta = new RealtimeAvatar({ apiKey, baseUrl: config.baseUrl, totalTimeoutMs: config.timeoutMs ?? ROUTE_TIMEOUT_MS });
 
     try {
       if (operation === "avatars") return json({ data: await rta.listAvatars() });
@@ -154,8 +178,11 @@ export function createProxyHandler(config: ProxyConfig): (request: Request) => P
       // Verbatim. Reshaping this is what makes a client reject the whole payload.
       return json(call.raw);
     } catch (error) {
-      if (!(error instanceof RealtimeAvatarHttpError)) throw error;
-      return relayFailure(operation, error);
+      if (error instanceof RealtimeAvatarHttpError) return relayFailure(operation, error);
+      if (error instanceof RealtimeAvatarError && error.cause instanceof Error && error.cause.name === "TimeoutError") {
+        return timedOut(operation);
+      }
+      throw error;
     }
   };
 }

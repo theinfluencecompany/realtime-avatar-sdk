@@ -756,6 +756,53 @@ test("a dropped connection is retried; exhausting retries reports the attempt co
   assert.equal(dead.attempts.length, 3);
 });
 
+/** A platform that answers 503 only after `latencyMs`, or never when `latencyMs` is null. */
+function slow(latencyMs: number | null) {
+  const attempts = { count: 0 };
+  const fetchImpl: typeof fetch = (_url, init) =>
+    new Promise<Response>((resolve, reject) => {
+      attempts.count += 1;
+      const signal = init?.signal;
+      // Held so node keeps the loop alive the way an open socket would.
+      const answer = setTimeout(() => {
+        if (latencyMs === null) reject(new Error("the client never gave up"));
+        else resolve(new Response(JSON.stringify({ code: "admission_unavailable" }), {
+          status: 503, headers: { "content-type": "application/json", "retry-after": "0" },
+        }));
+      }, latencyMs ?? 30_000);
+      signal?.addEventListener("abort", () => {
+        clearTimeout(answer);
+        reject(signal.reason);
+      }, { once: true });
+    });
+  return { attempts, fetchImpl };
+}
+
+test("totalTimeoutMs: a retry the budget cannot hold is not started, and one it can is", async () => {
+  const tight = slow(80);
+  await assert.rejects(
+    new RealtimeAvatar({ apiKey: "k", fetch: tight.fetchImpl, totalTimeoutMs: 120 }).startCall({ avatarId: "a" }),
+    (error: unknown) => error instanceof RealtimeAvatarHttpError && error.status === 503);
+  assert.equal(tight.attempts.count, 1, "a retry was started that the budget could not let finish");
+
+  const roomy = slow(20);
+  await assert.rejects(
+    new RealtimeAvatar({ apiKey: "k", fetch: roomy.fetchImpl, totalTimeoutMs: 1_000 }).startCall({ avatarId: "a" }),
+    RealtimeAvatarHttpError);
+  assert.equal(roomy.attempts.count, 3, "the budget disabled a retry it had room for");
+});
+
+test("totalTimeoutMs bounds an attempt that never answers, ahead of the per-attempt timeout", async () => {
+  const hung = slow(null);
+  const started = Date.now();
+  await assert.rejects(
+    new RealtimeAvatar({ apiKey: "k", fetch: hung.fetchImpl, timeoutMs: 2_000, totalTimeoutMs: 100 }).startCall({ avatarId: "a" }),
+    (error: unknown) => error instanceof RealtimeAvatarError && error.cause instanceof Error && error.cause.name === "TimeoutError");
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 1_000, `the call ran ${elapsed}ms past a 100ms budget`);
+  assert.equal(hung.attempts.count, 1);
+});
+
 test("maxRetries:0 restores the old single-shot behaviour", async () => {
   const { attempts, fetchImpl } = scripted([{ status: 503 }, { body: GRANT }]);
   await assert.rejects(

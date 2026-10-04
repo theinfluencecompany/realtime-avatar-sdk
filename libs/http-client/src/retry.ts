@@ -34,6 +34,27 @@ export function backoffMs(attempt: number, retryAfter: string | null): number {
 
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+/** How long `createProxyClient` waits for your route to answer one request. */
+export const PROXY_CLIENT_TIMEOUT_MS = 60_000;
+
+/**
+ * How long the `realtime-avatar/*` route spends on one platform request, every retry and backoff
+ * included. Below the browser's wait, with room for the answer to travel back: a route still
+ * retrying when the page stops listening mints a session nobody hears of, and holds its seat
+ * until the join timeout.
+ */
+export const ROUTE_TIMEOUT_MS = PROXY_CLIENT_TIMEOUT_MS - 10_000;
+
+/**
+ * Whether another attempt fits before `deadline`. The attempt just made is the best estimate of
+ * the next one; a retry the budget cannot hold is abandoned mid-flight, and an abandoned mint can
+ * still start a call.
+ */
+export function retryFits(attemptStartedAt: number, waitMs: number, deadline: number): boolean {
+  const now = Date.now();
+  return now + waitMs + (now - attemptStartedAt) <= deadline;
+}
+
 /** A dropped connection or a timed-out attempt. A caller's own abort is NOT transient. */
 export function isTransient(cause: unknown): boolean {
   const name = (cause as { name?: string })?.name;

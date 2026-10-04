@@ -206,17 +206,18 @@ test("a platform failure is relayed with the platform's own retryable verdict, n
   }
 });
 
-test("a platform 401 or 403 is the route's own key, so both answer 500", async (t) => {
+test("a platform 401 or 403 is the route's own key: 500 internal_error, and never retryable", async (t) => {
   t.mock.method(console, "error", () => {});
+  // The platform's real refusal bodies (jsonError): no `retryable`, so there is no verdict to relay.
   for (const [status, code] of [[401, "unauthorized"], [403, "insufficient_scope"]] as const) {
-    const { restore } = failing(status, { code, retryable: false });
+    const { restore } = failing(status, { error: "Invalid API key", code, documentation: "https://realtimeavatar.ai/docs" });
     try {
       const response = await createProxyHandler({ apiKey: "k" })(connect({ avatarId: "ava_1" }));
       assert.equal(response.status, 500, `a platform ${status} about the route's key reached the page as ${response.status}`);
       const body = await response.json() as Record<string, unknown>;
       assert.equal(body.status, 500);
-      assert.equal(body.code, code);
-      assert.equal(body.retryable, false);
+      assert.equal(body.code, "internal_error", `a 500 carrying ${String(body.code)} is a code the vocabulary does not pair with 500`);
+      assert.equal(body.retryable, false, "a refused route key does not fix itself, so the page must not offer a retry");
       assert.equal(body.requestId, REQUEST_ID);
     } finally { restore(); }
   }

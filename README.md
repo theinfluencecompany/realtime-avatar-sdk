@@ -261,9 +261,15 @@ Showing an error there is the most common bad first impression.
 The `realtime-avatar/*` route adapters relay every platform failure as JSON with its
 `status`, `code`, `requestId` (also in `X-Request-ID`, with `cache-control: no-store`) and the
 platform's own `retryable` verdict, never its private diagnostics. A platform `401` or `403` is
-the route's own key, so it reaches the page as a `500`, not a sign-in or a plan wall. These
-failures are answered, not thrown, so a framework error handler no longer sees them; the route
-logs each once with `console.error` (operation, status, `code`, `requestId`, no secrets).
+the route's own key, so it reaches the page as a `500` `internal_error` with `retryable: false`,
+not a sign-in wall, a plan wall or a retry button. These failures are answered, not thrown, so a
+framework error handler no longer sees them; the route logs each once with `console.error`
+(operation, status, `code`, `requestId`, no secrets).
+
+The route spends at most `timeoutMs` (default 50s) on one platform request, retries and backoff
+included, and answers `504` `upstream_timeout` when that runs out. That budget sits inside
+`createProxyClient`'s default 60s wait so the page always hears the route's answer; raise both
+together, and keep the route's under your host's max function duration.
 
 In the browser, `createProxyClient` never retries a mint: the server client inside your route
 is the one retry owner, and a browser retry on top would multiply each click into up to nine

@@ -3,6 +3,7 @@ import {
   RETRYABLE_STATUS,
   backoffMs,
   isTransient,
+  retryFits,
   newIdempotencyKey,
   sleep,
 } from "./retry.ts";
@@ -48,8 +49,17 @@ export interface RealtimeAvatarOptions {
   apiKey: string;
   baseUrl?: string;
   fetch?: typeof fetch;
-  /** Per-request timeout. Default 60s; starting a call does real work upstream. */
+  /** Per-attempt timeout. Default 60s; starting a call does real work upstream. */
   timeoutMs?: number;
+  /**
+   * The whole request: every attempt and the backoff between them. Default unbounded, so the
+   * worst case is `timeoutMs` per attempt plus up to 20s of `Retry-After` between them.
+   *
+   * Set it when something else is waiting on this request with a deadline of its own (a
+   * browser, a serverless max duration). An attempt is cut off at the budget, and a retry is
+   * started only if it can take as long as the attempt before it and still finish inside it.
+   */
+  totalTimeoutMs?: number;
   /**
    * Extra attempts after a transient failure. Default 2, so 3 attempts in total.
    *
@@ -87,6 +97,7 @@ export class RealtimeAvatar {
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number;
+  readonly #totalTimeoutMs: number | undefined;
   readonly #maxRetries: number;
   readonly #userAgent: string;
 
@@ -106,6 +117,7 @@ export class RealtimeAvatar {
     // after construction (RN registerGlobals, instrumentation) is still honored.
     this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.#timeoutMs = options.timeoutMs ?? 60_000;
+    this.#totalTimeoutMs = options.totalTimeoutMs;
     this.#maxRetries = Math.max(0, options.maxRetries ?? 2);
     this.#userAgent = [`realtime-avatar-sdk/${SDK_VERSION}`, runtimeTag(), options.userAgent]
       .filter(Boolean).join(" ");
@@ -621,26 +633,31 @@ export class RealtimeAvatar {
     // again on the retry.
     if (MUTATING.has(method)) headers["idempotency-key"] = newIdempotencyKey();
 
+    const deadline = this.#totalTimeoutMs === undefined ? Infinity : Date.now() + this.#totalTimeoutMs;
     let lastError: unknown;
     for (let attempt = 0; ; attempt++) {
+      const startedAt = Date.now();
       try {
-        // A fresh timeout per attempt: the budget is per try, not shared across the retries.
-        const signal = AbortSignal.timeout(this.#timeoutMs);
+        // A fresh timeout per attempt, cut short by whatever is left of the total budget.
+        const signal = AbortSignal.timeout(Math.max(0, Math.min(this.#timeoutMs, deadline - startedAt)));
         const response = await this.#fetch(`${this.#baseUrl}${path}`, { method, headers, body, signal });
         if (attempt >= this.#maxRetries || !RETRYABLE_STATUS.has(response.status)) return response;
+        const wait = backoffMs(attempt, response.headers.get("retry-after"));
+        if (!retryFits(startedAt, wait, deadline)) return response;
         // Discard the body we are not going to read, or the socket can be held open.
         await response.body?.cancel().catch(() => {});
-        await sleep(backoffMs(attempt, response.headers.get("retry-after")));
+        await sleep(wait);
       } catch (cause) {
         lastError = cause;
+        const wait = backoffMs(attempt, null);
         // A retry is only safe if the request can be replayed. Streaming bodies cannot be.
-        if (attempt >= this.#maxRetries || !isTransient(cause) || isStream(body)) {
+        if (attempt >= this.#maxRetries || !isTransient(cause) || isStream(body) || !retryFits(startedAt, wait, deadline)) {
           throw new RealtimeAvatarError(
             `${method} ${path} failed after ${attempt + 1} attempt(s): ${(cause as Error).message}`,
             { cause: lastError },
           );
         }
-        await sleep(backoffMs(attempt, null));
+        await sleep(wait);
       }
     }
   }

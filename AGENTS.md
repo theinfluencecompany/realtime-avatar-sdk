@@ -269,15 +269,31 @@ The `realtime-avatar/*` route adapters (Next.js, Hono, Express, TanStack Start) 
 platform failure as JSON carrying its `status`, `code`, `requestId` (also in `X-Request-ID`,
 with `cache-control: no-store`) and the platform's own `retryable` verdict, never rewritten and
 omitted when the platform gave none. The platform's private diagnostics are not relayed. A
-platform `401` or `403` is about the route's own key, so both answer `500` rather than sending
-the page to sign in or to a plan wall. The server-side error is `RealtimeAvatarHttpError`,
-whose `.retryable` carries the same verdict.
+platform `401` or `403` is about the route's own key, so both answer `500` with `code: "internal_error"` and
+`retryable: false` rather than sending the page to sign in, to a plan wall, or to a retry button
+that cannot work: a refused key does not fix itself. The server-side error is
+`RealtimeAvatarHttpError`, whose `.retryable` carries the platform's verdict.
+
+**The route's deadline sits inside the browser's.** The route spends at most `timeoutMs`
+(default 50s) on one platform request, every retry and backoff included, and starts a retry
+only if it can take as long as the attempt before it and still finish inside that budget. When
+the platform has not answered by then, the route answers `504` `upstream_timeout`, the same
+classified timeout the browser raises at its own deadline. `createProxyClient` waits 60s by
+default, so the route's answer arrives first. If you raise one, raise the other, and keep the
+route's under your host's max function duration: a route still retrying after the page stopped
+listening mints a session nobody hears of, and holds its seat until the join timeout.
+
+```ts
+realtimeAvatarHono({ apiKey, session, timeoutMs: 25_000 });            // the route's budget
+createProxyClient({ proxyUrl: "/api/realtime-avatar", timeoutMs: 35_000 }); // the page's wait
+```
 
 **These failures are answered, not thrown, so your framework's error handler (Next.js
 `onRequestError`, Express error middleware, Hono `onError`) no longer sees them.** The route
 logs each one once with `console.error`: the operation, the platform status, `code` and
-`requestId`, and the status it answered with; never the key or the platform's message. Alert on
-that line, or wrap the handler, if you were alerting on the framework hook.
+`requestId`, and the status it answered with; never the key or the platform's message. A refused
+route key and a spent budget are logged the same way. Alert on that line, or wrap the handler,
+if you were alerting on the framework hook.
 
 ```ts
 const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", timeoutMs: 60_000 });
