@@ -184,12 +184,25 @@ test("a platform refusal reaches the browser once, with its status, code and req
   assert.ok(!JSON.stringify(error.body).includes("PRIVATE_DIAGNOSTIC"));
 });
 
-test("a platform 503 is retried by the server client only: three platform calls, one browser attempt", async () => {
-  const { error, browserAttempts, platformCalls } = await mintThroughHandler(() =>
-    platformFailure(503, { code: "admission_unavailable", retryable: true }));
-  assert.equal(platformCalls, 3, "the server client owns the transport retry");
-  assert.equal(browserAttempts, 1, "the browser multiplied a mint the route had already retried");
-  assert.equal(error.status, 503);
-  assert.equal(error.code, "admission_unavailable");
-  assert.equal(error.requestId, PLATFORM_REQUEST_ID);
+test("a platform 401 or 403 is the route's own key, so the page sees a 500, not a sign-in or plan wall", async () => {
+  for (const [status, code] of [[401, "unauthorized"], [403, "forbidden"]] as const) {
+    const { error, browserAttempts } = await mintThroughHandler(() => platformFailure(status, { code, retryable: false }));
+    assert.equal(browserAttempts, 1);
+    assert.equal(error.status, 500, `the route's own credential failure reached the page as ${error.status}`);
+    assert.equal(error.retryable, false);
+    assert.equal(error.requestId, PLATFORM_REQUEST_ID);
+  }
+});
+
+test("a platform 503 is retried by the server client only, and its verdict reaches the page unchanged", async () => {
+  for (const retryable of [true, false]) {
+    const { error, browserAttempts, platformCalls } = await mintThroughHandler(() =>
+      platformFailure(503, { code: "admission_unavailable", retryable }));
+    assert.equal(platformCalls, 3, "the server client owns the transport retry");
+    assert.equal(browserAttempts, 1, "the browser multiplied a mint the route had already retried");
+    assert.equal(error.status, 503);
+    assert.equal(error.code, "admission_unavailable");
+    assert.equal(error.retryable, retryable, `the platform said retryable: ${retryable}; the route rewrote it`);
+    assert.equal(error.requestId, PLATFORM_REQUEST_ID);
+  }
 });

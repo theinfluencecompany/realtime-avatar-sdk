@@ -258,10 +258,12 @@ Avoid duplicate parallel starts. The HTTP error retains safe counts at `.concurr
 the correlation ID at `.requestId`; the proxy and browser client preserve the refusal.
 Showing an error there is the most common bad first impression.
 
-The `realtime-avatar/*` route adapters relay every platform refusal as JSON with its status,
-`code` and `requestId` (also in `X-Request-ID`), never its private diagnostics. A platform
-`401` is the route's own key, so it reaches the page as a `500`, not a sign-in. Those answers
-carry `retryable: false`, because the server client behind the route has already retried.
+The `realtime-avatar/*` route adapters relay every platform failure as JSON with its
+`status`, `code`, `requestId` (also in `X-Request-ID`, with `cache-control: no-store`) and the
+platform's own `retryable` verdict, never its private diagnostics. A platform `401` or `403` is
+the route's own key, so it reaches the page as a `500`, not a sign-in or a plan wall. These
+failures are answered, not thrown, so a framework error handler no longer sees them; the route
+logs each once with `console.error` (operation, status, `code`, `requestId`, no secrets).
 
 In the browser, `createProxyClient` never retries a mint: the server client inside your route
 is the one retry owner, and a browser retry on top would multiply each click into up to nine

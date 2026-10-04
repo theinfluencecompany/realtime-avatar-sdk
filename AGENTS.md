@@ -265,9 +265,19 @@ route that had already forwarded the mint would risk a session the page never he
 is unchanged: re-asking on the queue's own hint is the grant hook's queue (`autoRetryBusy`), not
 a transport retry.
 
-The `realtime-avatar/*` route adapters answer every platform refusal as JSON carrying its
-status, `code` and `requestId` (also in `X-Request-ID`), and `retryable: false`. A platform
-`401` is the route's own key, so it answers `500` rather than sending the page to sign in.
+The `realtime-avatar/*` route adapters (Next.js, Hono, Express, TanStack Start) answer every
+platform failure as JSON carrying its `status`, `code`, `requestId` (also in `X-Request-ID`,
+with `cache-control: no-store`) and the platform's own `retryable` verdict, never rewritten and
+omitted when the platform gave none. The platform's private diagnostics are not relayed. A
+platform `401` or `403` is about the route's own key, so both answer `500` rather than sending
+the page to sign in or to a plan wall. The server-side error is `RealtimeAvatarHttpError`,
+whose `.retryable` carries the same verdict.
+
+**These failures are answered, not thrown, so your framework's error handler (Next.js
+`onRequestError`, Express error middleware, Hono `onError`) no longer sees them.** The route
+logs each one once with `console.error`: the operation, the platform status, `code` and
+`requestId`, and the status it answered with; never the key or the platform's message. Alert on
+that line, or wrap the handler, if you were alerting on the framework hook.
 
 ```ts
 const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", timeoutMs: 60_000 });

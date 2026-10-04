@@ -7,9 +7,14 @@
   idempotency key; a browser retry on top would multiply a click into up to nine mints. The
   429 queue path is unchanged.
 - The `realtime-avatar/*` route adapters relay every platform failure as JSON with its
-  status, `code` and `requestId` (also in `X-Request-ID`) and `retryable: false`, instead of
-  throwing it into a body-less framework 500. A platform `401` (the route's key) answers
-  `500`; a `402` now carries the request ID too.
+  `status`, `code`, `requestId` (also in `X-Request-ID`) and the platform's own `retryable`
+  verdict, instead of throwing it into a body-less framework 500. A platform `401` or `403`
+  (the route's own key) answers `500`. Because these are answered rather than thrown, a
+  framework error handler no longer sees them; the route logs each once with `console.error`
+  (operation, status, `code`, `requestId`, no secrets).
+- The Express adapter now forwards the handler's headers, so `X-Request-ID` and
+  `cache-control: no-store` reach the browser as they do through the Fetch adapters.
+- `RealtimeAvatarHttpError` gains `.retryable`: the platform's verdict, when its body gave one.
 - The proxy client's deadline is now a classified `RealtimeAvatarApiError`
   (`code: "upstream_timeout"`, `status: 504`, `retryable: true`, `response: null`) instead of
   a bare `TimeoutError`, so `normalizeRealtimeAvatarError` reads it back as the same failure.

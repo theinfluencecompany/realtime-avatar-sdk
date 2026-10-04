@@ -7,11 +7,42 @@ const json = (body: unknown, status = 200): Response =>
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
 
-/** The platform's verdict with its correlation ID, and never its private diagnostics. */
-function relayFailure(error: RealtimeAvatarHttpError, status: number, body: Record<string, unknown>): Response {
+/**
+ * A platform failure, ANSWERED rather than thrown: its status, `code`, request ID and the
+ * platform's own `retryable` verdict, never its private diagnostics. Thrown, it became a
+ * framework's body-less 500 that the page could not tell from a blip, and the request ID was
+ * lost. Because it is answered, a framework error handler never sees it, so it is logged here.
+ */
+function relayFailure(operation: ProxyOperation, error: RealtimeAvatarHttpError): Response {
+  // A platform 401 or 403 is about this route's own key, never the visitor's sign-in or plan.
+  const status = error.status === 401 || error.status === 403 ? 500 : error.status;
+  const verdict = error.retryable === undefined ? {} : { retryable: error.retryable };
+  const body = error.status === 429
+    ? throttled(error)
+    : { code: error.isBilling ? error.code ?? "insufficient_credits" : error.code, status, ...verdict };
+  console.error(
+    `realtime-avatar: platform answered ${operation} with ${error.status} ` +
+      `(code ${error.code ?? "none"}, requestId ${error.requestId ?? "none"}); relayed as ${status}`,
+  );
   const response = json({ ...body, ...(error.requestId ? { requestId: error.requestId } : {}) }, status);
   if (error.requestId) response.headers.set("X-Request-ID", error.requestId);
   return response;
+}
+
+function throttled(error: RealtimeAvatarHttpError): Record<string, unknown> {
+  const concurrency = error.code === "concurrency_limit_reached";
+  const counts = error.concurrency;
+  const message = concurrency
+    ? counts?.maxConcurrentSessions !== undefined && counts.activeSessions !== undefined &&
+      counts.connectingSessions !== undefined && counts.pendingSessions !== undefined
+      ? `Session limit reached (${counts.maxConcurrentSessions} allowed): ${counts.activeSessions} active, ${counts.connectingSessions} connecting, ${counts.pendingSessions} starting. End a session or wait for pending starts to clear, then retry.`
+      : "The concurrent session limit is reached. Active and starting sessions count. End a session or wait for pending starts to clear, then retry."
+    : "Too many requests. Wait before retrying.";
+  return {
+    error: message, code: concurrency ? "concurrency_limit_reached" : "rate_limited",
+    status: 429, retryable: error.retryable ?? true,
+    ...(concurrency ? counts : {}),
+  };
 }
 
 /** POST /connect is the only route that starts anything; the rest are reads. */
@@ -124,29 +155,7 @@ export function createProxyHandler(config: ProxyConfig): (request: Request) => P
       return json(call.raw);
     } catch (error) {
       if (!(error instanceof RealtimeAvatarHttpError)) throw error;
-      if (error.status === 429) {
-        const concurrency = error.code === "concurrency_limit_reached";
-        const counts = error.concurrency;
-        const message = concurrency
-          ? counts?.maxConcurrentSessions !== undefined && counts.activeSessions !== undefined &&
-            counts.connectingSessions !== undefined && counts.pendingSessions !== undefined
-            ? `Session limit reached (${counts.maxConcurrentSessions} allowed): ${counts.activeSessions} active, ${counts.connectingSessions} connecting, ${counts.pendingSessions} starting. End a session or wait for pending starts to clear, then retry.`
-            : "The concurrent session limit is reached. Active and starting sessions count. End a session or wait for pending starts to clear, then retry."
-          : "Too many requests. Wait before retrying.";
-        return relayFailure(error, 429, {
-          error: message, code: concurrency ? "concurrency_limit_reached" : "rate_limited",
-          status: 429, retryable: true,
-          ...(concurrency ? counts : {}),
-        });
-      }
-      if (error.isBilling) return relayFailure(error, 402, { code: error.code ?? "insufficient_credits" });
-      // Thrown, every other refusal became a framework's body-less 500, which the browser client
-      // cannot tell from a blip: it re-asked a revoked key or a missing avatar, and the request ID
-      // was lost. `retryable: false` because the server client has already spent its own retries
-      // on anything transient, under one idempotency key; the browser re-asking would multiply
-      // the mints. A platform 401 is this route's key, never the visitor's sign-in, so it is a 500.
-      const status = error.status === 401 ? 500 : error.status;
-      return relayFailure(error, status, { code: error.code, status, retryable: false });
+      return relayFailure(operation, error);
     }
   };
 }

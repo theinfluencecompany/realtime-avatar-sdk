@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createProxyHandler } from "../src/config.ts";
+import { realtimeAvatarExpress } from "../src/express.ts";
+import { realtimeAvatarHono } from "../src/hono.ts";
+import { createRealtimeAvatarRoute } from "../src/nextjs.ts";
+import { realtimeAvatarServerRoute } from "../../sdk-server/src/tanstack-start.ts";
 
 const GRANT = {
   status: "ready", session_id: "s1", room_name: "r1", livekit_url: "wss://x",
@@ -161,3 +165,119 @@ test("client tools are grantable by the policy, and only by the policy", async (
   off.restore();
   assert.equal("capabilities" in (off.seen.body ?? {}), false);
 });
+
+const REQUEST_ID = "123e4567-e89b-42d3-a456-426614174000";
+
+/** A platform answering every attempt with one failure, as the server client sees it. */
+function failing(status: number, body: Record<string, unknown>) {
+  return upstreamWith(() => new Response(JSON.stringify({ status, requestId: REQUEST_ID, ...body }), {
+    status,
+    headers: { "content-type": "application/json", "retry-after": "0", "x-request-id": REQUEST_ID },
+  }));
+}
+
+function upstreamWith(answer: () => Response) {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => answer()) as typeof fetch;
+  return { restore: () => { globalThis.fetch = original; } };
+}
+
+test("a platform failure is relayed with the platform's own retryable verdict, never a rewritten one", async (t) => {
+  t.mock.method(console, "error", () => {});
+  for (const verdict of [true, false, undefined]) {
+    const { restore } = failing(503, {
+      error: "PRIVATE_DIAGNOSTIC", code: "admission_unavailable", detail: "private stack",
+      ...(verdict === undefined ? {} : { retryable: verdict }),
+    });
+    try {
+      const response = await createProxyHandler({ apiKey: "k" })(connect({ avatarId: "ava_1" }));
+      assert.equal(response.status, 503);
+      assert.equal(response.headers.get("X-Request-ID"), REQUEST_ID);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      const text = await response.clone().text();
+      assert.ok(!text.includes("PRIVATE_DIAGNOSTIC") && !text.includes("private stack"), text);
+      const body = await response.json() as Record<string, unknown>;
+      assert.equal(body.code, "admission_unavailable");
+      assert.equal(body.status, 503);
+      assert.equal(body.requestId, REQUEST_ID);
+      assert.equal(body.retryable, verdict, `the platform said retryable: ${verdict}, the route said ${body.retryable}`);
+      assert.equal("retryable" in body, verdict !== undefined, "a verdict the platform never gave was invented");
+    } finally { restore(); }
+  }
+});
+
+test("a platform 401 or 403 is the route's own key, so both answer 500", async (t) => {
+  t.mock.method(console, "error", () => {});
+  for (const [status, code] of [[401, "unauthorized"], [403, "insufficient_scope"]] as const) {
+    const { restore } = failing(status, { code, retryable: false });
+    try {
+      const response = await createProxyHandler({ apiKey: "k" })(connect({ avatarId: "ava_1" }));
+      assert.equal(response.status, 500, `a platform ${status} about the route's key reached the page as ${response.status}`);
+      const body = await response.json() as Record<string, unknown>;
+      assert.equal(body.status, 500);
+      assert.equal(body.code, code);
+      assert.equal(body.retryable, false);
+      assert.equal(body.requestId, REQUEST_ID);
+    } finally { restore(); }
+  }
+});
+
+test("every relayed platform failure is logged once on the server, without secrets", async (t) => {
+  const logged = t.mock.method(console, "error", () => {});
+  const failures: Array<[number, Record<string, unknown>]> = [
+    [503, { code: "admission_unavailable", retryable: true }],
+    [404, { code: "not_found" }],
+    [402, { code: "insufficient_credits" }],
+    [429, { code: "concurrency_limit_reached" }],
+    [401, { code: "unauthorized" }],
+  ];
+  for (const [status, body] of failures) {
+    logged.mock.resetCalls();
+    const { restore } = failing(status, { ...body, error: "PRIVATE_DIAGNOSTIC" });
+    try {
+      await createProxyHandler({ apiKey: "tic_live_SECRET" })(connect({ avatarId: "ava_1" }));
+    } finally { restore(); }
+    assert.equal(logged.mock.callCount(), 1, `a platform ${status} was logged ${logged.mock.callCount()} times`);
+    const line = logged.mock.calls[0].arguments.map((part) => typeof part === "string" ? part : JSON.stringify(part)).join(" ");
+    assert.ok(line.includes(String(status)), line);
+    assert.ok(line.includes(String(body.code)), line);
+    assert.ok(line.includes(REQUEST_ID), line);
+    assert.ok(!line.includes("tic_live_SECRET") && !line.includes("PRIVATE_DIAGNOSTIC"), line);
+  }
+});
+
+/** Every adapter must deliver the relay's headers, not just its body. */
+const adapters: Array<[string, (request: Request) => Promise<Response>]> = [
+  ["nextjs", (request) => createRealtimeAvatarRoute({ apiKey: "k" }).POST(request)],
+  ["hono", (request) => realtimeAvatarHono({ apiKey: "k" })({ req: { raw: request } })],
+  ["tanstack-start", (request) => realtimeAvatarServerRoute({ apiKey: "k" }).POST({ request })],
+  ["express", async (request) => {
+    const sent = { status: 0, headers: new Headers(), body: "" };
+    const res = {
+      status(code: number) { sent.status = code; return res; },
+      set(field: string, value: string) { sent.headers.set(field, value); return res; },
+      send(body: string) { sent.body = body; },
+    };
+    const headers: Record<string, string> = {};
+    request.headers.forEach((value, key) => { headers[key] = value; });
+    await realtimeAvatarExpress({ apiKey: "k" })({
+      method: request.method, originalUrl: new URL(request.url).pathname, headers, body: await request.json(),
+    }, res);
+    return new Response(sent.body, { status: sent.status, headers: sent.headers });
+  }],
+];
+
+for (const [name, serve] of adapters) {
+  test(`${name}: a relayed failure keeps X-Request-ID and cache-control: no-store`, async (t) => {
+    t.mock.method(console, "error", () => {});
+    const { restore } = failing(404, { code: "not_found" });
+    try {
+      const response = await serve(connect({ avatarId: "ava_1" }));
+      assert.equal(response.status, 404);
+      assert.equal(response.headers.get("x-request-id"), REQUEST_ID, `${name} dropped X-Request-ID`);
+      assert.equal(response.headers.get("cache-control"), "no-store", `${name} dropped cache-control`);
+      assert.equal(response.headers.get("content-type"), "application/json");
+      assert.equal((await response.json() as Record<string, unknown>).requestId, REQUEST_ID);
+    } finally { restore(); }
+  });
+}

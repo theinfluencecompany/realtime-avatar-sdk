@@ -47,6 +47,8 @@ export class RealtimeAvatarHttpError extends RealtimeAvatarError {
   readonly code: string | undefined;
   readonly body: string;
   readonly requestId?: string;
+  /** The platform's own verdict on retrying as-is, when its body gave one. */
+  readonly retryable?: boolean;
   readonly concurrency?: Partial<Record<"maxConcurrentSessions" | "liveSessions" | "activeSessions" | "connectingSessions" | "pendingSessions", number>>;
 
   constructor(status: number, code: string | undefined, body: string, requestId?: string) {
@@ -62,6 +64,7 @@ export class RealtimeAvatarHttpError extends RealtimeAvatarError {
       if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
     } catch { /* Non-JSON error bodies retain their bounded text. */ }
     this.requestId = isRequestId(parsed.requestId) ? parsed.requestId : isRequestId(requestId) ? requestId : undefined;
+    if (typeof parsed.retryable === "boolean") this.retryable = parsed.retryable;
     if (status === 429 && code === "concurrency_limit_reached") {
       this.concurrency = {};
       for (const key of ["maxConcurrentSessions", "liveSessions", "activeSessions", "connectingSessions", "pendingSessions"] as const) {
