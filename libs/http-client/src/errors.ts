@@ -6,6 +6,11 @@ export class RealtimeAvatarError extends Error {
   }
 }
 
+/** The platform's correlation ID, read from an error body's `requestId` or the `X-Request-ID` header. */
+export function isRequestId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
+}
+
 /**
  * A non-2xx from the API.
  *
@@ -42,6 +47,8 @@ export class RealtimeAvatarHttpError extends RealtimeAvatarError {
   readonly code: string | undefined;
   readonly body: string;
   readonly requestId?: string;
+  /** The platform's own verdict on retrying as-is, when its body gave one. */
+  readonly retryable?: boolean;
   readonly concurrency?: Partial<Record<"maxConcurrentSessions" | "liveSessions" | "activeSessions" | "connectingSessions" | "pendingSessions", number>>;
 
   constructor(status: number, code: string | undefined, body: string, requestId?: string) {
@@ -56,9 +63,8 @@ export class RealtimeAvatarHttpError extends RealtimeAvatarError {
       const value: unknown = JSON.parse(body);
       if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
     } catch { /* Non-JSON error bodies retain their bounded text. */ }
-    const validId = (value: unknown): value is string =>
-      typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
-    this.requestId = validId(parsed.requestId) ? parsed.requestId : validId(requestId) ? requestId : undefined;
+    this.requestId = isRequestId(parsed.requestId) ? parsed.requestId : isRequestId(requestId) ? requestId : undefined;
+    if (typeof parsed.retryable === "boolean") this.retryable = parsed.retryable;
     if (status === 429 && code === "concurrency_limit_reached") {
       this.concurrency = {};
       for (const key of ["maxConcurrentSessions", "liveSessions", "activeSessions", "connectingSessions", "pendingSessions"] as const) {

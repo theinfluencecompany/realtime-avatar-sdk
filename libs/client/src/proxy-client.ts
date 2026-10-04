@@ -8,6 +8,7 @@ import type { LiveKitSessionReleaseReason } from "./wire";
 // this file, and with it node's type-stripping runner can load the module directly, so the
 // refusal contract below is pinned by a test that CALLS it rather than one that greps it.
 import { RealtimeAvatarApiError } from "./errors.ts";
+import { PROXY_CLIENT_TIMEOUT_MS } from "../../http-client/src/retry.ts";
 
 /**
  * The client `AvatarCall` and the hooks ask for, talking to YOUR proxy route.
@@ -36,7 +37,11 @@ export interface ProxyClientOptions {
   /** Swap the transport — a test double, or a fetch that carries your session cookie. */
   fetch?: typeof globalThis.fetch;
   /**
-   * Per-request deadline, default 60s, `0` to disable.
+   * Per-request deadline, default 60s, `0` to disable. Keep it above your route's `timeoutMs`
+   * (default 50s), so the route's answer arrives before the page stops listening. Running out throws a
+   * `RealtimeAvatarApiError` with `code: "upstream_timeout"` (status 504, `response: null`).
+   * Do not re-send a timed-out `connect` automatically: your route may still be minting it, and
+   * this client never retries a mint — the server client inside your route owns that retry.
    *
    * Not optional in spirit: a proxy that accepts the connection and then never answers leaves
    * a promise that never settles, which presents as a page stuck on "connecting" with no error
@@ -45,31 +50,31 @@ export interface ProxyClientOptions {
   timeoutMs?: number;
 }
 
-const DEFAULT_TIMEOUT_MS = 60_000;
-
 /** Trailing slashes make `${base}/connect` into `…//connect`, which some routers 404. */
 const normalize = (url: string): string => url.replace(/\/+$/, "");
 
 export function createProxyClient(options: ProxyClientOptions): AvatarSessionClient {
   const base = normalize(options.proxyUrl);
   const doFetch = options.fetch ?? globalThis.fetch?.bind(globalThis);
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-
-  const deadline = (caller?: AbortSignal): AbortSignal | undefined => {
-    if (!timeoutMs) return caller;
-    const timer = AbortSignal.timeout(timeoutMs);
-    // Both matter: the caller's signal is the unmount, the timer is the proxy that never answers.
-    return caller ? AbortSignal.any([caller, timer]) : timer;
-  };
+  const timeoutMs = options.timeoutMs ?? PROXY_CLIENT_TIMEOUT_MS;
 
   const post = async (path: string, body: unknown, request?: RealtimeAvatarRequestOptions): Promise<Response> => {
     if (!doFetch) throw new Error("realtime-avatar: no fetch available — pass one via `fetch`.");
-    return doFetch(`${base}${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...(request?.headers ?? {}) },
-      body: JSON.stringify(body),
-      signal: deadline(request?.signal),
-    });
+    // Both matter: the caller's signal is the unmount, the timer is the proxy that never answers.
+    const caller = request?.signal;
+    const timer = timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined;
+    try {
+      return await doFetch(`${base}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(request?.headers ?? {}) },
+        body: JSON.stringify(body),
+        signal: timer && caller ? AbortSignal.any([caller, timer]) : timer ?? caller,
+      });
+    } catch (cause) {
+      // The deadline is a failure the page has to route; the caller's abort is an unmount and stays one.
+      if (timer?.aborted && !caller?.aborted) throw RealtimeAvatarApiError.timeout(timeoutMs);
+      throw cause;
+    }
   };
 
   /**

@@ -257,6 +257,61 @@ which is why every mutating request carries one and reuses it across attempts.
 
 The numbers move run to run — the failure injection is random — but the ordering does not.
 
+**The browser client never retries a mint.** `createProxyClient` sends `/connect` once and
+throws what your route answered. The one retry owner is the server client inside the route: it
+has already retried a transient platform failure under one idempotency key. A second retry loop
+in the browser would multiply each click into up to nine platform mints, and every re-ask of a
+route that had already forwarded the mint would risk a session the page never hears of. The `429` queue
+is unchanged: re-asking on the queue's own hint is the grant hook's queue (`autoRetryBusy`), not
+a transport retry.
+
+The `realtime-avatar/*` route adapters (Next.js, Hono, Express, TanStack Start) answer every
+platform failure as JSON carrying its `status`, `code`, `requestId` (also in `X-Request-ID`,
+with `cache-control: no-store`) and the platform's own `retryable` verdict, never rewritten and
+omitted when the platform gave none. The platform's private diagnostics are not relayed. A
+platform `401` or `403` is about the route's own key, so both answer `500` with `code: "internal_error"` and
+`retryable: false` rather than sending the page to sign in, to a plan wall, or to a retry button
+that cannot work: a refused key does not fix itself. The server-side error is
+`RealtimeAvatarHttpError`, whose `.retryable` carries the platform's verdict.
+
+**The route's deadline sits inside the browser's.** The route spends at most `timeoutMs`
+(default 50s) on one platform request, every retry and backoff included, and starts a retry
+only if it can take as long as the attempt before it and still finish inside that budget. When
+the platform has not answered by then, the route answers `504` `upstream_timeout`, the same
+classified timeout the browser raises at its own deadline. `createProxyClient` waits 60s by
+default, so the route's answer arrives first. If you raise one, raise the other, and keep the
+route's under your host's max function duration: a route still retrying after the page stopped
+listening mints a session nobody hears of, and holds its seat until the join timeout.
+
+```ts
+realtimeAvatarHono({ apiKey, session, timeoutMs: 25_000 });            // the route's budget
+createProxyClient({ proxyUrl: "/api/realtime-avatar", timeoutMs: 35_000 }); // the page's wait
+```
+
+**These failures are answered, not thrown, so your framework's error handler (Next.js
+`onRequestError`, Express error middleware, Hono `onError`) no longer sees them.** The route
+logs each one once with `console.error`: the operation, the platform status, `code` and
+`requestId`, and the status it answered with; never the key or the platform's message. A refused
+route key and a spent budget are logged the same way. Alert on that line, or wrap the handler,
+if you were alerting on the framework hook.
+
+```ts
+const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", timeoutMs: 60_000 });
+```
+
+The thrown error is a `RealtimeAvatarApiError` with `.status`, `.code`, `.retryable` and the
+correlation ID at `.requestId` (the body's `requestId`, else the `X-Request-ID` header). Show
+the message, keep the request ID for support, and offer a retry button when `.retryable` is
+true; do not loop on it.
+
+**A timed-out mint is not a failed mint.** A deadline that runs out throws the same class with
+`code: "upstream_timeout"`, `status: 504` (the status that code accompanies, so
+`normalizeRealtimeAvatarError` reads it back unchanged) and `response: null`. Your route may
+still be minting, so **never re-send a timed-out `connect` automatically**: if a session id
+reached you, release it first; otherwise wait for the server-side join timeout
+to reclaim the seat before starting another, or leave the retry to the user's button. A
+caller's abort is still an `AbortError`, because an unmount is not a failure.
+
 ### 8. `creditBalance` is a balance, not a bill
 
 To reconcile an invoice — or to re-bill your own users — you need per-session detail, and
@@ -637,7 +692,7 @@ try {
 | 409 | `expectedRevision` is behind — someone else declared the clip library first | Re-read `listClips`, re-decide, re-declare |
 | 422 | Schema rejection | An unknown or mis-cased field — the wire is strict |
 | 429 | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Release/wait for occupied slots or back off. Not auto-retried |
-| 503 | Transient upstream | Retried for you, up to `maxRetries` |
+| 503 | Transient upstream | Retried for you, up to `maxRetries`, by the server client only. `createProxyClient` never retries a mint |
 
 ### The vocabulary is derived, never restated
 

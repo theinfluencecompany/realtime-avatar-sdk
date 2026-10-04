@@ -249,7 +249,7 @@ the `usage:read` scope.
 | `403` | Key lacks the scope | Mint one with it. Don't widen to `*`. |
 | `422` | Schema rejection | Unknown or mis-cased field — the wire is strict |
 | `429` | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Not auto-retried. |
-| `503` | Transient upstream | Retried for you, up to `maxRetries` |
+| `503` | Transient upstream | Retried for you, up to `maxRetries`, by the server client only. `createProxyClient` never retries a mint |
 
 Only a capacity-queue response returns `{ queued: true, position, retryAfterMs }`.
 `concurrency_limit_reached` throws: active, connecting and starting sessions all count toward
@@ -257,6 +257,27 @@ the workspace limit. End a session or wait for pending starts to clear, then ret
 Avoid duplicate parallel starts. The HTTP error retains safe counts at `.concurrency` and
 the correlation ID at `.requestId`; the proxy and browser client preserve the refusal.
 Showing an error there is the most common bad first impression.
+
+The `realtime-avatar/*` route adapters relay every platform failure as JSON with its
+`status`, `code`, `requestId` (also in `X-Request-ID`, with `cache-control: no-store`) and the
+platform's own `retryable` verdict, never its private diagnostics. A platform `401` or `403` is
+the route's own key, so it reaches the page as a `500` `internal_error` with `retryable: false`,
+not a sign-in wall, a plan wall or a retry button. These failures are answered, not thrown, so a
+framework error handler no longer sees them; the route logs each once with `console.error`
+(operation, status, `code`, `requestId`, no secrets).
+
+The route spends at most `timeoutMs` (default 50s) on one platform request, retries and backoff
+included, and answers `504` `upstream_timeout` when that runs out. That budget sits inside
+`createProxyClient`'s default 60s wait so the page always hears the route's answer; raise both
+together, and keep the route's under your host's max function duration.
+
+In the browser, `createProxyClient` never retries a mint: the server client inside your route
+is the one retry owner, and a browser retry on top would multiply each click into up to nine
+mints. A refusal throws a `RealtimeAvatarApiError` carrying `.status`, `.code`, `.retryable`
+and `.requestId`; offer a retry button rather than looping. A deadline that runs out throws
+the same class with `code: "upstream_timeout"`, `status: 504` and `response: null`. The route
+may still be minting, so do not re-send it automatically: release the session if an id reached
+you, otherwise wait for the server-side join timeout, or leave the retry to the user.
 
 ---
 

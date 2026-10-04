@@ -39,6 +39,10 @@ export function realtimeAvatarExpress(
       body: req.method === "GET" ? undefined : JSON.stringify(req.body ?? {}),
     });
     const response = await handler(request);
-    res.status(response.status).set("content-type", "application/json").send(await response.text());
+    // Every header the handler set, as the Fetch adapters deliver them: X-Request-ID is the
+    // only correlation a relayed failure carries, and cache-control keeps a grant out of caches.
+    res.status(response.status).set("content-type", "application/json");
+    response.headers.forEach((value, field) => res.set(field, value));
+    res.send(await response.text());
   };
 }
