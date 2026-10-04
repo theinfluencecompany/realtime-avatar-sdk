@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.25.0
 
 - `createProxyClient` retries a retryable mint failure instead of ending the call attempt:
   a 5xx (or 408) from your route's `/connect` whose error is `retryable` is re-asked up to
