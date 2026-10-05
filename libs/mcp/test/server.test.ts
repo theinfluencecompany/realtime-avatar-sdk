@@ -356,3 +356,16 @@ test("MCP_VERSION tracks package.json, so the server identity cannot go stale", 
       new URL("../package.json", import.meta.url), "utf8"));
   assert.equal(MCP_VERSION, pkg.version);
 });
+
+test("server.json agrees with package.json, so the registry entry cannot drift", async () => {
+  const read = async (name: string) => JSON.parse(
+    await (await import("node:fs/promises")).readFile(new URL(`../${name}`, import.meta.url), "utf8"));
+  const pkg = await read("package.json");
+  const entry = await read("server.json");
+  // The registry verifies ownership by reading `mcpName` from the published tarball.
+  assert.equal(entry.name, pkg.mcpName);
+  assert.equal(entry.version, pkg.version);
+  assert.equal(entry.packages.length, 1);
+  assert.equal(entry.packages[0].identifier, pkg.name);
+  assert.equal(entry.packages[0].version, pkg.version);
+});

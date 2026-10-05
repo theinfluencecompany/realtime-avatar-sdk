@@ -75,6 +75,18 @@ for (const dir of LIBS) {
   console.log(`· ${pkg.name}  ${was} → ${version}${note}`);
 }
 
+// The MCP Registry entry names the npm version it points at, twice. release.yml publishes it
+// after npm, and the registry rejects a version whose package is not on npm yet, so a stale
+// server.json would re-announce the previous release instead of this one.
+{
+  const path = "libs/mcp/server.json";
+  const entry = JSON.parse(await readFile(path, "utf8"));
+  entry.version = version;
+  for (const pkg of entry.packages) pkg.version = version;
+  await writeFile(path, `${JSON.stringify(entry, null, 2)}\n`);
+  console.log(`· ${path}  -> ${version}`);
+}
+
 console.log(`\nNext:\n  npm install --package-lock-only\n  npm run check\n  git commit -am "release: ${version}"\n  git tag -a v${version} -m "${version}" && git push origin main v${version}`);
 
 for (const [file, name] of VERSION_CONSTANTS) {
