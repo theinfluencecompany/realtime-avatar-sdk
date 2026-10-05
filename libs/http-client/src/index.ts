@@ -32,6 +32,7 @@ export type {
   CreditBalance,
   EndCallOptions,
   EndCallReason,
+  ExternalLlm,
   ListSessionsOptions,
   StartCallResult,
   TranscriptPayload,

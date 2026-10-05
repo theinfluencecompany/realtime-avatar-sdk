@@ -483,8 +483,11 @@ export interface components {
             }[];
             initial_say?: string;
             llm?: {
-                /** @enum {string} */
-                backend?: "local" | "gemini" | "openai";
+                /**
+                 * @description Which model answers the turns. `external` is enabled per workspace for server-to-server callers and needs endpoint configuration that is not part of this document; a workspace without it is refused with 403.
+                 * @enum {string}
+                 */
+                backend?: "local" | "gemini" | "openai" | "external";
                 model?: string | null;
             } | null;
             max_session_seconds?: number;

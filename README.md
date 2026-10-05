@@ -195,7 +195,7 @@ One class, one types file. The full surface is
 
 ```ts
 // calls
-rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, transcription?, video?, recording?, connectionHistory?, transcript?, metadata? })
+rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, transcription?, video?, recording?, connectionHistory?, transcript?, metadata?, llm? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 rta.leaveQueue(queueTicketId, { reason? }) // give up a queued call's place in line; idempotent, never throws
 

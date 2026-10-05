@@ -538,6 +538,34 @@ acknowledged as a no-op, and holds the place at the front of the queue until its
 answer `422` to a body that names neither handle or is not a JSON object (a body naming both
 releases both).
 
+### 14. Your own brain is a server decision, a credential, and a fallback
+
+`llm` routes the call's REPLIES to an OpenAI-compatible endpoint your server hosts, while the
+platform keeps listening, turn-taking, interruption, her voice and her face:
+
+```ts
+const call = await rta.startCall({
+  avatarId,
+  instructions,
+  llm: { backend: "external", baseUrl: "https://api.you.example/brain/v1", token: perCallToken },
+});
+```
+
+- **The token is a credential.** The worker sends it as `Authorization: Bearer …` on every turn
+  of the call. Mint one per call, short-lived, scoped to answering that call — never your
+  account key. It is sent as `external_llm`, which only the server entries of this package can
+  emit; the browser and native entries do not name it.
+- **It is enabled per workspace.** Without it the mint is `403 external_llm_not_enabled`; with it,
+  an endpoint whose host is not allowlisted for your workspace is `403
+  external_llm_host_not_allowed`. Both are refusals, not retries.
+- **A failure before the first token is not silence.** An error, an empty answer, or no first
+  token within about 3.5 s speaks that reply from the platform's model instead. Your endpoint
+  should answer its status before any slow work, so a refusal is fast. After the first token the
+  reply is yours: a later failure ends it.
+- **Do not combine it with `clientTools`.** Tool calls need the platform's own model, so a
+  session granted client tools takes that model and does not reach your endpoint. Run your tools
+  inside your endpoint instead.
+
 ---
 
 ## Deciding how she looks

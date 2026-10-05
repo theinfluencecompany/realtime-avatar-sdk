@@ -11,6 +11,7 @@ import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
 import { clipLibraryResponseSchema, clipLibraryUpdateSchema } from "./generated/clip-library-schema.ts";
 import { recordingModeSchema, recordingArtifactSchema, listRecordingsQuerySchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
 import type { ConnectionHistoryResponse } from "./generated/connection-history.ts";
+import type { components } from "./generated/openapi.ts";
 import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 import { transcriptionToWire } from "./generated/transcription.ts";
 import type {
@@ -158,6 +159,11 @@ export class RealtimeAvatar {
     // The grant is the gate: the worker only exposes tool registration for a session whose
     // mint carried this capability.
     if (options.clientTools) body.capabilities = ["client_tools"];
+    if (options.llm !== undefined) {
+      const { backend, model, baseUrl, token } = options.llm;
+      body.llm = (model === undefined ? { backend } : { backend, model }) satisfies NonNullable<components["schemas"]["LiveKitSessionRequest"]["llm"]>;
+      body.external_llm = { base_url: baseUrl, token };
+    }
     if (options.transcript !== undefined) {
       body.transcript_webhook = { url: options.transcript.url, secret: options.transcript.secret };
     }
