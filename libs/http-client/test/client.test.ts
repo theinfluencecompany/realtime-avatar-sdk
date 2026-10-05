@@ -375,6 +375,38 @@ test("clientTools is sent as a capability, and only when asked for", async () =>
   assert.ok(!("capabilities" in (off.seen.body ?? {})));
 });
 
+test("llm routes the call's turns to your endpoint, and only when asked for", async () => {
+  const llm = {
+    backend: "external", baseUrl: "https://brain.example.test/v1", token: "per-call-token-0123456789",
+    model: "claude-haiku-4-5",
+  } as const;
+  const on = stub({ body: GRANT });
+  await new RealtimeAvatar({ apiKey: "k", fetch: on.fetchImpl }).startCall({ avatarId: "ava_1", llm });
+  // The routing half rides the published `llm`; the endpoint and its token ride the
+  // server-only `external_llm`, which the platform keeps out of its public document.
+  assert.deepEqual(on.seen.body?.llm, { backend: "external", model: "claude-haiku-4-5" });
+  assert.deepEqual(on.seen.body?.external_llm, { base_url: llm.baseUrl, token: llm.token });
+
+  // No model: the endpoint chooses, and no `model: null` is invented for it.
+  const bare = stub({ body: GRANT });
+  await new RealtimeAvatar({ apiKey: "k", fetch: bare.fetchImpl })
+    .startCall({ avatarId: "ava_1", llm: { backend: "external", baseUrl: llm.baseUrl, token: llm.token } });
+  assert.deepEqual(bare.seen.body?.llm, { backend: "external" });
+
+  // Absent by default: the platform's own model answers.
+  const off = stub({ body: GRANT });
+  await new RealtimeAvatar({ apiKey: "k", fetch: off.fetchImpl }).startCall({ avatarId: "ava_1" });
+  assert.ok(!("llm" in (off.seen.body ?? {})));
+  assert.ok(!("external_llm" in (off.seen.body ?? {})));
+});
+
+test("the external backend is the contract's own value, not a copy of it", () => {
+  type Wire = components["schemas"];
+  type WireBackend = NonNullable<NonNullable<Wire["LiveKitSessionRequest"]["llm"]>["backend"]>;
+  const derived: Equal<NonNullable<import("../src/types.ts").CallPolicy["llm"]>["backend"], Extract<WireBackend, "external">> = true;
+  assert.equal(derived, true);
+});
+
 test("mode picks the renderer and NEVER pins a capacity pool", async () => {
   // The default is video. This SDK used to rewrite mode to "voice" and pin a named pool
   // here, on the belief that full duplex was a separate audio-only path reachable only that

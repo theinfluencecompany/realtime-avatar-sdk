@@ -141,6 +141,36 @@ export type VideoPolicy =
     }
   | { mode: "generative" };
 
+/** The session `llm` on the wire, from the published contract. */
+type WireLlm = NonNullable<Wire["LiveKitSessionRequest"]["llm"]>;
+
+/**
+ * DERIVATION: `backend` and `model` index the contract's `llm`. `baseUrl` and `token` are sent as
+ * `external_llm`, which the platform marks server-authoritative and therefore REDACTS from the
+ * published document, so they cannot be derived from it; they are written here, like
+ * `clientTools` → `capabilities`.
+ *
+ * Answer this call's turns from an OpenAI-compatible endpoint YOUR SERVER hosts. The platform
+ * keeps listening, turn-taking, interruption, her voice and her face; each reply is streamed
+ * from `POST {baseUrl}/chat/completions` instead of the platform's model.
+ *
+ * Enabled per workspace: a workspace without it, or an endpoint host it has not allowlisted, is
+ * refused with 403. A failure before the first token of a reply (an error, a stall, an empty
+ * answer) speaks that reply from the platform's model instead, so the call never goes silent.
+ */
+export interface ExternalLlm {
+  backend: Extract<NonNullable<WireLlm["backend"]>, "external">;
+  /** https only. The worker POSTs `{baseUrl}/chat/completions` with `stream: true`. */
+  baseUrl: string;
+  /**
+   * Sent as `Authorization: Bearer <token>` on every turn of this call. Mint it per call and
+   * short-lived: it outlives nothing but the call. 16–4096 characters.
+   */
+  token: string;
+  /** Sent as `model`. Omit it to let your endpoint choose. */
+  model?: NonNullable<WireLlm["model"]>;
+}
+
 /** What YOUR SERVER decides about a call. Never accept any of this from a browser. */
 export interface CallPolicy {
   /** Ask the platform to grant the SDK's optional LiveKit connection history collector. */
@@ -177,6 +207,12 @@ export interface CallPolicy {
    * connects. Putting tools on the mint returns 422 (the request schema is strict).
    */
   clientTools?: boolean;
+  /**
+   * Who answers her turns: an endpoint your server hosts. Omit it and the platform's model does.
+   * It carries a credential, so it is a server decision like everything here, and the browser
+   * entries of this package cannot send it.
+   */
+  llm?: ExternalLlm;
 
   /** Receive the two-sided transcript, signed, after the call ends. */
   transcript?: { url: string; secret: string };

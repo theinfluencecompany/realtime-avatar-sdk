@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.27.0
+
+A minor release: a call can take its replies from an endpoint your server hosts, and the live
+badge stops printing a debug readout.
+
+### Added
+
+- **`CallPolicy.llm`: answer a call's turns from your own endpoint.**
+  `startCall({ …, llm: { backend: "external", baseUrl, token, model? } })` sends
+  `llm: { backend: "external", model? }` and the server-only `external_llm: { base_url, token }`.
+  The platform keeps listening, turn-taking, interruption, voice and video; each reply streams
+  from `POST {baseUrl}/chat/completions` with `Authorization: Bearer <token>`.
+  - Enabled per workspace. Otherwise it answers `403 external_llm_not_enabled`, or
+    `403 external_llm_host_not_allowed` for a host the workspace has not allowlisted.
+  - A failure before a reply's first token speaks that reply from the platform's model.
+  - `ExternalLlm` is exported. Its `backend` and `model` are derived from the published contract.
+  - `external_llm` is emitted only by the key-holding entries; the browser and native entries do
+    not name it.
+  - See AGENTS.md rule 14.
+- **`AvatarCall` accepts `showLiveBadge`.** It is forwarded to the surface, so an app that shows
+  its own call status can turn the built-in badge off. The default is unchanged (on).
+- **`AvatarVideoSurface` (web and native) accepts `debug`.** It defaults to false. Only under
+  `debug` does the live badge show the layer's resolution.
+
+### Changed
+
+- **The live badge reads "live".** 0.26.0 printed the live layer's resolution on every call
+  ("live · 576×1010"), a diagnostic that reached production UIs. Pass `debug` to the surface to
+  see it again.
+
 ## 0.26.0
 
 A minor release with breaking changes: hanging up is terminal, the call reports its microphone
