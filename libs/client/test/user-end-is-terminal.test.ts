@@ -230,3 +230,75 @@ const SESSION = { avatarId: "ava_test" };
 function phaseOf(session: RealtimeSessionApi | undefined): string | undefined {
   return session?.phase.kind;
 }
+
+test("a double-tapped redial after a hang-up mints once, like every other reconnect", async () => {
+  const { client: base, ledger } = fakeClient(() => "ready");
+  const pending: Array<() => void> = [];
+  const client: AvatarSessionClient = {
+    ...base,
+    createLiveKitSessionOrBusy: (input, options) =>
+      new Promise((resolve) => { pending.push(() => resolve(base.createLiveKitSessionOrBusy(input, options))); }),
+  };
+  let session: RealtimeSessionApi | undefined;
+  function Call(): null {
+    session = sdk.useRealtimeSession({ client, session: SESSION });
+    return null;
+  }
+  let renderer: ReturnType<typeof create> | undefined;
+  await act(async () => { renderer = create(createElement(Call)); });
+  await settle(20);
+  await act(async () => { pending.shift()?.(); await sleep(5); });
+  await act(async () => session?.end());
+  await act(async () => session?.reconnect());
+  await settle(20);
+  await act(async () => session?.reconnect());
+  await settle(20);
+  while (pending.length) await act(async () => { pending.shift()?.(); await sleep(5); });
+  await settle(50);
+  assert.equal(ledger.mints, 2, "the second tap minted a third session");
+  assert.deepEqual(ledger.releases, ["sess_1:manual"]);
+  assert.notEqual(phaseOf(session), "reconnectable");
+  await act(async () => renderer?.unmount());
+});
+
+test("deactivating starts a new call: the next one ends with its own reason", async () => {
+  const { client } = fakeClient(() => "ready");
+  const ended: string[] = [];
+  let session: RealtimeSessionApi | undefined;
+  function Call({ active }: { active: boolean }): null {
+    session = sdk.useRealtimeSession({ client, session: SESSION, active, onEnded: ({ reason }) => ended.push(reason) });
+    return null;
+  }
+  let renderer: ReturnType<typeof create> | undefined;
+  await act(async () => { renderer = create(createElement(Call, { active: true })); });
+  await settle(20);
+  await act(async () => session?.end("user_ended"));
+  await act(async () => renderer?.update(createElement(Call, { active: false })));
+  await act(async () => renderer?.update(createElement(Call, { active: true })));
+  await settle(50);
+  await act(async () => { session?.onConnected(); session?.setAgentPresent(true); });
+  assert.equal(phaseOf(session), "live");
+  await act(async () => session?.onDisconnected(DisconnectReason.ROOM_DELETED));
+  assert.deepEqual(ended, ["user_ended", "disconnected"]);
+  await act(async () => renderer?.unmount());
+});
+
+test("end() on a call that already ended is a no-op: its reason and error survive", async () => {
+  const failing: AvatarSessionClient = {
+    ...fakeClient(() => "ready").client,
+    createLiveKitSessionOrBusy: async () => { throw new Error("plan wall"); },
+  };
+  let session: RealtimeSessionApi | undefined;
+  function Call(): null {
+    session = sdk.useRealtimeSession({ client: failing, session: SESSION });
+    return null;
+  }
+  let renderer: ReturnType<typeof create> | undefined;
+  await act(async () => { renderer = create(createElement(Call)); });
+  await settle(20);
+  assert.deepEqual(session?.phase, { kind: "ended", reason: "error" });
+  await act(async () => session?.end());
+  assert.deepEqual(session?.phase, { kind: "ended", reason: "error" }, "end() rewrote a failed call as a hang-up");
+  assert.equal(session?.capacity.kind, "error", "end() dropped the grant error the app routes on");
+  await act(async () => renderer?.unmount());
+});

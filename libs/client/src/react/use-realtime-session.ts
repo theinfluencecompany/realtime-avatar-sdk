@@ -654,13 +654,22 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
   }, [sendResolvedTurn]);
 
   const end = useCallback((reason?: EndReason) => {
+    // Already over: nothing to end, and its reason has already been reported.
+    if (phaseKind === "ended") return;
     if (reason) lastLabeledEndReasonRef.current = reason;
     lastTurnRef.current = null;
     // Best-effort word to the worker before the room goes; the lifecycle end below is what
     // actually releases the session or queue ticket and stops anything from minting again.
     requestGracefulClose();
     lifecycle.end();
-  }, [lifecycle, requestGracefulClose]);
+  }, [lifecycle, phaseKind, requestGracefulClose]);
+
+  // Deactivating ends the binding: the lifecycle treats the next activation as a new call, so the
+  // label the previous call ended with must not become that one's.
+  const active = inner.active ?? true;
+  useEffect(() => {
+    if (!active) lastLabeledEndReasonRef.current = null;
+  }, [active]);
 
   // A redial is a new call: the label the previous one ended with must not become this one's.
   const innerReconnect = lifecycle.reconnect;

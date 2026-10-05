@@ -716,6 +716,8 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
   // what stops the queue retry, cancels an in-flight mint and idles the grant the room joins.
   const [userEnded, setUserEnded] = useState(false);
   const userEndedRef = useRef(false);
+  // The latest phase, for actions that must not act on a call that already ended.
+  const phaseRef = useRef<SessionLifecyclePhase>({ kind: "idle" });
 
   const grantState = useLiveKitAvatarGrant<T>({
     client,
@@ -908,6 +910,12 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     [active],
   );
 
+  // A redial's mint has no `refreshing` recovery to fail into; when it fails, re-open the gate it
+  // closed, or the Reconnect button would be dead on the `ended{error}` it produced.
+  useEffect(() => {
+    if (capacity.kind === "error" && recovery.kind === "connected") manualReconnectPendingRef.current = false;
+  }, [capacity, recovery]);
+
   // A manual/automatic refresh can fail before a Room exists, so there is no room
   // onError/onDisconnected callback to advance recovery. Wait until capacity has
   // changed from the dispatch baseline, then arm the next backoff exactly once.
@@ -1025,7 +1033,9 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
   }, [recovery.kind, active, attempt, clearTimer]);
 
   const end = useCallback(() => {
-    if (!active || userEndedRef.current) return;
+    // An ended call has already released; ending it again must not rewrite WHY it ended (an
+    // `error` phase keeps its `capacity.error`, which `clear()` would drop).
+    if (!active || userEndedRef.current || phaseRef.current.kind === "ended") return;
     userEndedRef.current = true;
     clearTimer();
     connectedRef.current = false;
@@ -1045,9 +1055,12 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     if (!active) return;
     if (userEndedRef.current) {
       // A redial after a hang-up: re-activating the grant hook is itself the one fresh mint.
+      // Held behind the same gate as every manual reconnect, so a second tap while that mint is
+      // in flight is coalesced instead of superseding it with a third.
       userEndedRef.current = false;
       setUserEnded(false);
       reset();
+      manualReconnectPendingRef.current = true;
       return;
     }
     // Coalesce double taps and never let a manual refresh compete with LiveKit's
@@ -1119,6 +1132,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     () => lifecyclePhaseFrom({ capacity, recovery, idle, connected, agentPresent }),
     [capacity, recovery, idle, connected, agentPresent],
   );
+  phaseRef.current = phase;
 
   // ── Opt-in behavior tap (multi-clip choreography) ──
   // Only when the adopter wires `onBehaviorChange` do we expose an `onLifecycleData` sink,

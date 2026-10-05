@@ -325,10 +325,19 @@ still owns the device: it captures on connect and stops when the room leaves.
 `call.end()` (and `useRealtimeSession().end()`) is terminal from every phase, including
 `waiting` in the queue and `connecting`. It stops the queue retry and the reconnect ladder,
 releases the held session or the queue ticket, leaves the room (which stops the microphone),
-moves `status` to `"ended"` and fires `onEnded({ reason: "user_ended" })` once. Nothing mints
-again for that call: to call again, remount `AvatarCall`, or call `reconnect()` on the lower-level
-hooks. `reset()` does not undo an end. `sayAndEnd(text)` is the graceful path when she should
-speak a last line first.
+moves `status` to `"ended"` and fires `onEnded({ reason: "user_ended" })` once. Ending a call
+that is already over does nothing. `sayAndEnd(text)` is the graceful path when she should speak
+a last line first.
+
+**After `end()`, nothing starts a call except you, explicitly.** Changing `avatarId`, `mode` or
+`listen` on an ended `AvatarCall` does not redial; remount it, for example with a `key`:
+
+```tsx
+<AvatarCall key={callId} client={client} avatarId={avatarId} />   // new callId → new call
+```
+
+On the lower-level hooks, `reconnect()` redials (a double tap mints once), and so does setting
+`active` to false and back. `reset()` does not undo an end.
 
 ### Optional connection details
 

@@ -30,6 +30,12 @@
   starts again; `reset()` no longer can. `SessionEndReason` gains `"user"`.
 - A mint that lands after the hook stopped wanting it now also gives back a queue ticket, not
   only a session.
+- A redial after a hang-up is coalesced like any manual reconnect: a second `reconnect()` while
+  its mint is in flight no longer mints a third session. `end()` on a call that already ended is
+  a no-op: it no longer rewrites the reason to `user` or drops `capacity.error`. Deactivating
+  `useRealtimeSession` (`active: false`) clears the previous call's end label, so the next call
+  reports its own reason. Changing `avatarId`, `mode` or `listen` after `end()` does not redial;
+  remount (a `key`). That is deliberate: nothing implicit may start a call the user hung up on.
 - `AvatarVideoSurface` (and so `AvatarCall`) styles its box, media layers and live badge
   inline instead of with Tailwind classes. Tailwind does not scan `node_modules`, so an app had
   to add an `@source` for this package or the layout was purged: the face crop, the stacking of

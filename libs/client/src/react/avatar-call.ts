@@ -87,7 +87,11 @@ export type AvatarCallHandle = {
 
 export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectionDetailsChange"> & {
   client: AvatarSessionClient;
-  /** Which character. */
+  /**
+   * Which character. Changing it starts a new call, EXCEPT after `end()`: an ended call stays
+   * ended until you remount `AvatarCall` (a `key` is the usual way), so no prop change can start
+   * a billed call the user hung up on.
+   */
   avatarId: string;
   /** `voice` is audio-only and cheaper; `avatar` (default) is the full call. */
   mode?: "avatar" | "voice";
