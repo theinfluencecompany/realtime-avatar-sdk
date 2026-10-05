@@ -9,12 +9,12 @@
     "source": "github",
     "subfolder": "libs/mcp"
   },
-  "version": "0.26.0",
+  "version": "0.26.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "realtime-avatar-mcp",
-      "version": "0.26.0",
+      "version": "0.26.1",
       "transport": {
         "type": "stdio"
       },
