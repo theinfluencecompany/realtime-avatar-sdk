@@ -312,13 +312,24 @@ clickable while she is live.
 The handle reports the two local failures a "live" call can hide. `call.microphone` says
 whether she can hear the user (`off`, `pending`, `on`, `muted`, `blocked`, `unavailable`; the
 last two carry `reason`, `message` and `hint`), and `onMicrophoneProblem` fires once per new
-problem. `call.retryMicrophone()` asks again after the user fixes it, and
-`call.setMicrophoneEnabled(enabled)` mutes and unmutes. `call.audio` says whether the user can
-hear her (`unknown`, `allowed`, `blocked`); while it is `blocked`, `AvatarCall` shows a
-"Tap to turn on sound" button that calls `call.startAudio()`. Turn that off with
-`audioUnlockPrompt={false}` and render your own from `call.audio`; `startAudio()` must run
-inside a click or tap handler. Every state is derived from LiveKit's public events, and LiveKit
-still owns the device: it captures on connect and stops when the room leaves.
+problem. A device that stops mid-call reads `pending` while LiveKit retries the default device,
+and `unavailable` (`device-lost`) only once that fails. `call.retryMicrophone()` asks again after
+the user fixes it, and `call.setMicrophoneEnabled(enabled)` mutes and unmutes. While the call is
+waiting or connecting those only record the choice (nothing is captured before the room
+connects), a mute made then is kept when the call goes live, and after `end()` they do nothing.
+
+`call.audio` says whether the user can hear her (`unknown`, `allowed`, `blocked`; `unknown` again
+once the call ended). While it is `blocked`, `AvatarCall` shows a "Tap to turn on sound" button,
+top-centre in a polite live region, that calls `call.startAudio()`. Pass `audioUnlockPrompt` a
+function to render your own (your words, your placement), or `false` for nothing.
+`startAudio()` must run inside a click or tap handler; it never rejects and resolves whether
+playback is allowed afterwards.
+
+Every state is derived from LiveKit's public events, and LiveKit still owns the device: it
+captures on connect and stops when the room leaves. A microphone error from an earlier call on
+the same room is not reported for the next one. A publish that fails after the microphone was
+captured reaches only the room's `onError` and stays `pending`: that callback also carries
+unrelated failures, so it is not guessed into a microphone problem.
 
 ### Ending a call
 

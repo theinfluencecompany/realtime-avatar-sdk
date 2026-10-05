@@ -139,13 +139,67 @@ test("an OS denial, a missing device and a busy device each name a different fix
   }
 });
 
-test("a publish failure LiveKit sends only to the room's onError is a microphone problem too", async () => {
+test("a room error that is not the microphone's is not reported as a microphone problem", async () => {
+  // LiveKitRoom's onError also carries "no livekit url provided", an unsupported browser, and
+  // camera or screen-share publish failures. Device failures reach the bridge through LiveKit's
+  // own `lastMicrophoneError` / MediaDevicesError, which is the one source the state reads.
   const { room } = scriptedRoom();
   const call = await mount(room);
   await connect(room);
-  await act(async () => { call.get()?.onConnectionError(domError("NotAllowedError", "Permission denied")); });
-  assert.equal(call.get()?.microphone.status, "blocked");
-  assert.equal(call.get()?.phase.kind, "idle", "a device failure must not enter connection recovery");
+  for (const error of [new Error("no livekit url provided"), domError("NotAllowedError", "camera: Permission denied")]) {
+    await act(async () => { call.get()?.onConnectionError(error); });
+    assert.equal(call.get()?.microphone.status, "pending", error.message);
+  }
+  assert.equal(call.get()?.phase.kind, "idle", "a media failure must not enter connection recovery");
+  await call.unmount();
+});
+
+test("a device that ends is restarting, not lost, until LiveKit gives up", async () => {
+  // LiveKit emits the track's Ended BEFORE it tries the default device; only a failed restart
+  // mutes the ended track. Reporting `device-lost` on Ended announced problems that healed.
+  const { room, facts, emitTrack } = scriptedRoom();
+  facts.micTrack = { muted: false, readyState: "live" };
+  const call = await mount(room);
+  await connect(room);
+  facts.micTrack.readyState = "ended";
+  await act(async () => { emitTrack("ended"); });
+  assert.equal(call.get()?.microphone.status, "pending", "device-lost was reported while LiveKit was still restarting");
+  facts.micTrack.readyState = "live";
+  await act(async () => { emitTrack("restarted"); });
+  assert.equal(call.get()?.microphone.status, "on");
+  facts.micTrack.readyState = "ended";
+  await act(async () => { emitTrack("ended"); });
+  facts.micTrack.muted = true;
+  await act(async () => { emitTrack("muted"); });
+  assert.equal(call.get()?.microphone.status, "unavailable");
+  await call.unmount();
+});
+
+test("the microphone is not touched before the room connects, and a mute before then is kept", async () => {
+  const { room } = scriptedRoom();
+  let enables = 0;
+  room.localParticipant.setMicrophoneEnabled = async () => { enables += 1; return undefined; };
+  const call = await mount(room);
+  await act(async () => { await call.get()?.setMicrophoneEnabled(true); });
+  assert.equal(enables, 0, "getUserMedia ran for a call with no room: a live mic the UI calls off");
+  await act(async () => { await call.get()?.setMicrophoneEnabled(false); });
+  assert.equal(call.get()?.microphoneMuted, true);
+  assert.equal(call.get()?.microphone.status, "muted");
+  await connect(room);
+  assert.equal(call.get()?.microphone.status, "muted", "a user who muted while waiting joined live");
+  assert.equal(enables, 0);
+  await call.unmount();
+});
+
+test("an earlier call's microphone error does not describe this call", async () => {
+  const { room, facts } = scriptedRoom();
+  facts.micError = domError("NotAllowedError", "Permission denied");
+  const call = await mount(room);
+  await connect(room);
+  assert.equal(call.get()?.microphone.status, "pending", "the previous call's denial was shown for this one");
+  facts.micError = domError("NotFoundError", "Requested device not found");
+  await act(async () => { room.emit(RoomEvent.MediaDevicesError, facts.micError!, "audioinput"); });
+  assert.equal(call.get()?.microphone.status, "unavailable");
   await call.unmount();
 });
 
@@ -184,7 +238,9 @@ test("blocked audio is a state, and startAudio from the gesture unblocks it", as
     room.emit(RoomEvent.AudioPlaybackStatusChanged, false);
   };
   const call = await mount(room);
-  assert.ok(facts.startAudioCalls >= 1, "the connect path did not try to unlock audio while the click may still count");
+  assert.equal(facts.startAudioCalls, 0, "an unlock before any connection leaks LiveKit's iOS element");
+  await act(async () => { room.emit(RoomEvent.ConnectionStateChanged, ConnectionState.Connecting); });
+  assert.equal(facts.startAudioCalls, 1, "the connect path did not try to unlock audio while the click may still count");
   await connect(room);
   assert.equal(call.get()?.audioPlayback, "blocked", "the call read live in silence");
 
@@ -201,5 +257,33 @@ test("audio playback is unknown, not allowed, before the room connects", async (
   const { room } = scriptedRoom();
   const call = await mount(room);
   assert.equal(call.get()?.audioPlayback, "unknown");
+  await call.unmount();
+});
+
+test("startAudio never rejects: it answers whether playback is now allowed", async () => {
+  const { room, facts } = scriptedRoom();
+  facts.canPlay = false;
+  room.startAudio = async () => { throw domError("NotAllowedError", "play() failed because the user didn't interact"); };
+  const call = await mount(room);
+  await connect(room);
+  const result = await call.get()?.startAudio();
+  assert.equal(result, false);
+  room.startAudio = async () => { facts.canPlay = true; room.emit(RoomEvent.AudioPlaybackStatusChanged, true); };
+  assert.equal(await call.get()?.startAudio(), true);
+  await call.unmount();
+});
+
+test("an ended call is neither blocked nor listening", async () => {
+  const { room, facts } = scriptedRoom();
+  facts.canPlay = false;
+  room.startAudio = async () => { room.emit(RoomEvent.AudioPlaybackStatusChanged, false); };
+  const call = await mount(room);
+  await connect(room);
+  await act(async () => { room.emit(RoomEvent.AudioPlaybackStatusChanged, false); });
+  assert.equal(call.get()?.audioPlayback, "blocked");
+  await act(async () => call.get()?.end());
+  assert.equal(call.get()?.phase.kind, "ended");
+  assert.equal(call.get()?.audioPlayback, "unknown", "the unlock prompt stayed up over an ended call");
+  assert.equal(call.get()?.microphone.status, "off");
   await call.unmount();
 });

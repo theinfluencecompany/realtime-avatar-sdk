@@ -71,28 +71,39 @@ export type CallMicrophoneFacts = Readonly<{
   enabling: boolean;
   /** The local microphone publication, if one exists. */
   publication: Readonly<{ muted: boolean; ended: boolean }> | null;
-  /** `localParticipant.lastMicrophoneError`, cleared by LiveKit on the next successful capture. */
+  /**
+   * `localParticipant.lastMicrophoneError`, scoped to THIS call: LiveKit keeps the last failure on
+   * the participant until a capture succeeds, and a redial reuses the same Room, so an error that
+   * was already there when this call's grant arrived describes an earlier call and reads as null.
+   */
   deviceError: Error | null;
 }>;
 
 const DEVICE_LOST_MESSAGE = "The microphone track ended during the call.";
 
 /**
- * Pure: the product-level microphone state for a set of facts. `publishError` is a failure
- * LiveKit routed only to the room's `onError` (a publish that failed after capture), which the
- * bridge cannot see; the session above the room supplies it. Unit-tested, no DOM.
+ * Pure: the product-level microphone state for a set of facts and the user's mute intent (kept
+ * by the session, because a mute can be asked for before there is a room to apply it to).
+ * Unit-tested, no DOM.
+ *
+ * A publish that fails AFTER capture reaches only the room's `onError`, alongside unrelated
+ * failures (no LiveKit URL, an unsupported browser, a camera); it is deliberately not read here,
+ * so it stays `pending` (unknown) rather than being guessed into a microphone problem.
  */
-export function callMicrophoneFrom(facts: CallMicrophoneFacts, publishError: Error | null = null): CallMicrophone {
+export function callMicrophoneFrom(facts: CallMicrophoneFacts, intent: { muted: boolean }): CallMicrophone {
   if (!facts.wanted) return { status: "off" };
   const { publication } = facts;
   if (publication) {
-    // LiveKit restarts an ended track on the default device and MUTES it when that fails too,
-    // so an ended track reads as muted: check the end first, or a lost device reads as a choice.
-    if (publication.ended) return { status: "unavailable", ...microphoneLost(DEVICE_LOST_MESSAGE) };
+    if (publication.ended) {
+      // LiveKit emits the track's Ended BEFORE it restarts on the default device, and MUTES the
+      // ended track only when that restart fails. Ended and unmuted is a restart in flight.
+      return publication.muted ? { status: "unavailable", ...microphoneLost(DEVICE_LOST_MESSAGE) } : { status: "pending" };
+    }
     return publication.muted ? { status: "muted" } : { status: "on" };
   }
+  if (intent.muted) return { status: "muted" };
   if (facts.enabling) return { status: "pending" };
-  const error = facts.deviceError ?? publishError;
+  const error = facts.deviceError;
   if (error) {
     const problem = describeMicrophoneFailure(error);
     const blocked = problem.reason === "denied-by-browser" || problem.reason === "denied-by-os"
@@ -104,8 +115,8 @@ export function callMicrophoneFrom(facts: CallMicrophoneFacts, publishError: Err
 
 /** The two actions, registered by the bridge so the session above the room can call them. */
 export type CallMediaControls = Readonly<{
-  /** `room.startAudio()`. Must run inside a user gesture to unblock playback. */
-  startAudio: () => Promise<void>;
+  /** `room.startAudio()`, resolving whether playback is allowed afterwards. Never rejects. */
+  startAudio: () => Promise<boolean>;
   /** Mute, unmute, or retry after the user fixed a blocked or unavailable microphone. */
   setMicrophoneEnabled: (enabled: boolean) => Promise<void>;
 }>;
@@ -117,7 +128,7 @@ export type CallMediaSinks = Partial<Readonly<{
   registerMediaControls: (controls: CallMediaControls | null) => void;
 }>>;
 
-function microphoneFacts(room: Room, wanted: boolean, connected: boolean, enabling: boolean): CallMicrophoneFacts {
+function microphoneFacts(room: Room, wanted: boolean, connected: boolean, enabling: boolean, staleError: Error | undefined): CallMicrophoneFacts {
   const publication = room.localParticipant.getTrackPublication(Track.Source.Microphone);
   const track = publication?.track;
   return {
@@ -127,7 +138,7 @@ function microphoneFacts(room: Room, wanted: boolean, connected: boolean, enabli
     publication: track
       ? { muted: publication.isMuted, ended: track.mediaStreamTrack?.readyState === "ended" }
       : null,
-    deviceError: room.localParticipant.lastMicrophoneError ?? null,
+    deviceError: (room.localParticipant.lastMicrophoneError !== staleError && room.localParticipant.lastMicrophoneError) || null,
   };
 }
 
@@ -138,9 +149,17 @@ function microphoneFacts(room: Room, wanted: boolean, connected: boolean, enabli
 export function useCallMedia(room: Room, options: CallMediaSinks & {
   microphoneWanted: boolean;
   connectionState: ConnectionState;
+  /** Identifies the call (its session id): a new value starts a new error scope. */
+  callKey: string | undefined;
 }): void {
-  const { setMicrophoneFacts, setAudioPlayback, registerMediaControls, microphoneWanted, connectionState } = options;
+  const { setMicrophoneFacts, setAudioPlayback, registerMediaControls, microphoneWanted, connectionState, callKey } = options;
   const connected = connectionState === ConnectionState.Connected;
+  // Whatever LiveKit already holds as the last microphone error when a call begins is not this
+  // call's. Snapshotted per room and per call, before that call's room starts connecting.
+  const scope = useMemo(
+    () => ({ room, callKey, stale: room.localParticipant.lastMicrophoneError }),
+    [room, callKey],
+  );
   const [enabling, setEnabling] = useState(false);
   const [version, setVersion] = useState(0);
   const sinksRef = useRef({ setMicrophoneFacts, setAudioPlayback });
@@ -178,8 +197,8 @@ export function useCallMedia(room: Room, options: CallMediaSinks & {
   }, [room, setMicrophoneFacts]);
 
   useEffect(() => {
-    sinksRef.current.setMicrophoneFacts?.(microphoneFacts(room, microphoneWanted, connected, enabling));
-  }, [room, microphoneWanted, connected, enabling, version]);
+    sinksRef.current.setMicrophoneFacts?.(microphoneFacts(room, microphoneWanted, connected, enabling, scope.stale));
+  }, [room, microphoneWanted, connected, enabling, version, scope]);
 
   const { canPlayAudio } = useAudioPlayback(room);
   useEffect(() => {
@@ -190,14 +209,27 @@ export function useCallMedia(room: Room, options: CallMediaSinks & {
 
   // The connect path is the last moment the gesture that started the call may still be live
   // (Chromium keeps transient activation for seconds; iOS needs LiveKit's silent element started
-  // inside one). Unlock opportunistically; a refusal here only makes `blocked` known sooner.
+  // inside one). Unlock opportunistically, once per room, but only once it is CONNECTING: on iOS
+  // `startAudio` appends an element LiveKit removes on `Disconnected`, which a room that never
+  // connected (a queued call the user cancelled) never emits. A refusal only makes `blocked`
+  // known sooner.
+  const unlockTriedRef = useRef<Room | null>(null);
+  const connecting = connectionState === ConnectionState.Connecting || connected;
   useEffect(() => {
-    if (!setAudioPlayback) return;
+    if (!setAudioPlayback || !connecting || unlockTriedRef.current === room) return;
+    unlockTriedRef.current = room;
     void room.startAudio().catch(() => undefined);
-  }, [room, setAudioPlayback]);
+  }, [room, setAudioPlayback, connecting]);
 
   const controls = useMemo<CallMediaControls>(() => ({
-    startAudio: () => room.startAudio(),
+    startAudio: async () => {
+      try {
+        await room.startAudio();
+      } catch {
+        // `play()` refused outside a gesture; LiveKit already set `canPlaybackAudio` false.
+      }
+      return room.canPlaybackAudio;
+    },
     setMicrophoneEnabled: async (enabled) => {
       if (enabled) setEnabling(true);
       try {

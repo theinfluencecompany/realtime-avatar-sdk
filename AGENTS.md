@@ -224,15 +224,19 @@ property rather than the reason.
   not answered: the prompt may be open, and may stay open), `on`, `muted`, `blocked` (browser,
   OS or insecure origin; the user must change a setting) or `unavailable` (no device, a busy
   device, one that stopped mid-call: `device-lost`). The last two carry `reason`, `message` and
-  `hint` from the same classifier as `enableMicrophone`.
-- `call.audio` is `unknown` before the room connects, `allowed`, or `blocked`. Blocked means her
-  voice is muted by the browser until `call.startAudio()` runs inside a click or tap handler.
-  `AvatarCall` draws a "Tap to turn on sound" button over the video while it is blocked; pass
-  `audioUnlockPrompt={false}` to draw your own. The SDK also tries `startAudio()` once as the
-  room mounts, while the click that started the call may still count as a gesture.
-- `useRealtimeSession()` carries the same facts as `microphone`, `audioPlayback`, `startAudio`
-  and `setMicrophoneEnabled`, once `SessionLifecycleRoomBridge` is mounted in the room. Pass the
-  bridge `microphone` with whatever you gave the room's `audio`.
+  `hint` from the same classifier as `enableMicrophone`. A device that ends mid-call is
+  `pending` while LiveKit retries the default device, and `device-lost` only if that fails.
+- `call.audio` is `unknown` before the room connects (and after the call ends), `allowed`, or
+  `blocked`. Blocked means her voice is muted by the browser until `call.startAudio()` runs
+  inside a click or tap handler (it never rejects; it resolves whether playback is allowed).
+  `AvatarCall` draws a "Tap to turn on sound" button, top-centre, while it is blocked; pass
+  `audioUnlockPrompt` a function to draw your own, or `false`. The SDK also tries `startAudio()`
+  once as the room starts connecting, while the click that started the call may still count.
+- Muting before the call connects is kept: `setMicrophoneEnabled(false)` while waiting records
+  the choice, nothing is captured, and the call goes live muted.
+- `useRealtimeSession()` carries the same facts as `microphone`, `audioPlayback`, `startAudio`,
+  `setMicrophoneEnabled` and `microphoneMuted`, once `SessionLifecycleRoomBridge` is mounted in
+  the room. Pass the bridge `microphone={listens}` and the room `audio={listens && !microphoneMuted}`.
 
 ### 6. A tool has 2.5 seconds, and the abort is cooperative
 

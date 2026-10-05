@@ -67,3 +67,9 @@ test("the box establishes the containing block the layers fill", () => {
   assert.equal(style.width, "100%");
   assert.equal(style.height, "100%");
 });
+
+test("the box is its own stacking context, so its layers cannot cover the page around it", () => {
+  // The overlay is z-index 40. Without isolation it competed with the PAGE's stacking order and
+  // covered a site header or menu at z-index 40 or below that overlapped the call.
+  assert.equal(styleOf(render(), "avatar-video-surface").isolation, "isolate");
+});

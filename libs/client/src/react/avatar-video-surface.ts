@@ -1192,7 +1192,9 @@ function useLiveResumeOnProducing(
 // (flex) parent — the black-screen bug. Every layer is absolute over this definitely
 // sized box, so the live `<video>` always has real height. Both media layers share the
 // same box + fit so the front fully covers the back.
-const AVATAR_VIDEO_BOX: CSSProperties = { position: "relative", width: "100%", height: "100%", overflow: "hidden" };
+// `isolation: isolate` makes the box its own stacking context, so the layers' z-indexes (the
+// overlay is 40) order them against each other and never against the page around the call.
+const AVATAR_VIDEO_BOX: CSSProperties = { position: "relative", width: "100%", height: "100%", overflow: "hidden", isolation: "isolate" };
 const AVATAR_VIDEO_LAYER: CSSProperties = {
   position: "absolute",
   inset: 0,

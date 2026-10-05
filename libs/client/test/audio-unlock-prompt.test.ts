@@ -43,22 +43,24 @@ const bundle = await build({
 
 type Node = { type: unknown; props: Record<string, unknown> | null; children: unknown[] };
 
-function run(audio: AvatarCallHandle["audio"], props: Partial<AvatarCallProps> = {}) {
+function run(audio: AvatarCallHandle["audio"], props: Partial<AvatarCallProps> = {}, extra: { microphoneMuted?: boolean } = {}) {
   let unlocks = 0;
   const fixture = {
     elements: [] as Node[],
     session: {
       phase: { kind: "live" }, clocks: { sessionRemainingMs: null },
       microphone: { status: "on" }, audioPlayback: audio,
-      startAudio: async () => { unlocks += 1; },
+      startAudio: async () => { unlocks += 1; return false; },
       setMicrophoneEnabled: async () => {},
+      microphoneMuted: extra.microphoneMuted ?? false,
     },
   };
   const module: { exports: { render?: (props: AvatarCallProps) => { call: AvatarCallHandle } } } = { exports: {} };
   runInNewContext(bundle.outputFiles[0].text, { fixture, module, exports: module.exports, require: createRequire(import.meta.url) });
   const { call } = module.exports.render!({ client: {} as AvatarCallProps["client"], avatarId: "ava_test", ...props });
   const button = fixture.elements.find((node) => node.props?.["data-testid"] === "avatar-audio-unlock");
-  return { call, button, unlocks: () => unlocks };
+  const named = (name: string) => fixture.elements.find((node) => typeof node.type === "function" && node.type.name === name);
+  return { call, button, unlocks: () => unlocks, elements: fixture.elements, named };
 }
 
 test("blocked audio renders a tap-to-unlock button that calls startAudio", async () => {
@@ -80,4 +82,36 @@ test("no button while audio is allowed or not yet known", () => {
 
 test("audioUnlockPrompt={false} leaves the affordance to the app", () => {
   assert.equal(run("blocked", { audioUnlockPrompt: false }).button, undefined);
+});
+
+test("the built-in prompt is announced, and sits at the top, clear of a bottom-centre End button", () => {
+  const { elements, button } = run("blocked");
+  const region = elements.find((node) => node.props?.["data-testid"] === "avatar-audio-unlock-region");
+  assert.ok(region, "no live region: a screen-reader user is never told why she is silent");
+  assert.equal(region.props?.role, "status");
+  assert.equal(region.props?.["aria-live"], "polite");
+  assert.ok(region.children.includes(button), "the button is not inside the live region");
+  const style = region.props?.style as Record<string, unknown> | undefined;
+  assert.equal(style?.bottom, undefined, "placed over the bottom-centre, where apps put End");
+  assert.equal(typeof style?.top, "number");
+  assert.ok(Number(style?.zIndex) > 0, "the prompt must stack above the app's own overlay");
+});
+
+test("audioUnlockPrompt can render your own affordance, with your own words", () => {
+  const custom = run("blocked", {
+    audioUnlockPrompt: (call) => ({ type: "mine", props: { onClick: call.startAudio }, children: [] }) as never,
+  });
+  assert.equal(custom.button, undefined, "the built-in button rendered alongside the custom one");
+  assert.ok(custom.elements.some((node) => node.props?.["data-testid"] === "avatar-audio-unlock-region"));
+});
+
+test("a mute chosen while waiting reaches the room's connect-time capture", () => {
+  assert.equal(run("unknown", {}, { microphoneMuted: true }).named("RealtimeAvatarLiveKitRoom")?.props?.audio, false);
+  assert.equal(run("unknown").named("RealtimeAvatarLiveKitRoom")?.props?.audio, true);
+  assert.equal(run("unknown", { listen: false }).named("RealtimeAvatarLiveKitRoom")?.props?.audio, false);
+});
+
+test("style reaches the surface, so a sizing class has somewhere to move", () => {
+  const style = { height: 480 };
+  assert.equal(run("allowed", { style }).named("AvatarVideoSurface")?.props?.style, style);
 });

@@ -65,9 +65,16 @@ export type AvatarCallHandle = {
   microphone: AvatarCallMicrophone;
   /** Can the user hear her? `blocked` means silent until `startAudio()` runs in a gesture. */
   audio: AvatarCallAudio;
-  /** Unblock her audio. Call it from a click or tap handler; outside one the browser refuses. */
-  startAudio: () => Promise<void>;
-  /** Mute (`false`) or unmute (`true`) the user's microphone. Never rejects. */
+  /**
+   * Unblock her audio. Call it from a click or tap handler; outside one the browser refuses.
+   * Never rejects: resolves whether playback is allowed afterwards.
+   */
+  startAudio: () => Promise<boolean>;
+  /**
+   * Mute (`false`) or unmute (`true`) the user's microphone. Never rejects. While waiting or
+   * connecting it records the choice and nothing is captured; a mute made then is kept when the
+   * call goes live. After `end()` it does nothing.
+   */
   setMicrophoneEnabled: (enabled: boolean) => Promise<void>;
   /** Ask for the microphone again, after the user fixed what `microphone.hint` names. */
   retryMicrophone: () => Promise<void>;
@@ -102,7 +109,10 @@ export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectio
   /** A still shown before the idle clip is playable. */
   poster?: string | null;
   fit?: AvatarVideoFit;
+  /** Adds your classes to the call's box. The box sizes itself inline; to resize it, use `style`. */
   className?: string;
+  /** Inline style for the call's box, spread over its own (`height`, `aspectRatio`, …). */
+  style?: CSSProperties;
   /** Your remaining balance in ms, if you want `onLowBalance`. */
   balanceMs?: number;
 
@@ -120,10 +130,13 @@ export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectio
    */
   onMicrophoneProblem?: (problem: AvatarCallMicrophoneProblem) => void;
   /**
-   * Render a "Tap to turn on sound" button over the video while `audio` is `blocked`. Default
-   * true. Pass false to draw your own from `call.audio` and `call.startAudio()`.
+   * What to show while `audio` is `blocked` (the browser is muting her until a gesture):
+   * - `true` (default): a "Tap to turn on sound" button, top-centre over the video.
+   * - a function: your own affordance, with your own words; wire it to `call.startAudio()`.
+   * - `false`: nothing; draw your own from `call.audio` anywhere.
+   * The first two render inside a polite live region, above your overlay.
    */
-  audioUnlockPrompt?: boolean;
+  audioUnlockPrompt?: boolean | ((call: AvatarCallHandle) => ReactNode);
 
   /**
    * Overlay your own UI on the video; receives the same handle as `useAvatarCall`. Rendered in a
@@ -170,11 +183,16 @@ function handleFor(session: RealtimeSessionApi): AvatarCallHandle {
   };
 }
 
-const UNLOCK_BUTTON: CSSProperties = {
+// Top-centre, above the app's overlay: apps put their own controls (End, mute) along the bottom,
+// and a prompt there would sit on top of them.
+const UNLOCK_REGION: CSSProperties = {
   position: "absolute",
+  top: 16,
   left: "50%",
-  bottom: 24,
   transform: "translateX(-50%)",
+  zIndex: 1,
+};
+const UNLOCK_BUTTON: CSSProperties = {
   padding: "10px 16px",
   border: "none",
   borderRadius: 9999,
@@ -238,20 +256,33 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [problemKey]);
 
-  const unlock = props.audioUnlockPrompt !== false && call.audio === "blocked"
-    ? createElement(
-        "button",
-        { key: "audio-unlock", type: "button", style: UNLOCK_BUTTON, onClick: () => void call.startAudio(), "data-testid": "avatar-audio-unlock" },
-        "Tap to turn on sound",
-      )
-    : null;
+  // The region stays mounted so a screen reader announces the button when it appears; a live
+  // region inserted together with its content is often not read at all.
+  const prompt = props.audioUnlockPrompt ?? true;
+  const unlock = prompt === false
+    ? null
+    : createElement(
+        "div",
+        { key: "audio-unlock-region", role: "status", "aria-live": "polite", style: UNLOCK_REGION, "data-testid": "avatar-audio-unlock-region" },
+        call.audio !== "blocked"
+          ? null
+          : typeof prompt === "function"
+            ? prompt(call)
+            : createElement(
+                "button",
+                { type: "button", style: UNLOCK_BUTTON, onClick: () => { void call.startAudio(); }, "data-testid": "avatar-audio-unlock" },
+                "Tap to turn on sound",
+              ),
+      );
   const overlay = props.children ? props.children(call) : null;
 
   const view = createElement(
     RealtimeAvatarLiveKitRoom,
     {
       grant: session.grant,
-      audio: props.listen !== false,
+      // LiveKit captures the microphone on connect from this value, so a mute chosen while
+      // waiting is honoured rather than overridden when the call goes live.
+      audio: props.listen !== false && !session.microphoneMuted,
       onConnected: session.onConnected,
       onDisconnected: session.onDisconnected,
       onError: session.onConnectionError,
@@ -270,6 +301,7 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
         poster: props.poster ?? null,
         fit: props.fit ?? "cover",
         className: props.className,
+        style: props.style,
       },
       overlay === null && unlock === null ? null : createElement(Fragment, null, overlay, unlock),
     ),

@@ -1317,6 +1317,7 @@ export function SessionLifecycleRoomBridge({
     registerMediaControls,
     microphoneWanted: microphone ?? publishesMicrophoneByDefault(lifecycle.grant),
     connectionState,
+    callKey: lifecycle.grant?.session_id,
   });
   const mediaModeCallbackRef = useRef(onMediaModeChange);
   mediaModeCallbackRef.current = onMediaModeChange;

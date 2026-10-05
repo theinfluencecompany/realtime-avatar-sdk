@@ -64,6 +64,26 @@
   - `useRealtimeSession()` gains the same as `microphone`, `audioPlayback`, `startAudio` and
     `setMicrophoneEnabled`; `SessionLifecycleRoomBridge` gains a `microphone` prop. The classifier
     is shared with `enableMicrophone` and exported as `describeMicrophoneFailure`.
+- Microphone and audio state follow-ups:
+  - A device that ends mid-call is `pending` while LiveKit retries the default device, and
+    `unavailable/device-lost` only once LiveKit mutes the ended track (the restart failed). It was
+    reported, and `onMicrophoneProblem` fired, on the `Ended` that precedes a restart that heals.
+  - `setMicrophoneEnabled` / `retryMicrophone` do nothing after `end()` and only record the
+    choice before the room connects, instead of running getUserMedia for a call with no room. A
+    mute made while waiting is kept: `AvatarCall` passes it to the room's connect-time capture, and
+    `useRealtimeSession` exposes it as `microphoneMuted` for apps that render their own room.
+  - A room `onError` that is not a microphone failure (no LiveKit URL, an unsupported browser, a
+    camera) is no longer reported as a microphone problem; the state reads device failures only
+    from LiveKit's own `lastMicrophoneError`, scoped to the current call, so a redial on the same
+    room no longer shows the previous call's error.
+  - `startAudio()` never rejects; it resolves whether playback is allowed afterwards. `audio` is
+    `unknown` once the call ended, so the unlock prompt cannot outlive the call. The opportunistic
+    unlock runs once the room starts connecting, not on mount, so a queued call that never
+    connects leaves no iOS silent-audio element behind.
+  - The unlock prompt sits top-centre in a polite live region above the app's overlay, and
+    `audioUnlockPrompt` also takes a render function for your own words and placement.
+  - `AvatarCall` takes `style` for its box. The surface box is `isolation: isolate`, so the
+    overlay's z-index can no longer cover page chrome that overlaps the call.
 - `useCharacterTools` retries a retryable registration failure twice (1s, then 3s) while the
   room stays connected, instead of ending her tools for the call on one RPC timeout. Its state is
   now the exported `CharacterToolsState`, with `attempt`. It keys registration on the manifest
