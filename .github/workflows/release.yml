@@ -222,3 +222,42 @@ jobs:
             ( cd "libs/$dir" && npm publish --access public $extra )
             echo "::endgroup::"
           done
+
+  # The official MCP Registry (registry.modelcontextprotocol.io), which hosts and directories
+  # such as GitHub's MCP registry and PulseMCP read from. It stores metadata only: it verifies
+  # the entry by fetching realtime-avatar-mcp@<version> from npm and checking that its
+  # package.json `mcpName` equals server.json `name`. So it runs strictly after the npm job,
+  # and only for a tag, since a dry run has no new npm version to point at.
+  mcp-registry:
+    needs: npm
+    if: github.repository == 'theinfluencecompany/realtime-avatar-sdk' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # `mcp-publisher login github-oidc` exchanges this for a registry token scoped to
+      # io.github.theinfluencecompany/*. No stored credential.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned, same reasoning as the npm major above. If login starts failing with
+      # "invalid audience", the registry moved on and this pin needs a bump.
+      - name: Install mcp-publisher
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --help >/dev/null
+      - name: Publish to the MCP Registry
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./libs/mcp/server.json').name")
+          version=$(node -p "require('./libs/mcp/server.json').version")
+          # Same idempotence as the npm job: a re-run after a partial failure skips what is
+          # already there instead of failing on a duplicate version.
+          encoded=$(node -p "encodeURIComponent(process.argv[1])" "$name")
+          status=$(curl -s -o /dev/null -w "%{http_code}" "https://registry.modelcontextprotocol.io/v0.1/servers/$encoded/versions/$version")
+          if [ "$status" = "200" ]; then
+            echo "· $name@$version already in the MCP Registry - skipping"
+            exit 0
+          fi
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish libs/mcp/server.json

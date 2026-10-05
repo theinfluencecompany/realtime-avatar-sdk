@@ -1,6 +1,7 @@
 {
   "name": "realtime-avatar-mcp",
   "version": "0.26.0",
+  "mcpName": "io.github.theinfluencecompany/realtime-avatar",
   "description": "MCP server for Realtime Avatar — let a coding agent read your avatars, balance and bill directly.",
   "license": "MIT",
   "author": "The Influence Company",

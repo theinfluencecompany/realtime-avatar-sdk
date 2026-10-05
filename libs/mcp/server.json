@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.theinfluencecompany/realtime-avatar",
+  "title": "Realtime Avatar",
+  "description": "Read your Realtime Avatar avatars, credit balance and session bill from a coding agent.",
+  "websiteUrl": "https://realtimeavatar.ai/docs/mcp",
+  "repository": {
+    "url": "https://github.com/theinfluencecompany/realtime-avatar-sdk",
+    "source": "github",
+    "subfolder": "libs/mcp"
+  },
+  "version": "0.26.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "realtime-avatar-mcp",
+      "version": "0.26.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "REALTIME_AVATAR_API_KEY",
+          "description": "Realtime Avatar API key (tic_test_ or tic_live_). A free sandbox key: https://realtimeavatar.ai/signup",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "REALTIME_AVATAR_ALLOW_WRITES",
+          "description": "Set to 1 to enable write tools (avatar creation, clip library, start_call). start_call bills per second and refuses tic_live_ keys.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
