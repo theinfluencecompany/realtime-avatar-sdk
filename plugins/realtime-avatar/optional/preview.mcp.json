@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "realtime-avatar-preview": {
+      "type": "http",
+      "url": "https://rta-chatgpt-practice-review.zjudn2013.workers.dev/mcp"
+    }
+  }
+}

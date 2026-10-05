@@ -12,7 +12,7 @@
       "name": "realtime-avatar",
       "source": "./plugins/realtime-avatar",
       "description": "Build live AI avatar apps with your RTA account: discover avatars, inspect credits, configure characters and integrate voice/video calls.",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }
