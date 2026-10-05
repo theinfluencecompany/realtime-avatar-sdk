@@ -9,8 +9,11 @@ export { useAvatarCamera } from "./use-avatar-camera";
 export {
   AvatarCall,
   useAvatarCall,
+  type AvatarCallAudio,
   type AvatarCallEndReason,
   type AvatarCallHandle,
+  type AvatarCallMicrophone,
+  type AvatarCallMicrophoneProblem,
   type AvatarCallProps,
   type AvatarCallStatus,
 } from "./avatar-call";

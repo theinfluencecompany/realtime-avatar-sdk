@@ -202,6 +202,38 @@ Mic capture needs a secure origin: https, or `http://localhost`. A LAN address o
 HTTP leaves `navigator.mediaDevices` undefined, which surfaces as a `TypeError` naming a
 property rather than the reason.
 
+**In React, both are states of the call, not something you wire.** `AvatarCall` and
+`useAvatarCall` put them on the handle, derived from LiveKit's own events:
+
+```tsx
+<AvatarCall
+  client={client}
+  avatarId="ava_…"
+  onMicrophoneProblem={(mic) => toast(`${mic.message} — ${mic.hint}`)}  // blocked | unavailable
+>
+  {(call) => (
+    <>
+      {call.microphone.status === "blocked" && <button onClick={call.retryMicrophone}>Try the microphone again</button>}
+      <button onClick={() => call.setMicrophoneEnabled(call.microphone.status !== "on")}>Mute</button>
+    </>
+  )}
+</AvatarCall>
+```
+
+- `call.microphone.status` is `off` (not listening, not connected, or ended), `pending` (asked,
+  not answered: the prompt may be open, and may stay open), `on`, `muted`, `blocked` (browser,
+  OS or insecure origin; the user must change a setting) or `unavailable` (no device, a busy
+  device, one that stopped mid-call: `device-lost`). The last two carry `reason`, `message` and
+  `hint` from the same classifier as `enableMicrophone`.
+- `call.audio` is `unknown` before the room connects, `allowed`, or `blocked`. Blocked means her
+  voice is muted by the browser until `call.startAudio()` runs inside a click or tap handler.
+  `AvatarCall` draws a "Tap to turn on sound" button over the video while it is blocked; pass
+  `audioUnlockPrompt={false}` to draw your own. The SDK also tries `startAudio()` once as the
+  room mounts, while the click that started the call may still count as a gesture.
+- `useRealtimeSession()` carries the same facts as `microphone`, `audioPlayback`, `startAudio`
+  and `setMicrophoneEnabled`, once `SessionLifecycleRoomBridge` is mounted in the room. Pass the
+  bridge `microphone` with whatever you gave the room's `audio`.
+
 ### 6. A tool has 2.5 seconds, and the abort is cooperative
 
 The platform abandons a tool call after **2.5s** and tells her it failed. That is a

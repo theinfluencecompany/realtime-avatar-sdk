@@ -37,6 +37,14 @@ import {
 } from "./grace-window";
 import { nextBehaviorSnapshot, type BehaviorSnapshot } from "./behavior-snapshot";
 import type { SendTextOptions } from "./livekit";
+import { ConnectionError } from "livekit-client";
+import {
+  callMicrophoneFrom,
+  type CallAudioPlayback,
+  type CallMediaControls,
+  type CallMicrophone,
+  type CallMicrophoneFacts,
+} from "./call-media";
 import type { DeclaredInputSource } from "../input-source";
 
 export type {
@@ -190,6 +198,18 @@ export type RealtimeSessionApi = SessionLifecycleApi & {
   graceWindow: GraceWindowState;
   /** Honest media liveness from the bound agent's tracks. */
   media: RealtimeSessionMedia;
+  /** Can she hear the user? Derived from LiveKit's microphone facts; see {@link CallMicrophone}. */
+  microphone: CallMicrophone;
+  /** Can the user hear her? `blocked` until `startAudio()` runs inside a user gesture. */
+  audioPlayback: CallAudioPlayback;
+  /** Unblock her audio (`room.startAudio()`). Call it from a click or tap handler. */
+  startAudio: () => Promise<void>;
+  /**
+   * Mute or unmute the user's microphone. `true` after a `blocked` or `unavailable` microphone is
+   * the retry, once the user has fixed what the hint names. Never rejects: a failure becomes the
+   * next `microphone` state.
+   */
+  setMicrophoneEnabled: (enabled: boolean) => Promise<void>;
   /** The inner SSOT surface, for explicit access (it is also spread at top level). */
   lifecycle: SessionLifecycleApi;
 
@@ -229,6 +249,12 @@ export type RealtimeSessionApi = SessionLifecycleApi & {
   setTurnState: (state: string | null | undefined) => void;
   /** Honest media liveness from the bound agent's tracks. */
   setMedia: (media: RealtimeSessionMedia) => void;
+  /** The local microphone facts (the bridge reads them off LiveKit). */
+  setMicrophoneFacts: (facts: CallMicrophoneFacts) => void;
+  /** LiveKit's audio playback status. */
+  setAudioPlayback: (playback: CallAudioPlayback) => void;
+  /** The in-room media actions behind `startAudio` / `setMicrophoneEnabled`. */
+  registerMediaControls: (controls: CallMediaControls | null) => void;
 };
 
 function positive(value: number | undefined, fallbackSeconds: number): number {
@@ -290,6 +316,14 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
   const [turn, setTurn] = useState<TurnState>("quiet");
   const [media, setMediaState] = useState<RealtimeSessionMedia>({ video: "connecting", audio: "silent" });
   const [behavior, setBehavior] = useState<BehaviorSnapshot | null>(null);
+  const [microphoneFacts, setMicrophoneFactsState] = useState<CallMicrophoneFacts>({
+    wanted: false, connected: false, enabling: false, publication: null, deviceError: null,
+  });
+  // A failure LiveKit sends only to the room's `onError`: everything that is not a connection
+  // error, which in a call is the microphone publish `LiveKitRoom` starts on signal connect.
+  const [publishError, setPublishError] = useState<Error | null>(null);
+  const [audioPlayback, setAudioPlaybackState] = useState<CallAudioPlayback>("unknown");
+  const mediaControlsRef = useRef<CallMediaControls | null>(null);
   const lastBehaviorRef = useRef<BehaviorSnapshot | null>(null);
   const lastLabeledEndReasonRef = useRef<SessionEndReasonLabel | null>(null);
   // Pending clip_request acks by request_id (resolved by clip_ack or timeout).
@@ -415,6 +449,34 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
   const setMedia = useCallback((next: RealtimeSessionMedia) => {
     setMediaState((prev) => (prev.video === next.video && prev.audio === next.audio ? prev : next));
   }, []);
+  const setMicrophoneFacts = useCallback((facts: CallMicrophoneFacts) => {
+    setMicrophoneFactsState(facts);
+    // A live publication supersedes whatever failed on the way to it.
+    if (facts.publication) setPublishError(null);
+  }, []);
+  const setAudioPlayback = useCallback((playback: CallAudioPlayback) => setAudioPlaybackState(playback), []);
+  const registerMediaControls = useCallback((controls: CallMediaControls | null) => {
+    mediaControlsRef.current = controls;
+  }, []);
+  const startAudio = useCallback(async (): Promise<void> => {
+    await mediaControlsRef.current?.startAudio();
+  }, []);
+  const setMicrophoneEnabled = useCallback(async (enabled: boolean): Promise<void> => {
+    if (enabled) setPublishError(null);
+    await mediaControlsRef.current?.setMicrophoneEnabled(enabled);
+  }, []);
+  const innerOnConnectionError = lifecycle.onConnectionError;
+  const onConnectionError = useCallback((error: Error) => {
+    innerOnConnectionError(error);
+    if (!(error instanceof ConnectionError)) setPublishError(error);
+  }, [innerOnConnectionError]);
+  // An ended call captures nothing: its room has left, and the last failure (LiveKit keeps
+  // `lastMicrophoneError` on the participant) describes a call that is over.
+  const callEnded = lifecycle.phase.kind === "ended";
+  const microphone = useMemo<CallMicrophone>(
+    () => (callEnded ? { status: "off" } : callMicrophoneFrom(microphoneFacts, publishError)),
+    [callEnded, microphoneFacts, publishError],
+  );
 
   // ── the 1s tick: advance the grace window + fire the time-driven moments ──
   useEffect(() => {
@@ -652,6 +714,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     approachingFiredRef.current = false;
     creditsLowFiredRef.current = false;
     lastTurnRef.current = null;
+    setPublishError(null);
     lifecycle.reset();
   }, [lifecycle]);
 
@@ -666,6 +729,11 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
       endsAt,
       graceWindow,
       media,
+      microphone,
+      audioPlayback,
+      startAudio,
+      setMicrophoneEnabled,
+      onConnectionError,
       lifecycle,
       sendClosingTurn,
       requestGracefulClose,
@@ -681,12 +749,16 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
       registerTurnSender,
       setTurnState,
       setMedia,
+      setMicrophoneFacts,
+      setAudioPlayback,
+      registerMediaControls,
       reset,
     }),
     [
-      lifecycle, turn, clocks, endsAt, graceWindow, media, sendClosingTurn, requestGracefulClose,
+      lifecycle, turn, clocks, endsAt, graceWindow, media, microphone, audioPlayback, startAudio,
+      setMicrophoneEnabled, onConnectionError, sendClosingTurn, requestGracefulClose,
       extend, sendTurn, createTranscriptSender, retryTurn, end, behavior, performAction, onLifecycleData, registerDataPublisher,
-      registerTurnSender, setTurnState, setMedia, reset,
+      registerTurnSender, setTurnState, setMedia, setMicrophoneFacts, setAudioPlayback, registerMediaControls, reset,
     ],
   );
 }

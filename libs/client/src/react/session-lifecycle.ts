@@ -15,6 +15,7 @@ import {
 import {
   useChat,
   useConnectionState,
+  publishesMicrophoneByDefault,
   useLiveKitAvatarGrant,
   useRoomContext,
   useTranscriptions,
@@ -34,6 +35,7 @@ import {
 } from "../wire";
 import { nextBehaviorSnapshot, type BehaviorSnapshot } from "./behavior-snapshot";
 import { createConnectionHistoryCollector } from "./connection-history";
+import { useCallMedia, type CallMediaSinks } from "./call-media";
 
 // ---------------------------------------------------------------------------
 // Pure recovery classifiers (LIFTED unchanged from the studio's
@@ -1210,7 +1212,7 @@ export type RealtimeSessionRoomSinks = Partial<{
   setTurnState: (state: string | null | undefined) => void;
   /** Honest media liveness from the bound agent's tracks. */
   setMedia: (media: { video: "live" | "stalled" | "connecting"; audio: "flowing" | "silent" }) => void;
-}>;
+}> & CallMediaSinks;
 
 type PublisherConnectionDetails = Readonly<{
   publisherQuality: Participant["connectionQuality"];
@@ -1237,6 +1239,12 @@ export type SessionLifecycleRoomBridgeProps = {
    * Callback failures never affect the call; no stats polling or uploads are added.
    */
   onConnectionDetailsChange?: (details: AvatarConnectionDetails | null) => void;
+  /**
+   * Whether the room publishes the user's microphone — pass what you passed the room's `audio`.
+   * Default: the same rule {@link RealtimeAvatarLiveKitRoom} applies (server-transcribed calls).
+   * Decides whether a missing microphone track is a problem or simply not wanted.
+   */
+  microphone?: boolean;
   lifecycle: Pick<
     SessionLifecycleApi,
     | "onConnectionStateChange"
@@ -1269,6 +1277,7 @@ export function SessionLifecycleRoomBridge({
   lifecycle,
   onConnectionDetailsChange,
   onMediaModeChange,
+  microphone,
 }: SessionLifecycleRoomBridgeProps): null {
   const {
     onConnectionStateChange,
@@ -1280,11 +1289,21 @@ export function SessionLifecycleRoomBridge({
     registerTurnSender,
     setTurnState,
     setMedia,
+    setMicrophoneFacts,
+    setAudioPlayback,
+    registerMediaControls,
   } = lifecycle;
   const connectionState = useConnectionState();
   const assistant = useVoiceAssistant();
   const transcriptions = useTranscriptions();
   const room = useRoomContext();
+  useCallMedia(room, {
+    setMicrophoneFacts,
+    setAudioPlayback,
+    registerMediaControls,
+    microphoneWanted: microphone ?? publishesMicrophoneByDefault(lifecycle.grant),
+    connectionState,
+  });
   const mediaModeCallbackRef = useRef(onMediaModeChange);
   mediaModeCallbackRef.current = onMediaModeChange;
   const mediaModeEnabled = onMediaModeChange !== undefined && lifecycle.grant !== null;

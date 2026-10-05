@@ -42,6 +42,22 @@
   live layer, so once a call went live the video took their clicks: measured in Chromium, the
   centre of an `absolute bottom-4 left-4` End button hit the live layer. The layer fills the
   box, so an absolutely positioned child places itself exactly as before.
+- `AvatarCallHandle` reports the microphone and audio playback, which a "live" call used to hide:
+  - `microphone`: `off` | `pending` | `on` | `muted` | `blocked` | `unavailable`, the last two with
+    `reason`, `message` and `hint`. A microphone LiveKit could not start (permission denied, no
+    device, `NotReadableError`) reached only the room's `onError`, which the lifecycle ignores,
+    so the call read live while she could never hear the user. Derived from LiveKit's
+    `lastMicrophoneError`, `MediaDevicesError`, the local publication and its track's events; a
+    device lost mid-call is `unavailable` with reason `device-lost`, not a mute. New
+    `onMicrophoneProblem` prop, and `setMicrophoneEnabled(enabled)` / `retryMicrophone()` actions.
+  - `audio`: `unknown` | `allowed` | `blocked`, from LiveKit's `canPlaybackAudio`, and a
+    `startAudio()` action to call from a gesture. When the browser blocked autoplay her voice was
+    silent with no signal anywhere. `AvatarCall` now renders a "Tap to turn on sound" button while
+    blocked (`audioUnlockPrompt={false}` to opt out), and tries `room.startAudio()` once as the
+    room mounts, while the click that started the call may still count.
+  - `useRealtimeSession()` gains the same as `microphone`, `audioPlayback`, `startAudio` and
+    `setMicrophoneEnabled`; `SessionLifecycleRoomBridge` gains a `microphone` prop. The classifier
+    is shared with `enableMicrophone` and exported as `describeMicrophoneFailure`.
 
 ## 0.25.0
 

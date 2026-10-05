@@ -15,11 +15,12 @@
  * Everything the lower-level API offers is still exported and still supported — this is
  * additive. Reach for it when you genuinely need to own the room.
  */
-import { createElement, useEffect, useRef, type ReactNode } from "react";
+import { createElement, Fragment, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { AvatarVideoSurface, type AvatarVideoFit } from "./avatar-video-surface";
 import { RealtimeAvatarLiveKitRoom } from "./livekit";
 import { SessionLifecycleRoomBridge, type SessionLifecycleRoomBridgeProps } from "./session-lifecycle";
 import { useRealtimeSession, type RealtimeSessionApi } from "./use-realtime-session";
+import type { CallAudioPlayback, CallMicrophone, CallMicrophoneProblem } from "./call-media";
 import type { AvatarSessionClient } from "../session-client";
 
 /**
@@ -48,8 +49,28 @@ export type AvatarCallEndReason =
   | "agent_ended"
   | "failed";
 
+/**
+ * The user's microphone: `off` | `pending` | `on` | `muted`, or `blocked` / `unavailable` with
+ * the cause (`reason`), what the browser said (`message`) and what to do about it (`hint`).
+ */
+export type AvatarCallMicrophone = CallMicrophone;
+/** The microphone states that carry a problem — what `onMicrophoneProblem` receives. */
+export type AvatarCallMicrophoneProblem = CallMicrophoneProblem;
+/** Whether her audio can play: `unknown` before the room connects, `allowed`, or `blocked`. */
+export type AvatarCallAudio = CallAudioPlayback;
+
 export type AvatarCallHandle = {
   status: AvatarCallStatus;
+  /** Can she hear the user? A `blocked` or `unavailable` microphone means she cannot. */
+  microphone: AvatarCallMicrophone;
+  /** Can the user hear her? `blocked` means silent until `startAudio()` runs in a gesture. */
+  audio: AvatarCallAudio;
+  /** Unblock her audio. Call it from a click or tap handler; outside one the browser refuses. */
+  startAudio: () => Promise<void>;
+  /** Mute (`false`) or unmute (`true`) the user's microphone. Never rejects. */
+  setMicrophoneEnabled: (enabled: boolean) => Promise<void>;
+  /** Ask for the microphone again, after the user fixed what `microphone.hint` names. */
+  retryMicrophone: () => Promise<void>;
   /** Place in line while `status === "waiting"`, else null. */
   queuePosition: number | null;
   /** Seconds until the hard cap, or null before the clock lands. */
@@ -89,6 +110,16 @@ export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectio
   onQuiet?: (event: { secondsLeft: number }) => void;
   /** Balance running low. */
   onLowBalance?: (event: { secondsLeft: number }) => void;
+  /**
+   * The microphone became `blocked` or `unavailable`: she cannot hear the user, though the call
+   * is live. Fires once per distinct problem. Show `hint`, then offer `retryMicrophone()`.
+   */
+  onMicrophoneProblem?: (problem: AvatarCallMicrophoneProblem) => void;
+  /**
+   * Render a "Tap to turn on sound" button over the video while `audio` is `blocked`. Default
+   * true. Pass false to draw your own from `call.audio` and `call.startAudio()`.
+   */
+  audioUnlockPrompt?: boolean;
 
   /**
    * Overlay your own UI on the video; receives the same handle as `useAvatarCall`. Rendered in a
@@ -127,8 +158,28 @@ function handleFor(session: RealtimeSessionApi): AvatarCallHandle {
     },
     keepAlive: session.stayConnected,
     end: () => session.end("user_ended"),
+    microphone: session.microphone,
+    audio: session.audioPlayback,
+    startAudio: session.startAudio,
+    setMicrophoneEnabled: session.setMicrophoneEnabled,
+    retryMicrophone: () => session.setMicrophoneEnabled(true),
   };
 }
+
+const UNLOCK_BUTTON: CSSProperties = {
+  position: "absolute",
+  left: "50%",
+  bottom: 24,
+  transform: "translateX(-50%)",
+  padding: "10px 16px",
+  border: "none",
+  borderRadius: 9999,
+  background: "rgb(0 0 0 / 0.7)",
+  color: "white",
+  font: "inherit",
+  fontSize: 14,
+  cursor: "pointer",
+};
 
 /**
  * The connect-level hook, for apps that want their own layout around the video. Returns the
@@ -168,6 +219,30 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
     onStatusChange?.(call.status);
   }, [call.status, onStatusChange]);
 
+  const microphone = call.microphone;
+  const problemKey = microphone.status === "blocked" || microphone.status === "unavailable"
+    ? `${microphone.status}:${microphone.reason}:${microphone.message}`
+    : null;
+  const lastProblemRef = useRef<string | null>(null);
+  const onMicrophoneProblemRef = useRef(props.onMicrophoneProblem);
+  onMicrophoneProblemRef.current = props.onMicrophoneProblem;
+  useEffect(() => {
+    if (problemKey === lastProblemRef.current) return;
+    lastProblemRef.current = problemKey;
+    if (microphone.status === "blocked" || microphone.status === "unavailable") onMicrophoneProblemRef.current?.(microphone);
+    // `problemKey` is the identity of the problem; the object is re-derived every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [problemKey]);
+
+  const unlock = props.audioUnlockPrompt !== false && call.audio === "blocked"
+    ? createElement(
+        "button",
+        { key: "audio-unlock", type: "button", style: UNLOCK_BUTTON, onClick: () => void call.startAudio(), "data-testid": "avatar-audio-unlock" },
+        "Tap to turn on sound",
+      )
+    : null;
+  const overlay = props.children ? props.children(call) : null;
+
   const view = createElement(
     RealtimeAvatarLiveKitRoom,
     {
@@ -180,6 +255,7 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
     createElement(SessionLifecycleRoomBridge, {
       key: "bridge",
       lifecycle: session,
+      microphone: props.listen !== false,
       onConnectionDetailsChange: props.onConnectionDetailsChange,
     }),
     createElement(
@@ -191,7 +267,7 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
         fit: props.fit ?? "cover",
         className: props.className,
       },
-      props.children ? props.children(call) : null,
+      overlay === null && unlock === null ? null : createElement(Fragment, null, overlay, unlock),
     ),
   );
 

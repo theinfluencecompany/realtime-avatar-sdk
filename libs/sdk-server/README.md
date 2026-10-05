@@ -307,6 +307,19 @@ property the surface sets itself, such as its 100% size, pass `style`.
 the live badge, so an absolutely positioned control places itself against the box and stays
 clickable while she is live.
 
+### Microphone and sound
+
+The handle reports the two local failures a "live" call can hide. `call.microphone` says
+whether she can hear the user (`off`, `pending`, `on`, `muted`, `blocked`, `unavailable`; the
+last two carry `reason`, `message` and `hint`), and `onMicrophoneProblem` fires once per new
+problem. `call.retryMicrophone()` asks again after the user fixes it, and
+`call.setMicrophoneEnabled(enabled)` mutes and unmutes. `call.audio` says whether the user can
+hear her (`unknown`, `allowed`, `blocked`); while it is `blocked`, `AvatarCall` shows a
+"Tap to turn on sound" button that calls `call.startAudio()`. Turn that off with
+`audioUnlockPrompt={false}` and render your own from `call.audio`; `startAudio()` must run
+inside a click or tap handler. Every state is derived from LiveKit's public events, and LiveKit
+still owns the device: it captures on connect and stops when the room leaves.
+
 ### Ending a call
 
 `call.end()` (and `useRealtimeSession().end()`) is terminal from every phase, including

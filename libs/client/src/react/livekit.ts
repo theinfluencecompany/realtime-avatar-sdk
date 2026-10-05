@@ -834,12 +834,21 @@ export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps)
       serverUrl: grant?.livekit_url,
       token: grant?.participant_token,
       connect: shouldConnect,
-      audio: audio ?? (grant?.stt_mode === "server"),
+      audio: audio ?? publishesMicrophoneByDefault(grant),
       video: cameraPublishOptions(grant, video),
       options: roomOptions,
     },
     createElement(Fragment, null, cushion, children, roomAudio),
   );
+}
+
+/**
+ * Whether a room publishes the user's microphone when its caller does not say: only a call the
+ * server transcribes needs one. The one rule, shared by the room and the bridge that reports the
+ * microphone's state, so the two cannot disagree about whether a missing track is a problem.
+ */
+export function publishesMicrophoneByDefault(grant: Pick<LiveKitSessionGrant, "stt_mode"> | null | undefined): boolean {
+  return grant?.stt_mode === "server";
 }
 
 export const capacityErrorFromBusy = (busy: CapacityBusyResponse): RealtimeAvatarCapacityError => {
