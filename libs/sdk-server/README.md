@@ -295,6 +295,14 @@ call. Policy — `instructions`, `maxSeconds`, `voice`, `video` — is decided i
 your server. A route that spreads the request body into `startCall` hands your caller your
 system prompt and your bill.
 
+### Styling
+
+`AvatarCall` and `AvatarVideoSurface` lay themselves out with inline styles, so they need no
+CSS build and no configuration: no stylesheet to import and no Tailwind `@source` for this
+package. The surface fills its container; give that container a definite size (an aspect
+ratio plus a height, say). `className` on the surface adds your own classes; to change a
+property the surface sets itself, such as its 100% size, pass `style`.
+
 ### Ending a call
 
 `call.end()` (and `useRealtimeSession().end()`) is terminal from every phase, including

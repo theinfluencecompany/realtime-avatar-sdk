@@ -30,6 +30,13 @@
   starts again; `reset()` no longer can. `SessionEndReason` gains `"user"`.
 - A mint that lands after the hook stopped wanting it now also gives back a queue ticket, not
   only a session.
+- `AvatarVideoSurface` (and so `AvatarCall`) styles its box, media layers and live badge
+  inline instead of with Tailwind classes. Tailwind does not scan `node_modules`, so an app had
+  to add an `@source` for this package or the layout was purged: the face crop, the stacking of
+  poster, idle clip and live video, and the badge. That configuration is no longer needed, and
+  an app without Tailwind now gets the intended layout. Because inline styles win over classes,
+  a `className` that used to resize the surface's box must move to `style`. The box now carries
+  `data-testid="avatar-video-surface"` unless you pass your own.
 
 ## 0.25.0
 
