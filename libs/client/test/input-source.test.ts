@@ -43,7 +43,7 @@ function fixture() {
     input: { session: null, turnTimeoutSeconds: 2, onTurnTimeout: ({ turnId }: { turnId: string | null }) => timeouts.push(turnId) },
     lifecycle: {
       phase: { kind: "live" }, timeToDisconnectMs: null,
-      markActivity: () => { activity += 1; }, stayConnected() {}, reset() {},
+      markActivity: () => { activity += 1; }, stayConnected() {}, reset() {}, end() {},
     },
     hooks: {
       useRef(value: unknown) {

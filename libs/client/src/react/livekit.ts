@@ -495,6 +495,11 @@ export function useLiveKitAvatarGrant<
   // re-fire the effect, yet the effect can still see whether we are mid-queue.
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Whether anyone still wants a call from this hook: false once it is deactivated (a hang-up,
+  // a mode switch) or unmounted. Read by a mint that lands after its effect was cancelled.
+  const wantedRef = useRef(active);
+  wantedRef.current = active;
+  useEffect(() => () => { wantedRef.current = false; }, []);
 
   // Tab visibility gates queue presence: a HIDDEN tab stops refreshing its ticket
   // so its place decays by TTL (switching away frees the slot), and becoming
@@ -585,9 +590,16 @@ export function useLiveKitAvatarGrant<
           // caller's only slot, and their very next attempt is refused by a session
           // they never even saw. Release it explicitly instead; the ref is not ours to
           // write once the effect is dead, so this is deliberately a direct call.
+          //
+          // A QUEUED answer that lands after nobody wants the call is the same leak one step
+          // earlier: the request may have (re)placed us in line after the hang-up released the
+          // ticket. While the hook is still wanted (a retry superseded this request) the ticket
+          // is the one the next request carries, so it must be kept.
           if (cancelled) {
             if (result.status !== "busy") {
               void client.releaseLiveKitSession(result.grant.session_id, "superseded");
+            } else if (!wantedRef.current && result.busy.queue_ticket_id) {
+              void client.releaseLiveKitQueueTicket(result.busy.queue_ticket_id, "unmount");
             }
             return;
           }

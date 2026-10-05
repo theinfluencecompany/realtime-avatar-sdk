@@ -195,8 +195,9 @@ export function nextGraceWindow(args: {
  * Resolve the LABELED terminal reason for `onEnded`. The worker's `ended` frame
  * (`workerLabel`) always wins; absent it (an old worker, or a transport drop before
  * the frame), fall back to mapping the client-internal {@link SessionEndReason}:
- * `idle → idle`, `error → failed`, everything else (incl. `disconnected`/undefined)
- * → `disconnected`. So the app NEVER sees a bare LiveKit DisconnectReason.
+ * `idle → idle`, `error → failed`, `user → user_ended`, everything else (incl.
+ * `disconnected`/undefined) → `disconnected`. So the app NEVER sees a bare LiveKit
+ * DisconnectReason.
  */
 export function resolveEndReason(
   workerLabel: SessionEndReasonLabel | null,
@@ -208,6 +209,8 @@ export function resolveEndReason(
       return "idle";
     case "error":
       return "failed";
+    case "user":
+      return "user_ended";
     default:
       return "disconnected";
   }

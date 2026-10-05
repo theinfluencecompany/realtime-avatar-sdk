@@ -295,6 +295,16 @@ call. Policy — `instructions`, `maxSeconds`, `voice`, `video` — is decided i
 your server. A route that spreads the request body into `startCall` hands your caller your
 system prompt and your bill.
 
+### Ending a call
+
+`call.end()` (and `useRealtimeSession().end()`) is terminal from every phase, including
+`waiting` in the queue and `connecting`. It stops the queue retry and the reconnect ladder,
+releases the held session or the queue ticket, leaves the room (which stops the microphone),
+moves `status` to `"ended"` and fires `onEnded({ reason: "user_ended" })` once. Nothing mints
+again for that call: to call again, remount `AvatarCall`, or call `reconnect()` on the lower-level
+hooks. `reset()` does not undo an end. `sayAndEnd(text)` is the graceful path when she should
+speak a last line first.
+
 ### Optional connection details
 
 `AvatarCall` provides call status, actions and end reasons for your default UI. To show

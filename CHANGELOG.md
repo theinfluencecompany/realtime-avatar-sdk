@@ -20,6 +20,16 @@
   whose CORS does not allow credentials failed and the release never arrived, while `connect`
   had succeeded. The beacon remains the fallback only where no fetch exists and its `include`
   matches the mode (a same-origin route, or `credentials: "include"`).
+- Hanging up is terminal. `AvatarCallHandle.end()`, `useRealtimeSession().end()` and the new
+  `useSessionLifecycle().end()` stop the queue retry and the reconnect ladder, release the held
+  session or queue ticket (`manual`), leave the room, and park on `ended` from ANY phase. Before,
+  `end()` only published a graceful-close frame and reset in-memory state: while queued the
+  retry kept minting, so a call the user hung up on later started and billed; while live the
+  status fell back to "connecting" and the connect watchdog released the session and minted a
+  fresh one. `onEnded` fires once with `user_ended`. Only `reconnect()` (or deactivating the hook)
+  starts again; `reset()` no longer can. `SessionEndReason` gains `"user"`.
+- A mint that lands after the hook stopped wanting it now also gives back a queue ticket, not
+  only a session.
 
 ## 0.25.0
 

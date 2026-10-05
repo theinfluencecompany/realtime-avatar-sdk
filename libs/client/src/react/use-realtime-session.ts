@@ -206,7 +206,12 @@ export type RealtimeSessionApi = SessionLifecycleApi & {
   createTranscriptSender: (opts?: TranscriptSenderOptions) => TranscriptSender;
   /** Re-send the last turn with its resolved provenance, a new ID, and retry_of_turn_id. */
   retryTurn: () => void;
-  /** End gracefully now (the user tapped End). */
+  /**
+   * End now (the user tapped End), from any phase — queued and connecting included. Tells the
+   * worker (best-effort), then {@link SessionLifecycleApi.end}: releases the held session or
+   * queue ticket, leaves the room, and parks on `ended`. `onEnded` fires once, with `reason`
+   * (default `user_ended`). Nothing mints again until `reconnect()`.
+   */
   end: (reason?: EndReason) => void;
   /** The avatar's live nonverbal behavior, or null pre-choreo (see {@link BehaviorSnapshot}). */
   behavior: BehaviorSnapshot | null;
@@ -589,8 +594,10 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
   const end = useCallback((reason?: EndReason) => {
     if (reason) lastLabeledEndReasonRef.current = reason;
     lastTurnRef.current = null;
+    // Best-effort word to the worker before the room goes; the lifecycle end below is what
+    // actually releases the session or queue ticket and stops anything from minting again.
     requestGracefulClose();
-    lifecycle.reset();
+    lifecycle.end();
   }, [lifecycle, requestGracefulClose]);
 
   const performAction = useCallback(
