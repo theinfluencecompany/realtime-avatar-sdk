@@ -303,6 +303,10 @@ package. The surface fills its container; give that container a definite size (a
 ratio plus a height, say). `className` on the surface adds your own classes; to change a
 property the surface sets itself, such as its 100% size, pass `style`.
 
+`AvatarCall`'s `children` render in a layer that fills the call's box above the video and
+the live badge, so an absolutely positioned control places itself against the box and stays
+clickable while she is live.
+
 ### Ending a call
 
 `call.end()` (and `useRealtimeSession().end()`) is terminal from every phase, including

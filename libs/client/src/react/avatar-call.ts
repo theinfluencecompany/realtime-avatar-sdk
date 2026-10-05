@@ -90,7 +90,11 @@ export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectio
   /** Balance running low. */
   onLowBalance?: (event: { secondsLeft: number }) => void;
 
-  /** Overlay your own UI on the video; receives the same handle as `useAvatarCall`. */
+  /**
+   * Overlay your own UI on the video; receives the same handle as `useAvatarCall`. Rendered in a
+   * layer above the video and the live badge that fills the call's box, so `position: absolute`
+   * places a control against the box and it stays clickable while she is live.
+   */
   children?: (call: AvatarCallHandle) => ReactNode;
 };
 

@@ -161,7 +161,11 @@ export type AvatarVideoSurfaceProps = {
   className?: string;
   /** Extra inline style for the box, spread over the surface's own. */
   style?: CSSProperties;
-  /** Overlay content rendered above both media layers (badges, chrome, scrims). */
+  /**
+   * Overlay content (controls, captions, scrims). Rendered in a layer that fills the box and
+   * stacks above both media layers and the live badge, so a positioned child places itself
+   * against the box and stays clickable while she is live.
+   */
   children?: ReactNode;
   /** Surface a small "live · WxH" badge when the live layer is shown. Default true. */
   showLiveBadge?: boolean;
@@ -481,7 +485,11 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     idleLayer,
     frontLayer,
     badge,
-    children,
+    // Above BOTH media layers and the badge. Appended bare, a consumer's positioned child with
+    // no z-index painted under the z-20 live layer, which then took its clicks once live.
+    children == null || children === false
+      ? null
+      : createElement("div", { key: "overlay", style: AVATAR_VIDEO_OVERLAY, "data-testid": "avatar-overlay" }, children),
   );
 }
 
@@ -1222,3 +1230,4 @@ const AVATAR_VIDEO_BADGE: CSSProperties = {
   backdropFilter: "blur(8px)",
 };
 const AVATAR_VIDEO_BADGE_DOT: CSSProperties = { width: 6, height: 6, borderRadius: 9999, background: "#34d399" };
+const AVATAR_VIDEO_OVERLAY: CSSProperties = { position: "absolute", inset: 0, zIndex: 40 };

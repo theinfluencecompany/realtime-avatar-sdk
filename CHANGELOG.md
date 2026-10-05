@@ -37,6 +37,11 @@
   an app without Tailwind now gets the intended layout. Because inline styles win over classes,
   a `className` that used to resize the surface's box must move to `style`. The box now carries
   `data-testid="avatar-video-surface"` unless you pass your own.
+- `AvatarCall`'s overlay children (and `AvatarVideoSurface`'s) now render in a layer above the
+  live video and the badge, as documented. They were appended bare under the `z-index: 20`
+  live layer, so once a call went live the video took their clicks: measured in Chromium, the
+  centre of an `absolute bottom-4 left-4` End button hit the live layer. The layer fills the
+  box, so an absolutely positioned child places itself exactly as before.
 
 ## 0.25.0
 
