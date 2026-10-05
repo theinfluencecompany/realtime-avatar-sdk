@@ -299,6 +299,18 @@ if you were alerting on the framework hook.
 const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", timeoutMs: 60_000 });
 ```
 
+**A route on another origin.** `createProxyClient` sends every request, and the release it
+sends when the page is hidden, with one `credentials` mode, default `"same-origin"`. If the page
+is `app.example.com` and the route is `api.example.com` and authorizes on a cookie, pass
+`credentials: "include"` and have the route's CORS answer with
+`Access-Control-Allow-Credentials: true` and the page's exact origin. The page-hide release is a
+`keepalive` fetch under that same mode, so it reaches the route whenever `connect` did;
+`sendBeacon` is only a fallback where its fixed `include` cannot differ from the mode.
+
+```ts
+const client = createProxyClient({ proxyUrl: "https://api.example.com/realtime-avatar", credentials: "include" });
+```
+
 The thrown error is a `RealtimeAvatarApiError` with `.status`, `.code`, `.retryable` and the
 correlation ID at `.requestId` (the body's `requestId`, else the `X-Request-ID` header). Show
 the message, keep the request ID for support, and offer a retry button when `.retryable` is

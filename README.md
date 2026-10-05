@@ -280,6 +280,18 @@ the same class with `code: "upstream_timeout"`, `status: 504` and `response: nul
 may still be minting, so do not re-send it automatically: release the session if an id reached
 you, otherwise wait for the server-side join timeout, or leave the retry to the user.
 
+**A route on another origin.** `createProxyClient` sends every request, and the release it
+sends when the page is hidden, with one `credentials` mode, default `"same-origin"`. If the page
+is `app.example.com` and the route is `api.example.com` and authorizes on a cookie, pass
+`credentials: "include"` and have the route's CORS answer with
+`Access-Control-Allow-Credentials: true` and the page's exact origin. The page-hide release is a
+`keepalive` fetch under that same mode, so it reaches the route whenever `connect` did;
+`sendBeacon` is only a fallback where its fixed `include` cannot differ from the mode.
+
+```ts
+const client = createProxyClient({ proxyUrl: "https://api.example.com/realtime-avatar", credentials: "include" });
+```
+
 ---
 
 ## Speech recognition hints

@@ -55,8 +55,9 @@ test("the package ships something that can actually produce that client", () => 
   ]) {
     assert.equal(typeof (client as unknown as Record<string, unknown>)[method], "function", `missing ${method}`);
   }
-  // No beacon in this runtime: it must answer false rather than throw, so the caller falls
-  // back to the awaited release instead of losing the slot.
+  // Nothing that outlives a page can reach a relative route from here (no page to resolve it
+  // against, no beacon): it must answer false rather than throw, so the caller falls back to
+  // the awaited release instead of losing the slot.
   assert.equal(client.releaseLiveKitSessionBeacon("sess_1"), false);
 });
 

@@ -58,9 +58,9 @@ export interface AvatarSessionClient<TLlmProvider extends LLMProvider = LLMProvi
     options?: RealtimeAvatarRequestOptions,
   ): Promise<boolean>;
   /**
-   * The `pagehide` path. `sendBeacon` is the one send that outlives a closing page, and it is
-   * synchronous-or-nothing — hence a `boolean` return and no promise, so the caller can fall
-   * back to {@link releaseLiveKitSession} when the browser has no beacon.
+   * The `pagehide` path: a send that outlives a closing page (a keepalive `fetch`, or
+   * `sendBeacon`), dispatched synchronously — hence a `boolean` return and no promise, so the
+   * caller can fall back to {@link releaseLiveKitSession} when nothing could be sent.
    */
   releaseLiveKitSessionBeacon(sessionId: string, reason?: LiveKitSessionReleaseReason): boolean;
   /**

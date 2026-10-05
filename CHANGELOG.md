@@ -12,6 +12,14 @@
   `session_id` and `queue_ticket_id`, or carries a wrong-typed id or an unknown `reason`, is
   answered `422` instead of throwing a `TypeError` into a body-less 500. `/connect` now answers
   `422` to a `mode` other than `"avatar"` or `"voice"`, which it used to coerce to `"avatar"`.
+- `createProxyClient` takes `credentials` (default `"same-origin"`), applied to every request
+  including the page-hide release, for a route on another origin that authorizes on a cookie.
+  The page-hide release is now a `keepalive` fetch under that mode (through your `fetch`, so its
+  headers apply too) instead of `sendBeacon`. A beacon is always `credentials: "include"` and
+  cannot carry a header: measured in Chromium 148, its JSON preflight to a cross-origin route
+  whose CORS does not allow credentials failed and the release never arrived, while `connect`
+  had succeeded. The beacon remains the fallback only where no fetch exists and its `include`
+  matches the mode (a same-origin route, or `credentials: "include"`).
 
 ## 0.25.0
 

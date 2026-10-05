@@ -637,9 +637,10 @@ export function useLiveKitAvatarGrant<
   // Release the held lease on the way out so a tab-close / navigate-away frees
   // the GPU slot immediately. `pagehide` is the reliable unload signal (it fires
   // for bfcache navigations and real closes where `beforeunload`/unmount effects
-  // are unreliable); a `fetch` is cancelled by the unloading document, so we use
-  // `sendBeacon` here. The React unmount cleanup covers SPA route changes (where
-  // the page is NOT unloading and a normal release fetch completes).
+  // are unreliable); an ordinary `fetch` is cancelled by the unloading document,
+  // so this goes through the client's page-hide send (a keepalive fetch or a
+  // beacon, see createProxyClient). The React unmount cleanup covers SPA route
+  // changes (where the page is NOT unloading and a normal release fetch completes).
   useEffect(() => {
     // `pagehide` exists only in browsers. React Native aliases `window` to a bare
     // global with NO event target, so feature-detect the listener — native apps
