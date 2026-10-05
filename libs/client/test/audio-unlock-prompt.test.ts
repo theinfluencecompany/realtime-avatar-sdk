@@ -115,3 +115,9 @@ test("style reaches the surface, so a sizing class has somewhere to move", () =>
   const style = { height: 480 };
   assert.equal(run("allowed", { style }).named("AvatarVideoSurface")?.props?.style, style);
 });
+
+test("showLiveBadge reaches the surface, so an app with its own status can turn the badge off", () => {
+  assert.equal(run("allowed", { showLiveBadge: false }).named("AvatarVideoSurface")?.props?.showLiveBadge, false);
+  // Absent stays absent: the surface's own default (on) applies, as it did before the prop existed.
+  assert.equal(run("allowed").named("AvatarVideoSurface")?.props?.showLiveBadge, undefined);
+});

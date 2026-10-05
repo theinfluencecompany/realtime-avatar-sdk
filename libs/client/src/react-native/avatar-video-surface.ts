@@ -40,6 +40,7 @@ import { Animated, Image, Platform, StyleSheet, Text, View } from "react-native"
 import type { ImageResizeMode, StyleProp, ViewStyle } from "react-native";
 import {
   isNativeLiveTrackSubscribed,
+  liveBadgeLabel,
   resolveSurfaceLayers,
   useDebouncedHide,
   useLiveTrackProducing,
@@ -125,8 +126,13 @@ export type AvatarVideoSurfaceProps = {
   style?: StyleProp<ViewStyle>;
   /** Overlay content rendered above both media layers (badges, chrome, scrims). */
   children?: ReactNode;
-  /** Surface a small "live · WxH" badge when the live layer is shown. Default true. */
+  /**
+   * Surface a small "live" badge when the live layer is shown. Default true. Turn it off when
+   * your own UI already says the call is live.
+   */
   showLiveBadge?: boolean;
+  /** Show diagnostic readouts: today, the live layer's resolution on the badge. Default false. */
+  debug?: boolean;
   /**
    * Reclaim the flat 0.5s de-jitter cushion on clean networks — the same opt-in
    * closed loop the web surface takes, sharing the same implementation. Default
@@ -171,6 +177,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     style,
     children,
     showLiveBadge = true,
+    debug = false,
     adaptivePlayout = false,
     onPlayoutDelayChange,
     testID,
@@ -235,10 +242,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   });
   const resizeMode: ImageResizeMode = fit === "cover" ? "cover" : "contain";
   const liveDims = videoTrack?.publication?.dimensions ?? null;
-  const liveLabel =
-    showLive && liveDims && liveDims.width > 0 && liveDims.height > 0
-      ? `live · ${liveDims.width}×${liveDims.height}`
-      : "live";
+  const liveLabel = liveBadgeLabel(liveDims, debug);
 
   const posterLayer = layers.showPoster
     ? createElement(Image, {

@@ -109,6 +109,11 @@ export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectio
   /** A still shown before the idle clip is playable. */
   poster?: string | null;
   fit?: AvatarVideoFit;
+  /**
+   * The small "live" badge over the video while she is live. Default true. Set false when your
+   * own UI already shows the call's status.
+   */
+  showLiveBadge?: boolean;
   /** Adds your classes to the call's box. The box sizes itself inline; to resize it, use `style`. */
   className?: string;
   /** Inline style for the call's box, spread over its own (`height`, `aspectRatio`, …). */
@@ -300,6 +305,7 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
         idleVideoUrl: props.idleVideoUrl ?? null,
         poster: props.poster ?? null,
         fit: props.fit ?? "cover",
+        showLiveBadge: props.showLiveBadge,
         className: props.className,
         style: props.style,
       },

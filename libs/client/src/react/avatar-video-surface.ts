@@ -167,8 +167,16 @@ export type AvatarVideoSurfaceProps = {
    * against the box and stays clickable while she is live.
    */
   children?: ReactNode;
-  /** Surface a small "live · WxH" badge when the live layer is shown. Default true. */
+  /**
+   * Surface a small "live" badge when the live layer is shown. Default true. Turn it off when
+   * your own UI already says the call is live.
+   */
   showLiveBadge?: boolean;
+  /**
+   * Show diagnostic readouts: today, the live layer's resolution on the badge
+   * ("live · 576×1010"). Default false. A development aid, never product copy.
+   */
+  debug?: boolean;
   /**
    * Reclaim the flat 0.5s de-jitter cushion on clean networks: a 1Hz closed loop
    * over `getStats()` that descends toward a 150ms floor while jitter and loss stay
@@ -237,6 +245,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     style,
     children,
     showLiveBadge = true,
+    debug = false,
     adaptivePlayout = false,
     onPlayoutDelayChange,
   } = props;
@@ -352,10 +361,6 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   useLiveResumeOnProducing(liveWrapRef, trackProducing);
 
   const fitStyle = fit === "cover" ? AVATAR_VIDEO_FIT_COVER : AVATAR_VIDEO_FIT_CONTAIN;
-  const liveLabel =
-    showLive && liveDims && liveDims.width > 0 && liveDims.height > 0
-      ? `${liveDims.width}×${liveDims.height}`
-      : null;
 
   // Which back layers to render (pure decision, unit-tested in the spec). The
   // poster is the DEEPEST floor and renders whenever it exists — it is the
@@ -461,7 +466,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
           "span",
           { key: "badge", style: AVATAR_VIDEO_BADGE },
           createElement("span", { key: "dot", style: AVATAR_VIDEO_BADGE_DOT, "aria-hidden": true }),
-          liveLabel ? `live · ${liveLabel}` : "live",
+          liveBadgeLabel(liveDims, debug),
         )
       : null;
 
@@ -515,6 +520,14 @@ export type SurfaceLayers = {
  * idle clip is unchanged at rest while an avatar with ONLY a portrait shows the
  * face instead of black.
  */
+/**
+ * The live badge's text, for the web and native surfaces both. The layer's resolution is a
+ * diagnostic and appears only under `debug`: 0.26.0 showed "live · 576×1010" on every call.
+ */
+export function liveBadgeLabel(dims: { width: number; height: number } | null, debug: boolean): string {
+  return debug && dims && dims.width > 0 && dims.height > 0 ? `live · ${dims.width}×${dims.height}` : "live";
+}
+
 export function resolveSurfaceLayers(input: {
   idleVideoUrl: string | null;
   poster: string | null;
