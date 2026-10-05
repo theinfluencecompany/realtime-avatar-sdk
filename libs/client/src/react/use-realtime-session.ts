@@ -662,6 +662,13 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     lifecycle.end();
   }, [lifecycle, requestGracefulClose]);
 
+  // A redial is a new call: the label the previous one ended with must not become this one's.
+  const innerReconnect = lifecycle.reconnect;
+  const reconnect = useCallback(() => {
+    if (phaseKind === "ended") lastLabeledEndReasonRef.current = null;
+    innerReconnect();
+  }, [innerReconnect, phaseKind]);
+
   const performAction = useCallback(
     (
       actionId: string,
@@ -734,6 +741,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
       startAudio,
       setMicrophoneEnabled,
       onConnectionError,
+      reconnect,
       lifecycle,
       sendClosingTurn,
       requestGracefulClose,
@@ -756,7 +764,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     }),
     [
       lifecycle, turn, clocks, endsAt, graceWindow, media, microphone, audioPlayback, startAudio,
-      setMicrophoneEnabled, onConnectionError, sendClosingTurn, requestGracefulClose,
+      setMicrophoneEnabled, onConnectionError, reconnect, sendClosingTurn, requestGracefulClose,
       extend, sendTurn, createTranscriptSender, retryTurn, end, behavior, performAction, onLifecycleData, registerDataPublisher,
       registerTurnSender, setTurnState, setMedia, setMicrophoneFacts, setAudioPlayback, registerMediaControls, reset,
     ],

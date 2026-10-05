@@ -176,15 +176,17 @@ test("hanging up while a mint is in flight releases the grant that lands after i
 
 test("reconnect() after a hang-up is the one way to start again", async () => {
   const { client, ledger } = fakeClient(() => "ready");
+  const ended: string[] = [];
   let session: RealtimeSessionApi | undefined;
   function Call(): null {
-    session = sdk.useRealtimeSession({ client, session: SESSION });
+    session = sdk.useRealtimeSession({ client, session: SESSION, onEnded: ({ reason }) => ended.push(reason) });
     return null;
   }
   let renderer: ReturnType<typeof create> | undefined;
   await act(async () => { renderer = create(createElement(Call)); });
   await settle(20);
-  await act(async () => session?.end());
+  // As AvatarCall does: an explicit label.
+  await act(async () => session?.end("user_ended"));
   await act(async () => session?.reset());
   await settle(50);
   assert.equal(ledger.mints, 1, "reset() is not a redial");
@@ -193,6 +195,31 @@ test("reconnect() after a hang-up is the one way to start again", async () => {
   await settle(50);
   assert.equal(ledger.mints, 2);
   assert.equal(phaseOf(session), "connecting");
+  // The redialled call ends for its own reason, not the hang-up that ended the one before it.
+  await act(async () => { session?.onConnected(); session?.setAgentPresent(true); });
+  await act(async () => session?.onDisconnected(DisconnectReason.ROOM_DELETED));
+  assert.deepEqual(ended, ["user_ended", "disconnected"]);
+  await act(async () => renderer?.unmount());
+});
+
+test("a redialled call ends with its own reason, not the hang-up before it", async () => {
+  const { client } = fakeClient(() => "ready");
+  const ended: string[] = [];
+  let session: RealtimeSessionApi | undefined;
+  function Call(): null {
+    session = sdk.useRealtimeSession({ client, session: SESSION, onEnded: ({ reason }) => ended.push(reason) });
+    return null;
+  }
+  let renderer: ReturnType<typeof create> | undefined;
+  await act(async () => { renderer = create(createElement(Call)); });
+  await settle(20);
+  await act(async () => session?.end("user_ended"));
+  await act(async () => session?.reconnect());
+  await settle(50);
+  await act(async () => { session?.onConnected(); session?.setAgentPresent(true); });
+  assert.equal(phaseOf(session), "live");
+  await act(async () => session?.onDisconnected(DisconnectReason.ROOM_DELETED));
+  assert.deepEqual(ended, ["user_ended", "disconnected"]);
   await act(async () => renderer?.unmount());
 });
 
