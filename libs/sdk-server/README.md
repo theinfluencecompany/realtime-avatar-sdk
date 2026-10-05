@@ -222,7 +222,7 @@ all), and the `video` policy types are deliberately not one-to-one with the wire
 
 ```ts
 // calls
-rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, connectionHistory?, transcript?, metadata? })
+rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, connectionHistory?, transcript?, metadata?, llm? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 rta.leaveQueue(queueTicketId, { reason? }) // give up a queued call's place in line; idempotent, never throws
 
@@ -322,6 +322,9 @@ connects), a mute made then is kept when the call goes live, and after `end()` t
 once the call ended). While it is `blocked`, `AvatarCall` shows a "Tap to turn on sound" button,
 top-centre in a polite live region, that calls `call.startAudio()`. Pass `audioUnlockPrompt` a
 function to render your own (your words, your placement), or `false` for nothing.
+The small "live" badge over the video is on by default; pass `showLiveBadge={false}` when your own
+UI already shows the call's status. `AvatarVideoSurface` takes the same prop, plus `debug` to show
+the live layer's resolution on the badge while you develop.
 `startAudio()` must run inside a click or tap handler; it never rejects and resolves whether
 playback is allowed afterwards.
 
