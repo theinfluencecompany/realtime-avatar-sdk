@@ -35,7 +35,7 @@ const bundle = await build({
   },
   bundle: true, write: false, platform: "node", format: "cjs", packages: "external",
   plugins: [{ name: "controlled-connection", setup(builder) {
-    builder.onResolve({ filter: /^(react|\.\/livekit|\.\/avatar-video-surface|\.\/use-realtime-session)$/ }, ({ path }) => ({ path, namespace: "controlled" }));
+    builder.onResolve({ filter: /^(react|\.\/livekit|\.\/avatar-video-surface|\.\/use-realtime-session|\.\/call-media)$/ }, ({ path }) => ({ path, namespace: "controlled" }));
     builder.onLoad({ filter: /.*/, namespace: "controlled" }, ({ path }) => ({ contents: path === "react"
       ? `export const useRef = (v) => globalThis.fixture.useRef(v);
          export const useEffect = (fn, deps) => globalThis.fixture.useEffect(fn, deps);
@@ -43,15 +43,19 @@ const bundle = await build({
          export const useState = () => {throw Error('unexpected lifecycle state')};
          export const createElement = (type, props, ...children) => {
            const node = {type, props, children}; globalThis.fixture.elements.push(node); return node;
-         };`
+         };
+         export const Fragment = Symbol.for("react.fragment");`
       : path === "./livekit"
         ? `export const useRoomContext = () => globalThis.fixture.room;
            export const useConnectionState = () => globalThis.fixture.room.state;
            export const useVoiceAssistant = () => globalThis.fixture.assistant;
            export const useTranscriptions = () => []; export const useChat = () => ({send: () => {}});
-           export const useLiveKitAvatarGrant = () => {}; export const RealtimeAvatarLiveKitRoom = () => null;`
+           export const useLiveKitAvatarGrant = () => {}; export const RealtimeAvatarLiveKitRoom = () => null;
+           export const publishesMicrophoneByDefault = () => false;`
         : path === "./avatar-video-surface"
           ? "export const AvatarVideoSurface = () => null;"
+          : path === "./call-media"
+            ? "export const useCallMedia = () => {};"
           : "export const useRealtimeSession = () => globalThis.fixture.session;" }));
   } }],
 });
@@ -105,7 +109,7 @@ function fixture(windowValue?: object) {
       audioTrack: source(ConnectionQuality.Excellent), videoTrack: source(ConnectionQuality.Poor) },
     lifecycle: { ...legacyBridge.lifecycle, grant: { session_id: "first" } },
     callback: record, elements: [],
-    session: { phase: { kind: "live" }, clocks: { sessionRemainingMs: null } },
+    session: { phase: { kind: "live" }, clocks: { sessionRemainingMs: null }, microphone: { status: "off" }, audioPlayback: "unknown" },
     useRef(value) {
       const index = refIndex++;
       return refs[index] ?? (refs[index] = { current: value });

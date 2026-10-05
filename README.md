@@ -192,6 +192,7 @@ One class, one types file. The full surface is
 // calls
 rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, transcription?, video?, recording?, connectionHistory?, transcript?, metadata? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
+rta.leaveQueue(queueTicketId, { reason? }) // give up a queued call's place in line; idempotent, never throws
 
 // optional recordings; server only, requires recordings:read
 rta.listRecordings({ sessionId, limit?, cursor? })
@@ -278,6 +279,22 @@ and `.requestId`; offer a retry button rather than looping. A deadline that runs
 the same class with `code: "upstream_timeout"`, `status: 504` and `response: null`. The route
 may still be minting, so do not re-send it automatically: release the session if an id reached
 you, otherwise wait for the server-side join timeout, or leave the retry to the user.
+
+**A route on another origin.** If the page is `app.example.com` and the route is
+`api.example.com` and authorizes on a cookie, pass `credentials: "include"` and have the route's
+CORS answer with `Access-Control-Allow-Credentials: true` and the page's exact origin.
+`createProxyClient` applies that mode to every request, the release it sends when the page is
+hidden included. Unset, it sets no `credentials` at all, so `fetch`'s default (`same-origin`) or
+your own `fetch` wrapper decides. The page-hide release is a `sendBeacon` where a beacon's fixed
+`include` matches (a same-origin route, or `credentials: "include"`), and otherwise a `keepalive`
+fetch through your `fetch`. Neither carries per-request `requestOptions.headers`, and a beacon
+carries no header at all, so a route that authorizes the release by header sees none. Only
+Chromium has been measured; Firefox before 133 ignores `keepalive`, which matters only for a
+cross-origin route without `credentials: "include"`.
+
+```ts
+const client = createProxyClient({ proxyUrl: "https://api.example.com/realtime-avatar", credentials: "include" });
+```
 
 ---
 

@@ -67,7 +67,14 @@ export interface EnableMicrophoneOptions {
   timeoutMs?: number;
 }
 
-const HINTS: Record<MicrophoneFailureReason, string> = {
+/**
+ * Why a microphone that was WORKING stopped: the device was unplugged, or access was revoked
+ * mid-call. LiveKit tries the default device first and mutes the track when that fails too.
+ * Only a live call can report this; `enableMicrophone` never does.
+ */
+export type MicrophoneProblemReason = MicrophoneFailureReason | "device-lost";
+
+const HINTS: Record<MicrophoneProblemReason, string> = {
   "insecure-origin":
     "The browser only exposes microphones on a secure origin. Serve the page over https, " +
     "or open it on http://localhost — a LAN address like http://192.168.1.5 will not do.",
@@ -87,6 +94,9 @@ const HINTS: Record<MicrophoneFailureReason, string> = {
   "device-in-use":
     "Another application or browser tab is holding the microphone. Close it — including any " +
     "call from this page you did not hang up — and try again.",
+  "device-lost":
+    "The microphone stopped during the call: it was unplugged, or access to it was turned off. " +
+    "Reconnect it or allow access again, then turn the microphone back on.",
   unknown: "Try again, and if it persists include the message above in your report.",
 };
 
@@ -138,6 +148,24 @@ function classify(error: unknown): { reason: MicrophoneFailureReason; message: s
 
 function fail(reason: MicrophoneFailureReason, message: string): MicrophoneResult {
   return { ok: false, reason, message, hint: HINTS[reason] };
+}
+
+/** A microphone problem as a value: the cause, what the browser said, and what to do. */
+export type MicrophoneProblem = { reason: MicrophoneProblemReason; message: string; hint: string };
+
+/**
+ * Describe a microphone failure, whoever caught it. The one classifier behind both
+ * {@link enableMicrophone} and the React call handle's `microphone` state, so the two can never
+ * give the same failure different advice.
+ */
+export function describeMicrophoneFailure(error: unknown): MicrophoneProblem {
+  const { reason, message } = classify(error);
+  return { reason, message, hint: HINTS[reason] };
+}
+
+/** The problem for a microphone that stopped mid-call ({@link MicrophoneProblemReason}). */
+export function microphoneLost(message: string): MicrophoneProblem {
+  return { reason: "device-lost", message, hint: HINTS["device-lost"] };
 }
 
 /**

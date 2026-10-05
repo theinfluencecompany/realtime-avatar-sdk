@@ -1,9 +1,12 @@
 export { checkVideoSupport, type VideoSupport } from "./video-support.ts";
 export {
+  describeMicrophoneFailure,
   enableMicrophone,
   type EnableMicrophoneOptions,
   type MicrophoneCapableRoom,
   type MicrophoneFailureReason,
+  type MicrophoneProblem,
+  type MicrophoneProblemReason,
   type MicrophoneResult,
 } from "./microphone.ts";
 export {

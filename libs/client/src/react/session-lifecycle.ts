@@ -15,6 +15,7 @@ import {
 import {
   useChat,
   useConnectionState,
+  publishesMicrophoneByDefault,
   useLiveKitAvatarGrant,
   useRoomContext,
   useTranscriptions,
@@ -34,6 +35,7 @@ import {
 } from "../wire";
 import { nextBehaviorSnapshot, type BehaviorSnapshot } from "./behavior-snapshot";
 import { createConnectionHistoryCollector } from "./connection-history";
+import { useCallMedia, type CallMediaSinks } from "./call-media";
 
 // ---------------------------------------------------------------------------
 // Pure recovery classifiers (LIFTED unchanged from the studio's
@@ -216,8 +218,11 @@ export function retryStep(attempt: number, policy: ReconnectPolicy = resolveReco
  *   frees the GPU). This is the reason the idle-warning countdown is now TRUE.
  * - `disconnected`: a deliberate server/peer end or an exhausted auto-reconnect.
  * - `error`: a grant failure surfaced as a terminal phase (no lease, no retry).
+ * - `user`: the app ended it ({@link SessionLifecycleApi.end}) — from any phase, queued
+ *   included. The held session or queue ticket is released and nothing mints again until
+ *   {@link SessionLifecycleApi.reconnect}.
  */
-export type SessionEndReason = "idle" | "disconnected" | "error";
+export type SessionEndReason = "idle" | "disconnected" | "error" | "user";
 
 export type SessionLifecyclePhase =
   // no session requested.
@@ -569,8 +574,18 @@ export type SessionLifecycleApi = {
   markActivity: () => void;
 
   // --- Recovery ---
-  /** Manual reconnect (the Reconnect button): resets the attempt budget and re-mints. */
+  /**
+   * Manual reconnect (the Reconnect button): resets the attempt budget and re-mints. After
+   * {@link end} it is the one way to call again.
+   */
   reconnect: () => void;
+  /**
+   * End the session NOW, from any phase — queued, requesting, connecting, live or recovering.
+   * Stops the queue retry and the reconnect ladder, releases the held session or queue ticket
+   * (`manual`), leaves the room, and parks on `ended{reason:"user"}`. Terminal: nothing mints
+   * again until {@link reconnect}; {@link reset} does not undo it. Idempotent.
+   */
+  end: () => void;
 
   // --- Room event sinks (wire 1:1 to RealtimeAvatarLiveKitRoom / an in-room bridge) ---
   onConnected: () => void;
@@ -598,7 +613,7 @@ export type SessionLifecycleApi = {
    */
   registerLeaveRoom: (leave: (() => void) | null) => void;
 
-  /** Reset to idle (mode/avatar change). */
+  /** Reset to idle (mode/avatar change). Does not undo {@link end}: an ended call stays ended. */
   reset: () => void;
 };
 
@@ -695,10 +710,19 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
       ? Math.max(0, Math.floor(connectWatchdogSeconds)) * 1000
       : DEFAULT_CONNECT_WATCHDOG_SECONDS * 1000;
 
+  // A user end is a latch, not a phase: `reset()` (mode/avatar switch plumbing) and LiveKit's own
+  // events must not be able to walk it back into a phase that mints. Only `reconnect()` and the
+  // caller deactivating the hook clear it. The grant hook sees it as `active: false`, which is
+  // what stops the queue retry, cancels an in-flight mint and idles the grant the room joins.
+  const [userEnded, setUserEnded] = useState(false);
+  const userEndedRef = useRef(false);
+  // The latest phase, for actions that must not act on a call that already ended.
+  const phaseRef = useRef<SessionLifecyclePhase>({ kind: "idle" });
+
   const grantState = useLiveKitAvatarGrant<T>({
     client,
     session,
-    active,
+    active: active && !userEnded,
     autoRetryBusy,
     requestOptions,
   });
@@ -719,6 +743,8 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
   refreshRef.current = grantState.refresh;
   const releaseRef = useRef(grantState.release);
   releaseRef.current = grantState.release;
+  const clearRef = useRef(grantState.clear);
+  clearRef.current = grantState.clear;
   const capacityRef = useRef(capacity);
   capacityRef.current = capacity;
   // Snapshot the capacity signal at refresh dispatch. This distinguishes a stale
@@ -759,7 +785,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     refreshBaselineCapacityRef.current = null;
     attemptRef.current = 0;
     setAttempt(0);
-    setRecovery({ kind: "connected" });
+    setRecovery(userEndedRef.current ? { kind: "ended", reason: "user" } : { kind: "connected" });
     setConnected(false);
     setAgentPresentState(false);
     lastActivityRef.current = Date.now();
@@ -767,8 +793,12 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
 
   // Leaving the session (inactive: mode/avatar switch, no session) clears any
   // recovery banner + idle clock so they can't linger into an unrelated surface.
+  // Deactivation is also where a user end stops binding: the next activation is a new call.
   useEffect(() => {
-    if (!active) reset();
+    if (active) return;
+    userEndedRef.current = false;
+    setUserEnded(false);
+    reset();
   }, [active, reset]);
 
   const markActivity = useCallback(() => {
@@ -818,6 +848,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
   }, [clearTimer]);
 
   const onConnected = useCallback(() => {
+    if (userEndedRef.current) return;
     clearTimer();
     connectedRef.current = true;
     manualReconnectPendingRef.current = false;
@@ -831,7 +862,9 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
 
   const onDisconnected = useCallback(
     (reason?: DisconnectReason) => {
-      if (!active) return;
+      // A user end already released and left; the room's own disconnect that follows (or any
+      // other) must not reclassify the call into a recovery that mints.
+      if (!active || userEndedRef.current) return;
       const action = disconnectAction(reason, connectedRef.current);
       if (action === "noop") return;
       if (action === "reset") {
@@ -861,7 +894,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
 
   const onConnectionError = useCallback(
     (error: Error) => {
-      if (!active || !isRecoverableConnectionError(error)) return;
+      if (!active || userEndedRef.current || !isRecoverableConnectionError(error)) return;
       connectedRef.current = false;
       setConnected(false);
       setAgentPresentState(false);
@@ -877,6 +910,12 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     [active],
   );
 
+  // A redial's mint has no `refreshing` recovery to fail into; when it fails, re-open the gate it
+  // closed, or the Reconnect button would be dead on the `ended{error}` it produced.
+  useEffect(() => {
+    if (capacity.kind === "error" && recovery.kind === "connected") manualReconnectPendingRef.current = false;
+  }, [capacity, recovery]);
+
   // A manual/automatic refresh can fail before a Room exists, so there is no room
   // onError/onDisconnected callback to advance recovery. Wait until capacity has
   // changed from the dispatch baseline, then arm the next backoff exactly once.
@@ -890,7 +929,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
 
   const onConnectionStateChange = useCallback(
     (state: LiveKitConnectionStatus) => {
-      if (!active) return;
+      if (!active || userEndedRef.current) return;
       if (state === "connected") {
         // An in-place reconnect healed (or the first connect landed). Treat the
         // same as onConnected: clear the banner, reset the budget.
@@ -993,11 +1032,41 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     // the budget advances to the give-up branch instead of stalling after one try.
   }, [recovery.kind, active, attempt, clearTimer]);
 
+  const end = useCallback(() => {
+    // An ended call has already released; ending it again must not rewrite WHY it ended (an
+    // `error` phase keeps its `capacity.error`, which `clear()` would drop).
+    if (!active || userEndedRef.current || phaseRef.current.kind === "ended") return;
+    userEndedRef.current = true;
+    clearTimer();
+    connectedRef.current = false;
+    manualReconnectPendingRef.current = false;
+    refreshBaselineCapacityRef.current = null;
+    setUserEnded(true);
+    setConnected(false);
+    setAgentPresentState(false);
+    setRecovery({ kind: "ended", reason: "user" });
+    // Release whatever is held — a landed session OR a queued ticket — and idle the grant, so
+    // the room the grant fed disconnects (stopping the microphone) and the queue stops asking.
+    clearRef.current();
+    leaveRoomRef.current?.();
+  }, [active, clearTimer]);
+
   const reconnect = useCallback(() => {
+    if (!active) return;
+    if (userEndedRef.current) {
+      // A redial after a hang-up: re-activating the grant hook is itself the one fresh mint.
+      // Held behind the same gate as every manual reconnect, so a second tap while that mint is
+      // in flight is coalesced instead of superseding it with a third.
+      userEndedRef.current = false;
+      setUserEnded(false);
+      reset();
+      manualReconnectPendingRef.current = true;
+      return;
+    }
     // Coalesce double taps and never let a manual refresh compete with LiveKit's
     // in-place reconnect. The gate re-opens on connect, terminal end, reset, or
     // bounded give-up.
-    if (!active || manualReconnectPendingRef.current || recovery.kind === "in-place-reconnecting") return;
+    if (manualReconnectPendingRef.current || recovery.kind === "in-place-reconnecting") return;
     manualReconnectPendingRef.current = true;
     clearTimer();
     attemptRef.current = 0;
@@ -1011,7 +1080,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     releaseRef.current("superseded");
     setRecovery({ kind: "refreshing", attempt: 0 });
     refreshRef.current();
-  }, [active, clearTimer, recovery.kind]);
+  }, [active, clearTimer, recovery.kind, reset]);
 
   // The idle clock ticker: run a 1s interval ONLY while connected + agent present.
   // The interval bumps a tick so the phase re-derives `timeToDisconnectMs` / the
@@ -1063,6 +1132,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     () => lifecyclePhaseFrom({ capacity, recovery, idle, connected, agentPresent }),
     [capacity, recovery, idle, connected, agentPresent],
   );
+  phaseRef.current = phase;
 
   // ── Opt-in behavior tap (multi-clip choreography) ──
   // Only when the adopter wires `onBehaviorChange` do we expose an `onLifecycleData` sink,
@@ -1097,6 +1167,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
       stayConnected,
       markActivity,
       reconnect,
+      end,
       onConnected,
       onDisconnected,
       onConnectionError,
@@ -1115,6 +1186,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
       stayConnected,
       markActivity,
       reconnect,
+      end,
       onConnected,
       onDisconnected,
       onConnectionError,
@@ -1154,7 +1226,7 @@ export type RealtimeSessionRoomSinks = Partial<{
   setTurnState: (state: string | null | undefined) => void;
   /** Honest media liveness from the bound agent's tracks. */
   setMedia: (media: { video: "live" | "stalled" | "connecting"; audio: "flowing" | "silent" }) => void;
-}>;
+}> & CallMediaSinks;
 
 type PublisherConnectionDetails = Readonly<{
   publisherQuality: Participant["connectionQuality"];
@@ -1181,6 +1253,12 @@ export type SessionLifecycleRoomBridgeProps = {
    * Callback failures never affect the call; no stats polling or uploads are added.
    */
   onConnectionDetailsChange?: (details: AvatarConnectionDetails | null) => void;
+  /**
+   * Whether the room publishes the user's microphone — pass what you passed the room's `audio`.
+   * Default: the same rule {@link RealtimeAvatarLiveKitRoom} applies (server-transcribed calls).
+   * Decides whether a missing microphone track is a problem or simply not wanted.
+   */
+  microphone?: boolean;
   lifecycle: Pick<
     SessionLifecycleApi,
     | "onConnectionStateChange"
@@ -1213,6 +1291,7 @@ export function SessionLifecycleRoomBridge({
   lifecycle,
   onConnectionDetailsChange,
   onMediaModeChange,
+  microphone,
 }: SessionLifecycleRoomBridgeProps): null {
   const {
     onConnectionStateChange,
@@ -1224,11 +1303,22 @@ export function SessionLifecycleRoomBridge({
     registerTurnSender,
     setTurnState,
     setMedia,
+    setMicrophoneFacts,
+    setAudioPlayback,
+    registerMediaControls,
   } = lifecycle;
   const connectionState = useConnectionState();
   const assistant = useVoiceAssistant();
   const transcriptions = useTranscriptions();
   const room = useRoomContext();
+  useCallMedia(room, {
+    setMicrophoneFacts,
+    setAudioPlayback,
+    registerMediaControls,
+    microphoneWanted: microphone ?? publishesMicrophoneByDefault(lifecycle.grant),
+    connectionState,
+    callKey: lifecycle.grant?.session_id,
+  });
   const mediaModeCallbackRef = useRef(onMediaModeChange);
   mediaModeCallbackRef.current = onMediaModeChange;
   const mediaModeEnabled = onMediaModeChange !== undefined && lifecycle.grant !== null;

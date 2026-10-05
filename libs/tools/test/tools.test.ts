@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { attachAvatarTools, MAX_RESULT_CHARS } from "../src/index.ts";
+import { attachAvatarTools, MAX_RESULT_CHARS, ToolRegistrationError } from "../src/index.ts";
 
 function fakeRoom() {
   const state: { handler?: (d: { payload: string }) => Promise<string>; registered?: unknown } = {};
@@ -225,4 +225,47 @@ test("the give-up error names the race as well as the grant", async () => {
     () => attachAvatarTools(room, { check_order: ok }, { timeoutMs: 300 }),
     (err: Error) => /client_tools/.test(err.message) && /armed registration/.test(err.message),
   );
+});
+
+/** An RPC failure shaped as livekit-client's RpcError: a numeric `code` and its message. */
+function rpcError(code: number, message: string): Error & { code: number } {
+  return Object.assign(new Error(message), { code });
+}
+
+function roomFailing(errors: Array<Error & { code: number }>) {
+  let calls = 0;
+  const room = {
+    localParticipant: {
+      registerRpcMethod() {},
+      unregisterRpcMethod() {},
+      async performRpc() {
+        calls += 1;
+        const next = errors.shift();
+        if (next) throw next;
+        return JSON.stringify({ accepted: ["check_order"], rejected: [] });
+      },
+    },
+    remoteParticipants: new Map([["a", { identity: "agent-1" }]]),
+  };
+  return { room, calls: () => calls };
+}
+
+test("a payload LiveKit refuses as too large is final, not a method that is not armed yet", async () => {
+  // 1402 is REQUEST_PAYLOAD_TOO_LARGE; it was matched as "method missing" and polled for 8s.
+  const { room, calls } = roomFailing([rpcError(1402, "Request payload too large")]);
+  await assert.rejects(attachAvatarTools(room, { check_order: ok }, { timeoutMs: 1_000 }), (error: unknown) => {
+    assert.ok(error instanceof ToolRegistrationError, String(error));
+    assert.equal(error.retryable, false);
+    return true;
+  });
+  assert.equal(calls(), 1, "a deterministic refusal was retried as if the agent were still arming");
+});
+
+test("a transport failure is a retryable registration error; an unarmed agent at the deadline is too", async () => {
+  const transport = roomFailing([rpcError(1502, "Response timeout")]);
+  await assert.rejects(attachAvatarTools(transport.room, { check_order: ok }), (error: unknown) =>
+    error instanceof ToolRegistrationError && error.retryable === true);
+  const unarmed = roomFailing(Array.from({ length: 50 }, () => rpcError(1400, "Method not supported at destination")));
+  await assert.rejects(attachAvatarTools(unarmed.room, { check_order: ok }, { timeoutMs: 300 }), (error: unknown) =>
+    error instanceof ToolRegistrationError && error.retryable === true && /client_tools/.test(error.message));
 });

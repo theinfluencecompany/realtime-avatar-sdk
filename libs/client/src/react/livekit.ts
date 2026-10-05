@@ -495,6 +495,11 @@ export function useLiveKitAvatarGrant<
   // re-fire the effect, yet the effect can still see whether we are mid-queue.
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Whether anyone still wants a call from this hook: false once it is deactivated (a hang-up,
+  // a mode switch) or unmounted. Read by a mint that lands after its effect was cancelled.
+  const wantedRef = useRef(active);
+  wantedRef.current = active;
+  useEffect(() => () => { wantedRef.current = false; }, []);
 
   // Tab visibility gates queue presence: a HIDDEN tab stops refreshing its ticket
   // so its place decays by TTL (switching away frees the slot), and becoming
@@ -585,9 +590,16 @@ export function useLiveKitAvatarGrant<
           // caller's only slot, and their very next attempt is refused by a session
           // they never even saw. Release it explicitly instead; the ref is not ours to
           // write once the effect is dead, so this is deliberately a direct call.
+          //
+          // A QUEUED answer that lands after nobody wants the call is the same leak one step
+          // earlier: the request may have (re)placed us in line after the hang-up released the
+          // ticket. While the hook is still wanted (a retry superseded this request) the ticket
+          // is the one the next request carries, so it must be kept.
           if (cancelled) {
             if (result.status !== "busy") {
               void client.releaseLiveKitSession(result.grant.session_id, "superseded");
+            } else if (!wantedRef.current && result.busy.queue_ticket_id) {
+              void client.releaseLiveKitQueueTicket(result.busy.queue_ticket_id, "unmount");
             }
             return;
           }
@@ -637,9 +649,10 @@ export function useLiveKitAvatarGrant<
   // Release the held lease on the way out so a tab-close / navigate-away frees
   // the GPU slot immediately. `pagehide` is the reliable unload signal (it fires
   // for bfcache navigations and real closes where `beforeunload`/unmount effects
-  // are unreliable); a `fetch` is cancelled by the unloading document, so we use
-  // `sendBeacon` here. The React unmount cleanup covers SPA route changes (where
-  // the page is NOT unloading and a normal release fetch completes).
+  // are unreliable); an ordinary `fetch` is cancelled by the unloading document,
+  // so this goes through the client's page-hide send (a keepalive fetch or a
+  // beacon, see createProxyClient). The React unmount cleanup covers SPA route
+  // changes (where the page is NOT unloading and a normal release fetch completes).
   useEffect(() => {
     // `pagehide` exists only in browsers. React Native aliases `window` to a bare
     // global with NO event target, so feature-detect the listener — native apps
@@ -821,12 +834,21 @@ export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps)
       serverUrl: grant?.livekit_url,
       token: grant?.participant_token,
       connect: shouldConnect,
-      audio: audio ?? (grant?.stt_mode === "server"),
+      audio: audio ?? publishesMicrophoneByDefault(grant),
       video: cameraPublishOptions(grant, video),
       options: roomOptions,
     },
     createElement(Fragment, null, cushion, children, roomAudio),
   );
+}
+
+/**
+ * Whether a room publishes the user's microphone when its caller does not say: only a call the
+ * server transcribes needs one. The one rule, shared by the room and the bridge that reports the
+ * microphone's state, so the two cannot disagree about whether a missing track is a problem.
+ */
+export function publishesMicrophoneByDefault(grant: Pick<LiveKitSessionGrant, "stt_mode"> | null | undefined): boolean {
+  return grant?.stt_mode === "server";
 }
 
 export const capacityErrorFromBusy = (busy: CapacityBusyResponse): RealtimeAvatarCapacityError => {

@@ -1,7 +1,7 @@
 {
   "name": "@realtime-avatar/internal-client",
   "private": true,
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "React and React Native client for Realtime Avatar.",
   "license": "MIT",
   "author": "The Influence Company",
@@ -38,6 +38,7 @@
     "@livekit/react-native": "3.0.0",
     "@livekit/react-native-webrtc": "144.2.0",
     "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.7",
     "@types/react-test-renderer": "19.1.0",
     "livekit-client": "2.22.3",
     "react": "19.2.7",

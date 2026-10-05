@@ -113,7 +113,7 @@ export type AvatarVideoSurfaceProps = {
    *  the front (live) fully covers the back (idle) — no peek-through. */
   fit?: AvatarVideoFit;
   /**
-   * @deprecated No-op. The surface FILLS its container (`size-full`); the CONSUMER
+   * @deprecated No-op. The surface FILLS its container (100% x 100%); the CONSUMER
    * owns the aspect box. Self-pinning a native ratio INSIDE the surface could not
    * survive an indefinite-height ancestor (it collapsed to zero height — the
    * black-screen bug), so aspect ownership moved out to the caller: wrap the
@@ -153,11 +153,19 @@ export type AvatarVideoSurfaceProps = {
    * are not stalls and do not wait on this.
    */
   frameStallMs?: number;
-  /** Extra className for the box (the layers fill it). */
+  /**
+   * Extra className for the box (the layers fill it). The surface's own layout is inline and
+   * needs no CSS build, so a class here ADDS styling; to change a property the surface sets
+   * (its 100% size, say), use `style`.
+   */
   className?: string;
-  /** Extra inline style for the box. */
+  /** Extra inline style for the box, spread over the surface's own. */
   style?: CSSProperties;
-  /** Overlay content rendered above both media layers (badges, chrome, scrims). */
+  /**
+   * Overlay content (controls, captions, scrims). Rendered in a layer that fills the box and
+   * stacks above both media layers and the live badge, so a positioned child places itself
+   * against the box and stays clickable while she is live.
+   */
   children?: ReactNode;
   /** Surface a small "live · WxH" badge when the live layer is shown. Default true. */
   showLiveBadge?: boolean;
@@ -183,7 +191,7 @@ export type AvatarVideoSurfaceProps = {
    * desyncs by up to the whole adaptive range. Fires on change only, not per frame.
    */
   onPlayoutDelayChange?: (seconds: number) => void;
-  /** Test id for the box. */
+  /** Test id for the box. Default `avatar-video-surface`. */
   "data-testid"?: string;
 };
 
@@ -205,7 +213,7 @@ export type AvatarVideoSurfaceProps = {
  * idle loop in the SAME box. Must be rendered inside a LiveKit `RoomContext`
  * (e.g. under `RealtimeAvatarLiveKitRoom`).
  *
- * LAYOUT CONTRACT: the surface FILLS its container (`size-full`) — it does NOT pin
+ * LAYOUT CONTRACT: the surface FILLS its container (100% x 100%) — it does NOT pin
  * its own aspect. The CONSUMER owns the aspect box: wrap the surface in an element
  * with a DEFINITE size (e.g. `aspect-[9/16]` plus a height seed). Self-pinning a
  * native ratio inside the surface (`h-full w-auto`) collapsed to zero height
@@ -343,7 +351,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   );
   useLiveResumeOnProducing(liveWrapRef, trackProducing);
 
-  const fitClass = fit === "cover" ? AVATAR_VIDEO_FIT_COVER : AVATAR_VIDEO_FIT_CONTAIN;
+  const fitStyle = fit === "cover" ? AVATAR_VIDEO_FIT_COVER : AVATAR_VIDEO_FIT_CONTAIN;
   const liveLabel =
     showLive && liveDims && liveDims.width > 0 && liveDims.height > 0
       ? `${liveDims.width}×${liveDims.height}`
@@ -359,11 +367,11 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
   // Both back layers (poster + idle) use the SAME object-fit + box as the FRONT
   // live layer, so the front fully covers them and nothing peeks out beside it.
   // (An earlier version forced the back to object-COVER while live — but the front
-  // uses `fitClass` (object-contain by default), so a 9:16 frame letterboxed in a
+  // uses `fitStyle` (object-contain by default), so a 9:16 frame letterboxed in a
   // wider box while the cover-filled back bled through those side bands = the
   // visible "two layers" seam. Matching fits removes it; the bands, if any, show
   // the neutral box bg. In the call path (fit="cover") both already cover — no-op.)
-  const backFitClass = fitClass;
+  const backFitStyle = fitStyle;
   // The poster floor (deepest layer). Always behind the idle clip and the live
   // video, so the avatar's FACE shows the instant the surface mounts and stays as
   // the backdrop whenever nothing is painting frames — connecting, listening,
@@ -374,7 +382,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
         src: poster as string,
         alt: "",
         "aria-hidden": true,
-        className: joinClass(AVATAR_VIDEO_LAYER, backFitClass),
+        style: backFitStyle,
         "data-testid": "avatar-poster",
       })
     : null;
@@ -395,7 +403,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
         playsInline: true,
         autoPlay: true,
         preload: "auto",
-        className: joinClass(AVATAR_VIDEO_LAYER, backFitClass),
+        style: backFitStyle,
         "data-testid": "avatar-idle-video",
       })
     : null;
@@ -427,10 +435,10 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     {
       key: "live",
       ref: liveWrapRef,
-      className: joinClass(AVATAR_VIDEO_LIVE_WRAP, showLive ? undefined : "pointer-events-none"),
       style: {
+        ...AVATAR_VIDEO_LIVE_WRAP,
         opacity: showLive ? 1 : 0,
-        transitionDuration: "0ms",
+        pointerEvents: showLive ? undefined : "none",
       },
       "data-testid": "avatar-live-layer",
       "aria-hidden": !showLive,
@@ -438,7 +446,7 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     videoTrack
       ? createElement(VideoTrack, {
           trackRef: videoTrack,
-          className: joinClass(AVATAR_VIDEO_LAYER, fitClass),
+          style: fitStyle,
           playsInline: true,
           autoPlay: true,
           muted: true,
@@ -451,23 +459,24 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     showLiveBadge && showLive
       ? createElement(
           "span",
-          { key: "badge", className: AVATAR_VIDEO_BADGE },
-          createElement("span", { key: "dot", className: AVATAR_VIDEO_BADGE_DOT, "aria-hidden": true }),
+          { key: "badge", style: AVATAR_VIDEO_BADGE },
+          createElement("span", { key: "dot", style: AVATAR_VIDEO_BADGE_DOT, "aria-hidden": true }),
           liveLabel ? `live · ${liveLabel}` : "live",
         )
       : null;
 
-  // The box owns its own sizing: it ALWAYS fills its parent (`size-full`); when an
+  // The box owns its own sizing: it ALWAYS fills its parent (100% x 100%); when an
   // aspect is pinned, `aspect-ratio` constrains it within that fill so the box is a
   // stable 9:16 (etc.) shape with a DEFINITE height — it never collapses to zero
   // height the way a `h-full w-auto` box does against a content-driven (flex)
-  // parent. The caller's `className` is applied LAST so it can still override.
+  // parent. The caller's `style` is spread LAST so it can still override; `className`
+  // only adds the caller's own classes.
   return createElement(
     "div",
     {
-      className: joinClass(AVATAR_VIDEO_BOX, className),
-      style: boxAspect ? { aspectRatio: boxAspect, ...style } : style,
-      "data-testid": testId,
+      className,
+      style: boxAspect ? { ...AVATAR_VIDEO_BOX, aspectRatio: boxAspect, ...style } : { ...AVATAR_VIDEO_BOX, ...style },
+      "data-testid": testId ?? "avatar-video-surface",
     },
     // Deepest → shallowest: poster floor (the always-present face), the idle clip
     // over it, then the live video. The poster guarantees the surface is never a
@@ -476,7 +485,11 @@ export function AvatarVideoSurface(props: AvatarVideoSurfaceProps): ReactElement
     idleLayer,
     frontLayer,
     badge,
-    children,
+    // Above BOTH media layers and the badge. Appended bare, a consumer's positioned child with
+    // no z-index painted under the z-20 live layer, which then took its clicks once live.
+    children == null || children === false
+      ? null
+      : createElement("div", { key: "overlay", style: AVATAR_VIDEO_OVERLAY, "data-testid": "avatar-overlay" }, children),
   );
 }
 
@@ -1166,27 +1179,57 @@ function useLiveResumeOnProducing(
   }, [wrapRef, producing]);
 }
 
-function joinClass(...parts: Array<string | undefined | false>): string {
-  return parts.filter(Boolean).join(" ");
-}
-
-// Tailwind utility strings. The surface ships plain class strings (no styling
-// dependency) so adopters using Tailwind get the intended layout; others can
-// override via `className`. Both media layers share the same box + fit so the
-// front fully covers the back.
+// INLINE STYLES, not utility classes. These were Tailwind strings, and Tailwind only
+// generates a rule for a class it finds in a file it scans — it does not scan
+// `node_modules`, so every app had to add an `@source` for this package or the layout
+// was purged (the face crop is a class no app writes itself; without `absolute inset-0`
+// the layers stack in flow). Inline styles need no build step and no configuration.
+// `className` on the box still adds the consumer's own classes; `style` overrides these.
 //
-// The box ALWAYS fills its parent (`size-full`); an `aspect-ratio` (set inline
-// when pinned) then constrains that fill to the native ratio. Critically it does
-// NOT use `h-full w-auto`, which collapses to zero height against a content-driven
-// (flex) parent — the black-screen bug. Every layer is `absolute inset-0 size-full`
-// over this definitely-sized box, so the live `<video>` always has real height.
-const AVATAR_VIDEO_BOX = "relative size-full overflow-hidden";
-const AVATAR_VIDEO_LAYER =
-  "absolute inset-0 size-full transform-gpu [image-rendering:auto] [object-position:center_22%]";
-const AVATAR_VIDEO_FIT_CONTAIN = "object-contain";
-const AVATAR_VIDEO_FIT_COVER = "object-cover";
-const AVATAR_VIDEO_LIVE_WRAP =
-  "absolute inset-0 z-20 size-full transition-opacity ease-out";
-const AVATAR_VIDEO_BADGE =
-  "absolute top-2 right-2 z-30 inline-flex items-center gap-1.5 rounded-md bg-black/55 px-1.5 py-0.5 font-mono text-[10px] text-white/85 backdrop-blur-sm";
-const AVATAR_VIDEO_BADGE_DOT = "size-1.5 rounded-full bg-emerald-400";
+// The box ALWAYS fills its parent (100% x 100%); an `aspect-ratio` (set inline when
+// pinned) then constrains that fill to the native ratio. Critically it does NOT use
+// `height: 100%; width: auto`, which collapses to zero height against a content-driven
+// (flex) parent — the black-screen bug. Every layer is absolute over this definitely
+// sized box, so the live `<video>` always has real height. Both media layers share the
+// same box + fit so the front fully covers the back.
+// `isolation: isolate` makes the box its own stacking context, so the layers' z-indexes (the
+// overlay is 40) order them against each other and never against the page around the call.
+const AVATAR_VIDEO_BOX: CSSProperties = { position: "relative", width: "100%", height: "100%", overflow: "hidden", isolation: "isolate" };
+const AVATAR_VIDEO_LAYER: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  width: "100%",
+  height: "100%",
+  transform: "translateZ(0)",
+  imageRendering: "auto",
+  objectPosition: "center 22%",
+};
+const AVATAR_VIDEO_FIT_CONTAIN: CSSProperties = { ...AVATAR_VIDEO_LAYER, objectFit: "contain" };
+const AVATAR_VIDEO_FIT_COVER: CSSProperties = { ...AVATAR_VIDEO_LAYER, objectFit: "cover" };
+const AVATAR_VIDEO_LIVE_WRAP: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  zIndex: 20,
+  width: "100%",
+  height: "100%",
+  transitionProperty: "opacity",
+  transitionDuration: "0ms",
+};
+const AVATAR_VIDEO_BADGE: CSSProperties = {
+  position: "absolute",
+  top: 8,
+  right: 8,
+  zIndex: 30,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  borderRadius: 6,
+  background: "rgb(0 0 0 / 0.55)",
+  padding: "2px 6px",
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+  fontSize: 10,
+  color: "rgb(255 255 255 / 0.85)",
+  backdropFilter: "blur(8px)",
+};
+const AVATAR_VIDEO_BADGE_DOT: CSSProperties = { width: 6, height: 6, borderRadius: 9999, background: "#34d399" };
+const AVATAR_VIDEO_OVERLAY: CSSProperties = { position: "absolute", inset: 0, zIndex: 40 };

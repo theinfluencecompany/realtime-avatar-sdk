@@ -202,6 +202,42 @@ Mic capture needs a secure origin: https, or `http://localhost`. A LAN address o
 HTTP leaves `navigator.mediaDevices` undefined, which surfaces as a `TypeError` naming a
 property rather than the reason.
 
+**In React, both are states of the call, not something you wire.** `AvatarCall` and
+`useAvatarCall` put them on the handle, derived from LiveKit's own events:
+
+```tsx
+<AvatarCall
+  client={client}
+  avatarId="ava_…"
+  onMicrophoneProblem={(mic) => toast(`${mic.message} — ${mic.hint}`)}  // blocked | unavailable
+>
+  {(call) => (
+    <>
+      {call.microphone.status === "blocked" && <button onClick={call.retryMicrophone}>Try the microphone again</button>}
+      <button onClick={() => call.setMicrophoneEnabled(call.microphone.status !== "on")}>Mute</button>
+    </>
+  )}
+</AvatarCall>
+```
+
+- `call.microphone.status` is `off` (not listening, not connected, or ended), `pending` (asked,
+  not answered: the prompt may be open, and may stay open), `on`, `muted`, `blocked` (browser,
+  OS or insecure origin; the user must change a setting) or `unavailable` (no device, a busy
+  device, one that stopped mid-call: `device-lost`). The last two carry `reason`, `message` and
+  `hint` from the same classifier as `enableMicrophone`. A device that ends mid-call is
+  `pending` while LiveKit retries the default device, and `device-lost` only if that fails.
+- `call.audio` is `unknown` before the room connects (and after the call ends), `allowed`, or
+  `blocked`. Blocked means her voice is muted by the browser until `call.startAudio()` runs
+  inside a click or tap handler (it never rejects; it resolves whether playback is allowed).
+  `AvatarCall` draws a "Tap to turn on sound" button, top-centre, while it is blocked; pass
+  `audioUnlockPrompt` a function to draw your own, or `false`. The SDK also tries `startAudio()`
+  once as the room starts connecting, while the click that started the call may still count.
+- Muting before the call connects is kept: `setMicrophoneEnabled(false)` while waiting records
+  the choice, nothing is captured, and the call goes live muted.
+- `useRealtimeSession()` carries the same facts as `microphone`, `audioPlayback`, `startAudio`,
+  `setMicrophoneEnabled` and `microphoneMuted`, once `SessionLifecycleRoomBridge` is mounted in
+  the room. Pass the bridge `microphone={listens}` and the room `audio={listens && !microphoneMuted}`.
+
 ### 6. A tool has 2.5 seconds, and the abort is cooperative
 
 The platform abandons a tool call after **2.5s** and tells her it failed. That is a
@@ -297,6 +333,22 @@ if you were alerting on the framework hook.
 
 ```ts
 const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", timeoutMs: 60_000 });
+```
+
+**A route on another origin.** If the page is `app.example.com` and the route is
+`api.example.com` and authorizes on a cookie, pass `credentials: "include"` and have the route's
+CORS answer with `Access-Control-Allow-Credentials: true` and the page's exact origin.
+`createProxyClient` applies that mode to every request, the release it sends when the page is
+hidden included. Unset, it sets no `credentials` at all, so `fetch`'s default (`same-origin`) or
+your own `fetch` wrapper decides. The page-hide release is a `sendBeacon` where a beacon's fixed
+`include` matches (a same-origin route, or `credentials: "include"`), and otherwise a `keepalive`
+fetch through your `fetch`. Neither carries per-request `requestOptions.headers`, and a beacon
+carries no header at all, so a route that authorizes the release by header sees none. Only
+Chromium has been measured; Firefox before 133 ignores `keepalive`, which matters only for a
+cross-origin route without `credentials: "include"`.
+
+```ts
+const client = createProxyClient({ proxyUrl: "https://api.example.com/realtime-avatar", credentials: "include" });
 ```
 
 The thrown error is a `RealtimeAvatarApiError` with `.status`, `.code`, `.retryable` and the
@@ -476,6 +528,15 @@ addEventListener("pagehide", () => {
 else, never a throw. A beacon and a disconnect handler may both fire for the same call
 without error, and a release that is lost is a slower release — the join timeout is the
 backstop. Every app in `apps/demo/` carries the full pattern end to end.
+
+A call still **waiting in line** has no session yet: `startCall` returned `isQueued(call)` with a
+`queueTicketId`, and that ticket is the only handle on the place. Release it with
+`rta.leaveQueue(queueTicketId, { reason })`, never by passing the ticket to `endCall`: the release
+contract carries the two in separate fields, and a ticket sent as a session id names nothing, is
+acknowledged as a no-op, and holds the place at the front of the queue until its TTL. The
+`realtime-avatar/*` route adapters already do this for `POST …/end` with `{ queue_ticket_id }`, and
+answer `422` to a body that names neither handle or is not a JSON object (a body naming both
+releases both).
 
 ---
 
