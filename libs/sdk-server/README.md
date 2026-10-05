@@ -426,6 +426,28 @@ room-wide to whatever you render inside it (`playoutDelaySeconds={false}` opts o
 `attachAvatarTools` runs your functions in the page. Nothing is executed on the platform, and
 a tool has **2.5 seconds** to answer before the call gives up on it and tells her it failed.
 
+A failed registration throws `ToolRegistrationError`, whose `retryable` says whether trying again
+can help: the agent not there or not armed by the deadline (a slow start, or a session minted
+without `client_tools`; one attempt cannot tell which), or an RPC transport failure, is retryable;
+an oversized manifest or a request LiveKit or the agent refused is not.
+
+In React, `useCharacterTools(tools)` registers them while the room is connected and returns
+their state: `idle`, `registering` (with `attempt`), `ready` (`registered`, `rejected`) or
+`error`. A retryable failure is retried twice (after 1s, then 3s) while the room stays
+connected; only then is it `error`. It re-registers when the manifest changes (names,
+descriptions, parameters), not when the `tools` object does, so an inline object is fine and
+each call reaches your latest `execute`. With `AvatarCall`, call it from a component you render
+as a child, which runs inside the call's room, and show its state rather than ignore it:
+
+```tsx
+function Tools() {
+  const tools = useCharacterTools(myTools);
+  return tools.status === "error" ? <p role="status">Tools are off for this call: {tools.error}</p> : null;
+}
+
+<AvatarCall client={client} avatarId="ava_…">{() => <Tools />}</AvatarCall>
+```
+
 ## What `/react` exports, and what it deliberately does not
 
 31 names, down from 82 on 2026-08-26. Two groups came out and are not coming back:

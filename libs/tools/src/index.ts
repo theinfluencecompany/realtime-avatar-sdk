@@ -128,17 +128,46 @@ function candidateIdentities(room: RoomLike): string[] {
   return [...agents, ...all.filter((id) => !agents.includes(id))];
 }
 
+/** The `code` livekit-client's `RpcError` carries, read structurally (see below). */
+function rpcCode(error: unknown): unknown {
+  return typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+}
+
 /** Did this RPC fail because the method is not there (yet), as opposed to a real error?
  *
  *  Matched on the shape livekit-client produces rather than by importing `RpcError`, to keep
- *  this module dependency-free. Both codes mean "try again / try someone else", never "give up". */
+ *  this module dependency-free: its codes are UNSUPPORTED_METHOD 1400 and RECIPIENT_NOT_FOUND
+ *  1401. (1402 is REQUEST_PAYLOAD_TOO_LARGE, which was listed here by mistake and was polled for
+ *  the whole deadline, then reported as a missing grant.) Both mean "try again / try someone
+ *  else", never "give up". */
 function methodMissing(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  if (code === "UNSUPPORTED_METHOD" || code === "RECIPIENT_NOT_FOUND" || code === 1401 || code === 1402) {
+  const code = rpcCode(error);
+  if (code === "UNSUPPORTED_METHOD" || code === "RECIPIENT_NOT_FOUND" || code === 1400 || code === 1401) {
     return true;
   }
   const message = error instanceof Error ? error.message : String(error ?? "");
   return /not supported|unsupported_method|recipient_not_found|recipient not found/i.test(message);
+}
+
+/** RPC failures of the transport, not of the request: CONNECTION_TIMEOUT, RESPONSE_TIMEOUT,
+ *  RECIPIENT_DISCONNECTED, SEND_FAILED. A later attempt can succeed. */
+const TRANSIENT_RPC_CODES = new Set<unknown>([1501, 1502, 1503, 1505]);
+
+/**
+ * Registration did not arm the tools. `retryable` says whether trying again can help:
+ * - true: the agent was not there or had not armed registration by the deadline (a slow start,
+ *   or a session minted without `client_tools` — one attempt cannot tell them apart), or the RPC
+ *   transport failed.
+ * - false: the manifest is too large, the agent refused or answered something unreadable, or
+ *   LiveKit refused the request itself. The same request will fail the same way.
+ */
+export class ToolRegistrationError extends Error {
+  override readonly name = "ToolRegistrationError";
+  readonly retryable: boolean;
+  constructor(message: string, options: { retryable: boolean; cause?: unknown }) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    this.retryable = options.retryable;
+  }
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -211,9 +240,10 @@ export async function attachAvatarTools(
   const { descriptors, rejected } = buildManifest(tools);
   const payload = JSON.stringify({ tools: descriptors });
   if (payload.length > MAX_MANIFEST_BYTES) {
-    throw new Error(
+    throw new ToolRegistrationError(
       `tool manifest is ${payload.length} bytes, over the ${MAX_MANIFEST_BYTES} limit — ` +
         "shorten descriptions or register fewer tools",
+      { retryable: false },
     );
   }
 
@@ -317,7 +347,13 @@ export async function attachAvatarTools(
         lastError = error;
         // A real failure from the right participant is worth surfacing immediately; only
         // "the method is not there" earns another round.
-        if (!methodMissing(error)) throw error;
+        if (!methodMissing(error)) {
+          if (options.signal?.aborted) throw error;
+          throw new ToolRegistrationError(
+            `tool registration failed: ${error instanceof Error ? error.message : String(error)}`,
+            { retryable: TRANSIENT_RPC_CODES.has(rpcCode(error)), cause: error },
+          );
+        }
       }
     }
     if (Date.now() >= deadline) break;
@@ -326,13 +362,14 @@ export async function attachAvatarTools(
 
   // Deliberately names BOTH causes. The single most expensive failure in this plane is reading
   // this error as "my key is not entitled" when the agent simply had not armed the method.
-  throw new Error(
+  throw new ToolRegistrationError(
     sawCandidate
       ? "no participant accepted the tool manifest — either this session was not minted with " +
         "the `client_tools` capability (a server-side grant), or the agent never armed " +
         `registration within ${options.timeoutMs ?? 8_000}ms` +
         (lastError instanceof Error ? ` (last error: ${lastError.message})` : "")
       : "no remote participant joined the room before the timeout — nothing to register with",
+    { retryable: true, cause: lastError ?? undefined },
   );
   } catch (error) {
     dispose();

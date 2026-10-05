@@ -4,7 +4,7 @@
 // this package's public surface, which meant a LiveKit major could break ours without a line of
 // our code changing. 24 names came out on 2026-08-26.
 
-export { useCharacterTools } from "./use-character-tools";
+export { useCharacterTools, type CharacterToolsState } from "./use-character-tools";
 export { useAvatarCamera } from "./use-avatar-camera";
 export {
   AvatarCall,

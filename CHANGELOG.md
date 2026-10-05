@@ -58,6 +58,16 @@
   - `useRealtimeSession()` gains the same as `microphone`, `audioPlayback`, `startAudio` and
     `setMicrophoneEnabled`; `SessionLifecycleRoomBridge` gains a `microphone` prop. The classifier
     is shared with `enableMicrophone` and exported as `describeMicrophoneFailure`.
+- `useCharacterTools` retries a retryable registration failure twice (1s, then 3s) while the
+  room stays connected, instead of ending her tools for the call on one RPC timeout. Its state is
+  now the exported `CharacterToolsState`, with `attempt`. It keys registration on the manifest
+  (names, descriptions, parameters) rather than the `tools` object, so an inline object no
+  longer re-registers on every render; before, its own `registering` update re-rendered and the
+  hook looped until React threw "Maximum update depth exceeded".
+- `attachAvatarTools` throws `ToolRegistrationError` with `retryable`. It also no longer treats
+  LiveKit's RPC code 1402 (REQUEST_PAYLOAD_TOO_LARGE) as "method not armed yet": that was polled
+  for the whole deadline and then reported as a session minted without `client_tools`. 1400
+  (UNSUPPORTED_METHOD) is matched by code as well as by message.
 
 ## 0.25.0
 
