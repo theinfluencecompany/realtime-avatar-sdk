@@ -30,6 +30,7 @@ import type {
   LoopRedirect,
   CreditBalance,
   EndCallOptions,
+  ReleaseRequest,
   StartCallResult,
   ListRecordingsQuery,
   ListRecordingsResponse,
@@ -224,8 +225,31 @@ export class RealtimeAvatar {
    */
   async endCall(sessionId: string, options: EndCallOptions = {}): Promise<boolean> {
     if (!sessionId) return false;
+    return this.#release({ session_id: sessionId }, options);
+  }
+
+  /**
+   * Give up a QUEUED call's place in line, by the `queueTicketId` that `startCall` returned.
+   *
+   * A queued call has no session yet, so {@link endCall} cannot reach it: the release contract
+   * carries the ticket in its own field, and a ticket sent as a session id names nothing and is
+   * acknowledged as an idempotent no-op. The place is then held until its TTL, at the front of
+   * the queue, in front of everyone behind it.
+   *
+   * Same contract as `endCall`: best-effort, `true` only when the platform acknowledged it,
+   * never a throw, and only for tickets YOUR SERVER was handed.
+   */
+  async leaveQueue(queueTicketId: string, options: Pick<EndCallOptions, "reason"> = {}): Promise<boolean> {
+    if (!queueTicketId) return false;
+    return this.#release({ queue_ticket_id: queueTicketId }, options);
+  }
+
+  async #release(
+    target: { session_id: string } | { queue_ticket_id: string },
+    options: EndCallOptions,
+  ): Promise<boolean> {
     // The wire is strict: exactly these keys, absent rather than null when unset.
-    const body: Record<string, unknown> = { session_id: sessionId };
+    const body: ReleaseRequest = { ...target };
     if (options.reason !== undefined) body.reason = options.reason;
     if (options.capacityPool !== undefined) body.capacity_pool = options.capacityPool;
     try {

@@ -53,6 +53,7 @@ knownBehaviorStates
 lifecycleServerFrameSchema
 liveKitCapacitySnapshotSchema
 liveKitSessionGrantSchema
+liveKitSessionReleaseReasonSchema
 liveKitSessionRequestSchema
 liveKitSessionWireRequestSchema
 llmConfigSchema

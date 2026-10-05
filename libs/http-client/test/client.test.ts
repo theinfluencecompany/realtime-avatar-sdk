@@ -434,6 +434,20 @@ test("endCall swallows a dead connection into false, after the usual retries", a
   assert.equal(attempts.length, 3, "transient handling is shared with every other request");
 });
 
+test("leaveQueue releases a queued place by its ticket, in the ticket's own field", async () => {
+  const { seen, fetchImpl } = stub({ body: { ok: true } });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  assert.equal(await rta.leaveQueue("qt_1", { reason: "unmount" }), true);
+  assert.match(seen.url ?? "", /\/realtime\/livekit\/session\/release$/);
+  assert.deepEqual(seen.body, { queue_ticket_id: "qt_1", reason: "unmount" });
+});
+
+test("leaveQueue with no ticket makes no request", async () => {
+  const { attempts, fetchImpl } = scripted([{ body: { ok: true } }]);
+  assert.equal(await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).leaveQueue(""), false);
+  assert.equal(attempts.length, 0);
+});
+
 test("endCall with no id makes no request — there is nothing to end", async () => {
   const { attempts, fetchImpl } = scripted([{ body: { ok: true } }]);
   assert.equal(await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).endCall(""), false);

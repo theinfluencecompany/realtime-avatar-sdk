@@ -514,7 +514,7 @@ export const capacityBusyResponseSchema = z
   })
   .strict();
 
-const liveKitSessionReleaseReasonSchema = z.enum([
+export const liveKitSessionReleaseReasonSchema = z.enum([
   "page_hide", 
   "disconnected", 
   "superseded", 

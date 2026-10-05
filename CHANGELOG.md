@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- The server client gains `leaveQueue(queueTicketId, { reason? })`, which releases a QUEUED
+  call's place in line. The route adapters' `POST …/end` used to pass a queue ticket to
+  `endCall`, which sent it as `session_id`; the platform acknowledged that as a no-op, so a
+  user who hung up or closed the tab while waiting held their place until its TTL. A
+  `{ queue_ticket_id }` body now reaches the platform as `queue_ticket_id`.
+- The route adapters validate the browser's body once, against one route contract shared with
+  `createProxyClient`. A body that is not a JSON object (`null`, `42`), names neither or both of
+  `session_id` and `queue_ticket_id`, or carries a wrong-typed id or an unknown `reason`, is
+  answered `422` instead of throwing a `TypeError` into a body-less 500. `/connect` now answers
+  `422` to a `mode` other than `"avatar"` or `"voice"`, which it used to coerce to `"avatar"`.
+
 ## 0.25.0
 
 - `createProxyClient` still sends a mint once and never retries it. The one retry owner is

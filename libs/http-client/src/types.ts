@@ -259,6 +259,9 @@ export function isQueued(result: StartCallResult): result is CallQueued {
  */
 export type EndCallReason = NonNullable<Wire["LiveKitSessionReleaseRequest"]["reason"]>;
 
+/** The release wire, as the contract declares it. Internal: the two methods below build it. */
+export type ReleaseRequest = Wire["LiveKitSessionReleaseRequest"];
+
 export interface EndCallOptions {
   reason?: EndCallReason;
   /**

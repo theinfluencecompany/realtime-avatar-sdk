@@ -477,6 +477,14 @@ else, never a throw. A beacon and a disconnect handler may both fire for the sam
 without error, and a release that is lost is a slower release — the join timeout is the
 backstop. Every app in `apps/demo/` carries the full pattern end to end.
 
+A call still **waiting in line** has no session yet: `startCall` returned `isQueued(call)` with a
+`queueTicketId`, and that ticket is the only handle on the place. Release it with
+`rta.leaveQueue(queueTicketId, { reason })`, never by passing the ticket to `endCall`: the release
+contract carries the two in separate fields, and a ticket sent as a session id names nothing, is
+acknowledged as a no-op, and holds the place at the front of the queue until its TTL. The
+`realtime-avatar/*` route adapters already do this for `POST …/end` with `{ queue_ticket_id }`, and
+answer `422` to a body that names neither handle, both, or is not a JSON object.
+
 ---
 
 ## Deciding how she looks

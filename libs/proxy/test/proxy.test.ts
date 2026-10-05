@@ -282,3 +282,64 @@ for (const [name, serve] of adapters) {
     } finally { restore(); }
   });
 }
+
+const end = (body: string) =>
+  new Request("http://app.test/api/realtime-avatar/end", {
+    method: "POST", headers: { "content-type": "application/json" }, body,
+  });
+
+test("ending a QUEUED call releases the ticket as a ticket, not as a session id", async () => {
+  // The release contract carries the two handles in separate fields. Sending the ticket as
+  // `session_id` names a session that does not exist, which the platform acks as idempotent and
+  // does nothing with: the place in line stayed held until its TTL, starving the free slots.
+  const queued = upstream({
+    status: 429,
+    body: { queue_position: 1, queue_size: 1, queue_ticket_id: "qt_abc", recommended_retry_ms: 2500 },
+  });
+  const handler = createProxyHandler({ apiKey: "k" });
+  await handler(connect({ avatarId: "ava_1" }));
+  queued.restore();
+
+  const release = upstream({ body: { ok: true } });
+  const res = await handler(end(JSON.stringify({ queue_ticket_id: "qt_abc", reason: "unmount" })));
+  release.restore();
+  assert.equal(res.status, 204);
+  assert.deepEqual(release.seen.body, { queue_ticket_id: "qt_abc", reason: "unmount" });
+});
+
+test("ending a started call still releases it by session id", async () => {
+  const minted = upstream({ body: GRANT });
+  const handler = createProxyHandler({ apiKey: "k" });
+  await handler(connect({ avatarId: "ava_1" }));
+  minted.restore();
+
+  const release = upstream({ body: { ok: true } });
+  const res = await handler(end(JSON.stringify({ session_id: "s1", reason: "page_hide" })));
+  release.restore();
+  assert.equal(res.status, 204);
+  assert.deepEqual(release.seen.body, { session_id: "s1", reason: "page_hide" });
+});
+
+test("a body that is JSON but not an object is a 422, never a thrown 500", async () => {
+  // `null`, a number and an array all parse. Reading `.session_id` or `.avatarId` off `null`
+  // threw a TypeError out of the handler, which a framework answers as a body-less 500.
+  const handler = createProxyHandler({ apiKey: "k" });
+  for (const body of ["null", "42", "[]", "\"s1\""]) {
+    assert.equal((await handler(end(body))).status, 422, `/end with ${body}`);
+    const res = await handler(new Request("http://app.test/api/realtime-avatar/connect", {
+      method: "POST", headers: { "content-type": "application/json" }, body,
+    }));
+    assert.equal(res.status, 422, `/connect with ${body}`);
+  }
+});
+
+test("an end naming both handles, or a wrong-typed one, is refused before anything is released", async () => {
+  const release = upstream({ body: { ok: true } });
+  const handler = createProxyHandler({ apiKey: "k", ownsSession: () => true });
+  const both = await handler(end(JSON.stringify({ session_id: "s1", queue_ticket_id: "qt_abc" })));
+  const typed = await handler(end(JSON.stringify({ session_id: 7 })));
+  release.restore();
+  assert.equal(both.status, 422);
+  assert.equal(typed.status, 422);
+  assert.equal(release.seen.body, undefined, "nothing should have reached the platform");
+});

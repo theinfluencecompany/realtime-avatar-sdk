@@ -1,6 +1,7 @@
 import { RealtimeAvatar, RealtimeAvatarError, RealtimeAvatarHttpError, isQueued } from "realtime-avatar";
 import { ERROR_SEMANTICS, type CopiedErrorCode } from "../../http-client/src/generated/error-semantics.ts";
 import { ROUTE_TIMEOUT_MS } from "../../http-client/src/retry.ts";
+import { proxyConnectRequestSchema, proxyEndRequestSchema } from "../../client/src/proxy-route.ts";
 import type { ProxyConfig, ProxyOperation } from "./types.ts";
 
 /**
@@ -116,17 +117,19 @@ export function createProxyHandler(config: ProxyConfig): (request: Request) => P
       if (operation === "avatars") return json({ data: await rta.listAvatars() });
       if (operation === "credits") return json(await rta.creditBalance());
 
+      // The body is the browser's, so it is `unknown` until the route contract says otherwise.
+      // A malformed or non-object body (`null`, `42`) is the caller's mistake: a 422, never a
+      // TypeError thrown out of the handler as a body-less 500.
+      const raw: unknown = await request.json().catch(() => undefined);
+
       if (operation === "end") {
-        const ended = (await request.json().catch(() => ({}))) as {
-          session_id?: string;
-          queue_ticket_id?: string;
-          reason?: string;
-        };
+        const parsed = proxyEndRequestSchema.safeParse(raw);
+        if (!parsed.success) return json({ error: "exactly one of session_id or queue_ticket_id is required" }, 422);
+        const ended = parsed.data;
         // A call that is still QUEUED has no session id — the ticket is the only handle on it,
         // and a user who closes the tab while waiting holds their place until it times out
         // otherwise. Both ids go through the same ownership check for the same reason.
-        const sessionId = ended.session_id ?? ended.queue_ticket_id;
-        if (!sessionId) return json({ error: "session_id or queue_ticket_id is required" }, 422);
+        const sessionId = "session_id" in ended ? ended.session_id : ended.queue_ticket_id;
 
         const owns = config.ownsSession
           ? await config.ownsSession({ request, sessionId })
@@ -136,14 +139,18 @@ export function createProxyHandler(config: ProxyConfig): (request: Request) => P
         if (!owns) return new Response(null, { status: 204 });
 
         const reason = ended.reason === "page_hide" || ended.reason === "unmount" ? ended.reason : "manual";
-        await rta.endCall(sessionId, { reason });
+        // The platform's release carries the two handles in separate fields; a ticket sent as a
+        // session id names nothing and is acknowledged as a no-op, so the place stays held.
+        if ("session_id" in ended) await rta.endCall(ended.session_id, { reason });
+        else await rta.leaveQueue(ended.queue_ticket_id, { reason });
         return new Response(null, { status: 204 });
       }
 
       // The client chooses WHO to call and whether it wants video. Nothing else.
-      const body = (await request.json().catch(() => ({}))) as { avatarId?: string; mode?: string };
-      if (!body.avatarId) return json({ error: "avatarId is required" }, 422);
-      const mode = body.mode === "voice" ? "voice" : "avatar";
+      const parsed = proxyConnectRequestSchema.safeParse(raw);
+      if (!parsed.success) return json({ error: "avatarId is required" }, 422);
+      const body = parsed.data;
+      const mode = body.mode ?? "avatar";
 
       const decided = await config.session?.({ request, avatarId: body.avatarId, mode });
       if (decided instanceof Response) return decided;
