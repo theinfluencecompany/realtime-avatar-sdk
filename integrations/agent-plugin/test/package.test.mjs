@@ -13,26 +13,51 @@ const release = build();
 const plugin = resolve(root, "../../plugins/realtime-avatar");
 const read = file => JSON.parse(readFileSync(join(plugin, file), "utf8"));
 
-test("both host manifests resolve to the same account runtime, preview and skill", () => {
+test("both host manifests load only the same account runtime and leave preview opt-in", () => {
   const claude = read(".claude-plugin/plugin.json"), cursor = read(".cursor-plugin/plugin.json");
   assert.equal(claude.name, cursor.name);
   assert.equal(claude.version, cursor.version);
   assert.equal(claude.userConfig.api_key.sensitive, true);
   for (const [manifest, variable] of [[claude, "${CLAUDE_PLUGIN_ROOT}"], [cursor, "${CURSOR_PLUGIN_ROOT}"]]) {
     const servers = read(manifest.mcpServers).mcpServers;
+    assert.deepEqual(Object.keys(servers), ["realtime-avatar"]);
     const account = servers["realtime-avatar"];
     assert.equal(account.type, "stdio");
     assert.equal(account.command, "node");
     assert.equal(account.args[0].replace(variable, plugin), join(plugin, "account.mjs"));
-    assert.equal(servers["realtime-avatar-preview"].url, config.previewUrl);
-    assert.equal(servers["realtime-avatar-preview"].type, "http");
   }
+  assert.equal(read("optional/preview.mcp.json").mcpServers["realtime-avatar-preview"].url, config.previewUrl);
+  assert.equal(read("optional/preview.mcp.json").mcpServers["realtime-avatar-preview"].type, "http");
+  assert.equal(config.mcpPackage, `realtime-avatar-mcp@${JSON.parse(readFileSync(join(root, "package.json"), "utf8")).devDependencies["realtime-avatar-mcp"]}`);
   assert(readFileSync(join(plugin, "skills/build-avatar-app/SKILL.md"), "utf8").startsWith("---\nname: build-avatar-app\n"));
   const decoded = JSON.parse(Buffer.from(new URL(release.cursorPreviewInstall).searchParams.get("config"), "base64").toString());
   assert.deepEqual(decoded, { url: config.previewUrl });
   const entries = execFileSync("unzip", ["-Z1", join(root, "dist", release.file)], { encoding: "utf8" });
   for (const needed of [".claude-plugin/plugin.json", ".cursor-plugin/plugin.json", "mcp.claude.json", "mcp.cursor.json", "skills/build-avatar-app/SKILL.md"]) assert(entries.includes("realtime-avatar/" + needed));
   assert(!/node_modules|\.env(?:\n|\.)|evidence\//.test(entries));
+});
+
+test("rebuilding identical plugin contents reproduces the release checksum", () => {
+  assert.equal(build().sha256, release.sha256);
+});
+
+test("an extracted release has complete native manifests and no automatically installed preview", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rta fresh install "));
+  try {
+    execFileSync("unzip", ["-q", join(root, "dist", release.file), "-d", dir]);
+    const unpacked = join(dir, "realtime-avatar");
+    for (const [manifestPath, variable] of [[".claude-plugin/plugin.json", "${CLAUDE_PLUGIN_ROOT}"], [".cursor-plugin/plugin.json", "${CURSOR_PLUGIN_ROOT}"]]) {
+      const manifest = JSON.parse(readFileSync(join(unpacked, manifestPath), "utf8"));
+      assert.equal(manifest.version, config.version);
+      const servers = JSON.parse(readFileSync(join(unpacked, manifest.mcpServers), "utf8")).mcpServers;
+      assert.deepEqual(Object.keys(servers), ["realtime-avatar"]);
+      const script = servers["realtime-avatar"].args[0].replace(variable, unpacked);
+      const run = spawnSync(process.execPath, [script], { encoding: "utf8", env: { PATH: process.env.PATH, RTA_PLUGIN_API_KEY: "" } });
+      assert.equal(run.status, 1);
+      assert.match(run.stderr, /Configure your RTA API key/);
+      assert.equal(run.stdout, "");
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("launcher keeps keys off argv, ignores inherited write access and fixes the API destination", () => {

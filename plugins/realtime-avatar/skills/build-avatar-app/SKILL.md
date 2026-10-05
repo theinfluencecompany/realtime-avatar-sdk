@@ -54,7 +54,8 @@ revision; preserve existing clips unless the user asked to remove them.
 
 ## Hosted preview
 
-`realtime-avatar-preview` is a separate operator-funded review with its own shared
+`realtime-avatar-preview` is optional and is not installed by this plugin. If the
+user has separately connected it, it is an operator-funded review with its own shared
 three-attempt budget, 45-second calls and a February 1, 2027 expiry. Preparation
 does not start a call. Its account and capacity are not the user's personal RTA
 account. Use it only when the user asks to try the hosted avatar.

@@ -24,7 +24,7 @@ mid-sentence the moment someone cuts in, the way a person stops.
 For Claude Code or Cursor, install the [shared Realtime Avatar plugin](./plugins/realtime-avatar/README.md).
 It connects your account's avatars, credits and clips to the agent, with opt-in writes
 and a shared workflow for building an avatar app. The [plugin source and packaging](./integrations/agent-plugin/README.md)
-also provide a separate hosted call preview.
+also document an optional, separately installed hosted call preview.
 
 ```bash
 npm install --save-exact realtime-avatar@0.17.0

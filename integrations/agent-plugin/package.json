@@ -1,6 +1,6 @@
 {
   "name": "rta-agent-plugin-packaging",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,6 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.0",
-    "realtime-avatar-mcp": "0.25.0"
+    "realtime-avatar-mcp": "0.27.0"
   }
 }
