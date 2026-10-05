@@ -8,18 +8,20 @@
   user who hung up or closed the tab while waiting held their place until its TTL. A
   `{ queue_ticket_id }` body now reaches the platform as `queue_ticket_id`.
 - The route adapters validate the browser's body once, against one route contract shared with
-  `createProxyClient`. A body that is not a JSON object (`null`, `42`), names neither or both of
-  `session_id` and `queue_ticket_id`, or carries a wrong-typed id or an unknown `reason`, is
-  answered `422` instead of throwing a `TypeError` into a body-less 500. `/connect` now answers
-  `422` to a `mode` other than `"avatar"` or `"voice"`, which it used to coerce to `"avatar"`.
-- `createProxyClient` takes `credentials` (default `"same-origin"`), applied to every request
-  including the page-hide release, for a route on another origin that authorizes on a cookie.
-  The page-hide release is now a `keepalive` fetch under that mode (through your `fetch`, so its
-  headers apply too) instead of `sendBeacon`. A beacon is always `credentials: "include"` and
-  cannot carry a header: measured in Chromium 148, its JSON preflight to a cross-origin route
-  whose CORS does not allow credentials failed and the release never arrived, while `connect`
-  had succeeded. The beacon remains the fallback only where no fetch exists and its `include`
-  matches the mode (a same-origin route, or `credentials: "include"`).
+  `createProxyClient`. A body that is not a JSON object (`null`, `42`), names neither
+  `session_id` nor `queue_ticket_id`, or carries a wrong-typed id, is answered `422` instead of
+  throwing a `TypeError` into a body-less 500. A body naming both releases both, as the
+  platform's release contract allows; an unknown `reason` is still released as `manual`.
+  `/connect` now answers `422` to a `mode` other than `"avatar"` or `"voice"`, which it used to
+  coerce to `"avatar"`.
+- `createProxyClient` takes `credentials`, applied to every request including the page-hide
+  release, for a route on another origin that authorizes on a cookie. Unset, the client sets no
+  `credentials`, exactly as before, so a `fetch` wrapper that sets its own still wins. The
+  page-hide release is still `sendBeacon` where a beacon's fixed `credentials: "include"` matches
+  (a same-origin route, or `credentials: "include"`); for a cross-origin route under any other
+  mode it is now a `keepalive` fetch through your `fetch`. Measured in Chromium 148: a beacon's
+  JSON preflight to a cross-origin route whose CORS does not allow credentials failed and the
+  release never arrived, while `connect` had succeeded.
 - Hanging up is terminal. `AvatarCallHandle.end()`, `useRealtimeSession().end()` and the new
   `useSessionLifecycle().end()` stop the queue retry and the reconnect ladder, release the held
   session or queue ticket (`manual`), leave the room, and park on `ended` from ANY phase. Before,

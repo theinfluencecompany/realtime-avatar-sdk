@@ -60,6 +60,7 @@ llmConfigSchema
 llmProviderSchema
 llmSelectionSchema
 renderBackendSchema
+sessionModeSchema
 sessionBehaviorSchema
 sessionClipSchema
 toLiveKitSessionWireRequest

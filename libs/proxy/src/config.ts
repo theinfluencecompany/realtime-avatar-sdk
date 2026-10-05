@@ -124,25 +124,24 @@ export function createProxyHandler(config: ProxyConfig): (request: Request) => P
 
       if (operation === "end") {
         const parsed = proxyEndRequestSchema.safeParse(raw);
-        if (!parsed.success) return json({ error: "exactly one of session_id or queue_ticket_id is required" }, 422);
+        if (!parsed.success) return json({ error: "session_id or queue_ticket_id is required" }, 422);
         const ended = parsed.data;
+        const reason = ended.reason === "page_hide" || ended.reason === "unmount" ? ended.reason : "manual";
         // A call that is still QUEUED has no session id — the ticket is the only handle on it,
         // and a user who closes the tab while waiting holds their place until it times out
         // otherwise. Both ids go through the same ownership check for the same reason.
-        const sessionId = "session_id" in ended ? ended.session_id : ended.queue_ticket_id;
-
-        const owns = config.ownsSession
-          ? await config.ownsSession({ request, sessionId })
-          : minted.delete(sessionId);
+        const owned = async (id: string): Promise<boolean> =>
+          config.ownsSession ? await config.ownsSession({ request, sessionId: id }) : minted.delete(id);
         // Not ours: acknowledge and do nothing. `endCall` is best-effort by contract, and the
-        // join timeout reclaims a slot we decline to release here.
-        if (!owns) return new Response(null, { status: 204 });
-
-        const reason = ended.reason === "page_hide" || ended.reason === "unmount" ? ended.reason : "manual";
-        // The platform's release carries the two handles in separate fields; a ticket sent as a
-        // session id names nothing and is acknowledged as a no-op, so the place stays held.
-        if ("session_id" in ended) await rta.endCall(ended.session_id, { reason });
-        else await rta.leaveQueue(ended.queue_ticket_id, { reason });
+        // join timeout reclaims a slot we decline to release here. The platform's release carries
+        // the two handles in separate fields; a ticket sent as a session id names nothing and is
+        // acknowledged as a no-op, so the place would stay held.
+        if (ended.session_id !== undefined && await owned(ended.session_id)) {
+          await rta.endCall(ended.session_id, { reason });
+        }
+        if (ended.queue_ticket_id !== undefined && await owned(ended.queue_ticket_id)) {
+          await rta.leaveQueue(ended.queue_ticket_id, { reason });
+        }
         return new Response(null, { status: 204 });
       }
 

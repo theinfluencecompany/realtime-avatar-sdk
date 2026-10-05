@@ -49,14 +49,20 @@ function fakePage(origin: string): string[] {
   return beacons;
 }
 
-test("credentials defaults to same-origin and is applied to every request", async () => {
+test("without the option the client sets no credentials, so your fetch wrapper's choice stands", async () => {
+  // A wrapper written `fetch(url, { credentials: "include", ...init })` is how apps carried a
+  // cookie cross-origin before the option existed. An explicit `credentials` in `init` overrode it.
   const seen: Seen[] = [];
-  const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", fetch: recordingFetch(seen) });
+  const wrapper = recordingFetch(seen);
+  const client = createProxyClient({
+    proxyUrl: "https://api.example.test/realtime-avatar",
+    fetch: (url, init) => wrapper(url, { credentials: "include", ...init }),
+  });
   await client.createLiveKitSessionOrBusy({ avatarId: "ava_1" }).catch(() => undefined);
   await client.releaseLiveKitSession("s1", "manual");
   await client.releaseLiveKitQueueTicket("qt_1", "manual");
   assert.equal(seen.length, 3);
-  for (const { url, init } of seen) assert.equal(init.credentials, "same-origin", url);
+  for (const { url, init } of seen) assert.equal(init.credentials, "include", `${url}: the wrapper's cookie was overridden`);
 });
 
 test("credentials: include reaches every request, so a cross-origin route sees its cookie", async () => {
@@ -71,12 +77,24 @@ test("credentials: include reaches every request, so a cross-origin route sees i
   for (const { url, init } of seen) assert.equal(init.credentials, "include", url);
 });
 
-test("the page-hide release is a keepalive fetch under the same credentials, not a beacon", () => {
+test("a same-origin page-hide release is a beacon, the send every browser keeps alive", () => {
+  const beacons = fakePage("https://app.example.test");
+  const seen: Seen[] = [];
+  const client = createProxyClient({ proxyUrl: "/api/realtime-avatar", fetch: recordingFetch(seen) });
+  assert.equal(client.releaseLiveKitSessionBeacon("s1", "page_hide"), true);
+  assert.deepEqual(beacons, ["https://app.example.test/api/realtime-avatar/end"]);
+  assert.equal(seen.length, 0, "keepalive is ignored by older Firefox; a same-origin beacon is not");
+  const cross = createProxyClient({ proxyUrl: "https://api.example.test/realtime-avatar", credentials: "include", fetch: recordingFetch(seen) });
+  assert.equal(cross.releaseLiveKitSessionBeacon("s1"), true);
+  assert.equal(beacons.length, 2, "credentials: include is the beacon's own mode; it matches");
+  assert.equal(seen.length, 0);
+});
+
+test("a cross-origin page-hide release whose credentials a beacon cannot match is a keepalive fetch", () => {
   const beacons = fakePage("https://app.example.test");
   const seen: Seen[] = [];
   const client = createProxyClient({
     proxyUrl: "https://api.example.test/realtime-avatar",
-    credentials: "include",
     fetch: recordingFetch(seen),
   });
   assert.equal(client.releaseLiveKitSessionBeacon("s1", "page_hide"), true);
@@ -86,7 +104,7 @@ test("the page-hide release is a keepalive fetch under the same credentials, not
   const [session, ticket] = seen;
   assert.equal(session!.url, "https://api.example.test/realtime-avatar/end");
   assert.equal(session!.init.keepalive, true);
-  assert.equal(session!.init.credentials, "include");
+  assert.equal(session!.init.credentials, undefined, "the release must not override the wrapper's choice either");
   assert.equal(session!.init.signal, undefined, "a deadline would abort the release the page is leaving behind");
   assert.deepEqual(JSON.parse(String(session!.init.body)), { session_id: "s1", reason: "page_hide" });
   assert.deepEqual(JSON.parse(String(ticket!.init.body)), { queue_ticket_id: "qt_1", reason: "page_hide" });

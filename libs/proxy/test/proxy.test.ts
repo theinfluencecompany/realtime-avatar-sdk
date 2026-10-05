@@ -333,13 +333,33 @@ test("a body that is JSON but not an object is a 422, never a thrown 500", async
   }
 });
 
-test("an end naming both handles, or a wrong-typed one, is refused before anything is released", async () => {
+test("an end naming both handles releases both, as the release contract allows", async () => {
+  const bodies: unknown[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const handler = createProxyHandler({ apiKey: "k", ownsSession: () => true });
+    const res = await handler(end(JSON.stringify({ session_id: "s1", queue_ticket_id: "qt_abc", reason: "unmount" })));
+    assert.equal(res.status, 204);
+    assert.deepEqual(bodies, [
+      { session_id: "s1", reason: "unmount" },
+      { queue_ticket_id: "qt_abc", reason: "unmount" },
+    ]);
+  } finally { globalThis.fetch = original; }
+});
+
+test("an unknown reason is released as manual, as before; a wrong-typed id is a 422", async () => {
   const release = upstream({ body: { ok: true } });
   const handler = createProxyHandler({ apiKey: "k", ownsSession: () => true });
-  const both = await handler(end(JSON.stringify({ session_id: "s1", queue_ticket_id: "qt_abc" })));
+  const unknown = await handler(end(JSON.stringify({ session_id: "s1", reason: "tab-closed" })));
+  assert.equal(unknown.status, 204);
+  assert.deepEqual(release.seen.body, { session_id: "s1", reason: "manual" });
+  release.seen.body = undefined;
   const typed = await handler(end(JSON.stringify({ session_id: 7 })));
   release.restore();
-  assert.equal(both.status, 422);
   assert.equal(typed.status, 422);
   assert.equal(release.seen.body, undefined, "nothing should have reached the platform");
 });

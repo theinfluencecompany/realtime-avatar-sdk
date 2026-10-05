@@ -18,7 +18,7 @@ import { transcriptionOptionsSchema, transcriptionWireSchema, transcriptionToWir
 const DEFAULT_AVATAR_ID = "maria";
 const DEFAULT_BACKGROUND_ID = "plain_white";
 
-const sessionModeSchema = z.enum(["avatar", "voice"]);
+export const sessionModeSchema = z.enum(["avatar", "voice"]);
 type SessionMode = z.infer<typeof sessionModeSchema>;
 const DEFAULT_SESSION_MODE: SessionMode = "avatar";
 

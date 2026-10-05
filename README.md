@@ -280,13 +280,17 @@ the same class with `code: "upstream_timeout"`, `status: 504` and `response: nul
 may still be minting, so do not re-send it automatically: release the session if an id reached
 you, otherwise wait for the server-side join timeout, or leave the retry to the user.
 
-**A route on another origin.** `createProxyClient` sends every request, and the release it
-sends when the page is hidden, with one `credentials` mode, default `"same-origin"`. If the page
-is `app.example.com` and the route is `api.example.com` and authorizes on a cookie, pass
-`credentials: "include"` and have the route's CORS answer with
-`Access-Control-Allow-Credentials: true` and the page's exact origin. The page-hide release is a
-`keepalive` fetch under that same mode, so it reaches the route whenever `connect` did;
-`sendBeacon` is only a fallback where its fixed `include` cannot differ from the mode.
+**A route on another origin.** If the page is `app.example.com` and the route is
+`api.example.com` and authorizes on a cookie, pass `credentials: "include"` and have the route's
+CORS answer with `Access-Control-Allow-Credentials: true` and the page's exact origin.
+`createProxyClient` applies that mode to every request, the release it sends when the page is
+hidden included. Unset, it sets no `credentials` at all, so `fetch`'s default (`same-origin`) or
+your own `fetch` wrapper decides. The page-hide release is a `sendBeacon` where a beacon's fixed
+`include` matches (a same-origin route, or `credentials: "include"`), and otherwise a `keepalive`
+fetch through your `fetch`. Neither carries per-request `requestOptions.headers`, and a beacon
+carries no header at all, so a route that authorizes the release by header sees none. Only
+Chromium has been measured; Firefox before 133 ignores `keepalive`, which matters only for a
+cross-origin route without `credentials: "include"`.
 
 ```ts
 const client = createProxyClient({ proxyUrl: "https://api.example.com/realtime-avatar", credentials: "include" });

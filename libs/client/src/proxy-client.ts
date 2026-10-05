@@ -39,7 +39,8 @@ export interface ProxyClientOptions {
   fetch?: typeof globalThis.fetch;
   /**
    * The `credentials` mode of EVERY request this client makes, the page-hide release included.
-   * Default `"same-origin"`, which is `fetch`'s own default.
+   * Unset, the client sets none, so `fetch`'s own default (`"same-origin"`) applies, or whatever
+   * your `fetch` wrapper sets.
    *
    * Set `"include"` when your route is on another origin and authorizes on a cookie — an
    * `app.example.com` page calling an `api.example.com` route. The route's CORS must then answer
@@ -68,7 +69,10 @@ export function createProxyClient(options: ProxyClientOptions): AvatarSessionCli
   const base = normalize(options.proxyUrl);
   const doFetch = options.fetch ?? globalThis.fetch?.bind(globalThis);
   const timeoutMs = options.timeoutMs ?? PROXY_CLIENT_TIMEOUT_MS;
-  const credentials = options.credentials ?? "same-origin";
+  // Only an explicit option is sent: a consumer `fetch` written `fetch(u, { credentials:
+  // "include", ...init })` must keep its own choice, which an explicit default would override.
+  const credentials = options.credentials;
+  const withCredentials = credentials === undefined ? {} : { credentials };
 
   const post = async (path: string, body: unknown, request?: RealtimeAvatarRequestOptions): Promise<Response> => {
     if (!doFetch) throw new Error("realtime-avatar: no fetch available — pass one via `fetch`.");
@@ -78,7 +82,7 @@ export function createProxyClient(options: ProxyClientOptions): AvatarSessionCli
     try {
       return await doFetch(`${base}${path}`, {
         method: "POST",
-        credentials,
+        ...withCredentials,
         headers: { "content-type": "application/json", ...(request?.headers ?? {}) },
         body: JSON.stringify(body),
         signal: timer && caller ? AbortSignal.any([caller, timer]) : timer ?? caller,
@@ -92,49 +96,53 @@ export function createProxyClient(options: ProxyClientOptions): AvatarSessionCli
 
   /**
    * The page-hide send: one that outlives a closing page, dispatched synchronously — hence a
-   * boolean, so the caller can fall back to the awaited path when nothing could be sent (React
-   * Native has neither a keepalive fetch nor a beacon).
+   * boolean, so the caller can fall back to the awaited release when nothing could be sent.
    *
-   * A keepalive `fetch` first, because it outlives the page exactly as a beacon does AND carries
-   * the same `credentials` (and, through a custom `fetch`, the same headers) as the request that
-   * started the call. `sendBeacon` is always `credentials: "include"` and cannot carry a header:
-   * measured in Chromium 148 against a cross-origin route, its JSON preflight failed outright
-   * when the route's CORS did not allow credentials, while `connect` under `same-origin` had
-   * succeeded. So the beacon is used only where its fixed `include` cannot differ from the policy:
-   * a same-origin route, or `credentials: "include"`.
+   * `sendBeacon` where its fixed `credentials: "include"` cannot differ from this client's own
+   * policy: a same-origin route, or `credentials: "include"`. It is the send every browser keeps
+   * alive (Firefox ignored `keepalive` until 133), and what this client always used there. It
+   * carries no header, so a route that authenticates the release by a header your `fetch` adds
+   * sees none; cookies, which a same-origin route sees either way, still arrive.
+   *
+   * A keepalive `fetch` otherwise: a cross-origin route under any other policy. Measured in
+   * Chromium 148, a beacon's credentialed JSON preflight to a route whose CORS did not allow
+   * credentials failed outright while `connect` had succeeded. The keepalive goes through your
+   * `fetch` with your `credentials` (it carries no `requestOptions.headers`, which belong to one
+   * request); it is only as durable as that `fetch` is synchronous about dispatching.
    */
-  const keepalive = (body: ProxyEndRequest): boolean => {
+  const pageHide = (body: ProxyEndRequest): boolean => {
     const page = globalThis.location?.href;
     let target: URL;
     try {
-      // A relative `proxyUrl` with no page to resolve it against (SSR, a test runner) cannot be
-      // sent anywhere; say so, and the caller falls back to the awaited release.
+      // A relative `proxyUrl` with no page to resolve it against (SSR, a test runner, React
+      // Native) cannot be sent anywhere; say so, and the caller falls back to the awaited release.
       target = new URL(`${base}/end`, page);
     } catch {
       return false;
     }
     const payload = JSON.stringify(body);
-    if (doFetch) {
-      try {
-        // No deadline signal: aborting would cancel the very release the page is leaving behind.
-        void doFetch(target.href, {
-          method: "POST",
-          keepalive: true,
-          credentials,
-          headers: { "content-type": "application/json" },
-          body: payload,
-        }).catch(() => undefined);
-        return true;
-      } catch {
-        // A fetch that refuses synchronously (a keepalive quota) falls through to the beacon.
-      }
-    }
     const send = globalThis.navigator?.sendBeacon?.bind(globalThis.navigator);
-    if (!send || !page) return false;
-    if (credentials !== "include" && target.origin !== new URL(page).origin) return false;
-    // A Blob with an explicit type: a bare string is sent as text/plain, which a route that
-    // parses JSON by content-type will drop on the floor without telling anyone.
-    return send(target.href, new Blob([payload], { type: "application/json" }));
+    const sameOrigin = page !== undefined && target.origin === new URL(page).origin;
+    if (send && (sameOrigin || credentials === "include")) {
+      // A Blob with an explicit type: a bare string is sent as text/plain, which a route that
+      // parses JSON by content-type will drop on the floor without telling anyone.
+      if (send(target.href, new Blob([payload], { type: "application/json" }))) return true;
+    }
+    if (!doFetch) return false;
+    try {
+      // No deadline signal: aborting would cancel the very release the page is leaving behind.
+      void doFetch(target.href, {
+        method: "POST",
+        keepalive: true,
+        ...withCredentials,
+        headers: { "content-type": "application/json" },
+        body: payload,
+      }).catch(() => undefined);
+      return true;
+    } catch {
+      // A custom `fetch` may throw synchronously; native fetch rejects instead (caught above).
+      return false;
+    }
   };
 
   return {
@@ -195,7 +203,7 @@ export function createProxyClient(options: ProxyClientOptions): AvatarSessionCli
 
     releaseLiveKitSessionBeacon(sessionId: string, reason?: LiveKitSessionReleaseReason): boolean {
       if (!sessionId) return false;
-      return keepalive({ session_id: sessionId, reason: reason ?? "page_hide" });
+      return pageHide({ session_id: sessionId, reason: reason ?? "page_hide" });
     },
 
     async releaseLiveKitQueueTicket(
@@ -215,7 +223,7 @@ export function createProxyClient(options: ProxyClientOptions): AvatarSessionCli
 
     releaseLiveKitQueueTicketBeacon(queueTicketId: string, reason?: LiveKitSessionReleaseReason): boolean {
       if (!queueTicketId) return false;
-      return keepalive({ queue_ticket_id: queueTicketId, reason: reason ?? "page_hide" });
+      return pageHide({ queue_ticket_id: queueTicketId, reason: reason ?? "page_hide" });
     },
   };
 }
