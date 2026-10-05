@@ -4,7 +4,7 @@
 
 A minor release with breaking changes: hanging up is terminal, the call reports its microphone
 and audio playback, the video surface needs no Tailwind configuration, and the proxy releases a
-queued call correctly. The version number itself is set at release.
+queued call correctly.
 
 ### Breaking changes
 
