@@ -1,0 +1,42 @@
+{
+  "name": "realtime-avatar",
+  "version": "0.1.0",
+  "description": "Build live AI avatar apps with your RTA account: discover avatars, inspect credits, configure characters and integrate voice/video calls.",
+  "author": {
+    "name": "The Influence Company",
+    "email": "support@realtimeavatar.ai"
+  },
+  "homepage": "https://realtimeavatar.ai",
+  "repository": "https://github.com/theinfluencecompany/realtime-avatar-sdk",
+  "license": "MIT",
+  "keywords": [
+    "avatar",
+    "video",
+    "voice",
+    "realtime",
+    "mcp"
+  ],
+  "mcpServers": "./mcp.cursor.json",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "RTA_API_KEY": {
+        "type": "string",
+        "title": "RTA API key",
+        "description": "Your server-side RTA API key. Configure it here; keep it out of chat."
+      },
+      "RTA_ALLOW_WRITES": {
+        "type": "string",
+        "title": "Enable account writes",
+        "enum": [
+          "0",
+          "1"
+        ],
+        "default": "0"
+      }
+    },
+    "required": [
+      "RTA_API_KEY"
+    ]
+  }
+}

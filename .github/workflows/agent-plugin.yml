@@ -1,0 +1,31 @@
+name: Claude and Cursor plugin
+on:
+  pull_request:
+    paths:
+      - 'integrations/agent-plugin/**'
+      - 'plugins/realtime-avatar/**'
+      - '.claude-plugin/**'
+      - '.cursor-plugin/**'
+      - '.github/workflows/agent-plugin.yml'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: integrations/agent-plugin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: git diff --exit-code -- ../../plugins/realtime-avatar ../../.claude-plugin ../../.cursor-plugin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: realtime-avatar-claude-cursor
+          path: integrations/agent-plugin/dist/

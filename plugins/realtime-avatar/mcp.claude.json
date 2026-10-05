@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "realtime-avatar": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/account.mjs"
+      ],
+      "env": {
+        "RTA_PLUGIN_API_KEY": "${user_config.api_key}",
+        "RTA_PLUGIN_ALLOW_WRITES": "${user_config.allow_writes}"
+      }
+    },
+    "realtime-avatar-preview": {
+      "type": "http",
+      "url": "https://rta-chatgpt-practice-review.zjudn2013.workers.dev/mcp"
+    }
+  }
+}
