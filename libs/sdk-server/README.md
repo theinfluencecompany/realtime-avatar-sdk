@@ -353,6 +353,28 @@ a last line first.
 On the lower-level hooks, `reconnect()` redials (a double tap mints once), and so does setting
 `active` to false and back. `reset()` does not undo an end.
 
+### Waiting for the character
+
+Joining the room is not enough to start a conversation: the character's agent must also
+arrive. The shared React and React Native lifecycle allows at most 30 seconds from the first
+held grant to that readiness, including automatic retries and signaling reconnects. The
+existing connect watchdog (12 seconds by default) also recovers a connected room whose agent
+never arrives. A transport connection alone does not reset the retry count or buy more time.
+
+When the budget or retry count runs out, the SDK releases the session, leaves the room and
+ends with `phase.reason: "error"` / `onEnded({ reason: "failed" })`. The optional `phase.code`
+distinguishes `agent_timeout` from `connection_timeout`; these are client observations, not
+HTTP status codes. `agent_timeout` means at least one room connected but the call never became
+ready; retries may also have transport delays. `connection_timeout` means no room connected.
+While connecting, `phase.waitingFor` distinguishes `agent` from `transport`.
+No automatic mint follows that failure; `reconnect()` starts a fresh budget. A call that
+already reached live keeps LiveKit's normal recovery of its existing room.
+
+On `useRealtimeSession` or `useSessionLifecycle`, `readyTimeoutSeconds` changes the total
+budget (positive, default 30). `connectWatchdogSeconds` changes the per-attempt wait; disabling
+that watchdog with zero still leaves the total budget in force. Neither setting fabricates
+media readiness or changes the application's first-video-frame gate.
+
 ### Optional connection details
 
 `AvatarCall` provides call status, actions and end reasons for your default UI. To show

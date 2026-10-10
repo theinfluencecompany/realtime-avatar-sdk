@@ -63,6 +63,7 @@ const bundle = await build({
 function room() {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   return {
+    name: "first-room",
     state: ConnectionState.Connected,
     localParticipant: { connectionQuality: ConnectionQuality.Good },
     on(event: string, callback: (...args: unknown[]) => void) {
@@ -95,7 +96,7 @@ function fixture(windowValue?: object) {
     room: ReturnType<typeof room>;
     assistant: { agent: ReturnType<typeof source>["participant"] & { attributes?: Record<string, string> }; state: string; audioTrack?: ReturnType<typeof source>; videoTrack?: ReturnType<typeof source> };
     lifecycle: Omit<typeof legacyBridge.lifecycle, "grant"> & {
-      grant?: Pick<NonNullable<SessionLifecycleRoomBridgeProps["lifecycle"]["grant"]>, "session_id" | "connection_history"> | null;
+      grant?: Pick<NonNullable<SessionLifecycleRoomBridgeProps["lifecycle"]["grant"]>, "session_id" | "connection_history"> & { room_name?: string } | null;
     };
     callback?: Callback;
     mediaModeCallback?: SessionLifecycleRoomBridgeProps["onMediaModeChange"];
@@ -107,7 +108,7 @@ function fixture(windowValue?: object) {
     room: room(),
     assistant: { agent: { connectionQuality: ConnectionQuality.Lost }, state: "listening",
       audioTrack: source(ConnectionQuality.Excellent), videoTrack: source(ConnectionQuality.Poor) },
-    lifecycle: { ...legacyBridge.lifecycle, grant: { session_id: "first" } },
+    lifecycle: { ...legacyBridge.lifecycle, grant: { session_id: "first", room_name: "first-room" } },
     callback: record, elements: [],
     session: { phase: { kind: "live" }, clocks: { sessionRemainingMs: null }, microphone: { status: "off" }, audioPlayback: "unknown" },
     useRef(value) {
@@ -149,6 +150,36 @@ const historyGrant: NonNullable<NonNullable<SessionLifecycleRoomBridgeProps["lif
   token: "x".repeat(32),
   expiresAt: "2099-01-01T00:00:00.000Z",
 };
+
+test("a legacy bridge without grant metadata still reports its room and agent", () => {
+  const f = fixture({});
+  const states: ConnectionState[] = [];
+  const agents: boolean[] = [];
+  f.controlled.lifecycle = { ...legacyBridge.lifecycle,
+    onConnectionStateChange: (state) => { states.push(state); },
+    setAgentPresent: (present) => { agents.push(present); } };
+  f.render();
+  assert.deepEqual(states, [ConnectionState.Connected]);
+  assert.deepEqual(agents, [true]);
+  f.dispose();
+});
+
+test("an explicitly bound bridge waits until a caller-supplied room belongs to its grant", () => {
+  const f = fixture({});
+  const states: ConnectionState[] = [];
+  const agents: boolean[] = [];
+  f.controlled.lifecycle = { ...legacyBridge.lifecycle, grant: { session_id: "replacement", room_name: "new-room" },
+    onConnectionStateChange: (state) => { states.push(state); },
+    setAgentPresent: (present) => { agents.push(present); } };
+  f.render();
+  assert.deepEqual(states, []);
+  assert.deepEqual(agents, []);
+  f.controlled.room.name = "new-room";
+  f.render();
+  assert.deepEqual(states, [ConnectionState.Connected]);
+  assert.deepEqual(agents, [true]);
+  f.dispose();
+});
 
 test("actual mode reads late-join state and trusts only the bound agent", () => {
   const f = fixture({});
