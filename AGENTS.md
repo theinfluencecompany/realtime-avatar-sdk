@@ -504,6 +504,13 @@ const transcript = await verifyTranscript(raw, request.headers, secret);
 
 ### 13. End a call the moment your user abandons it
 
+The shared React/native lifecycle also bounds startup: a connected room without the character's
+agent is still waiting. `readyTimeoutSeconds` defaults to 30 seconds from the first grant,
+across automatic retries; bare room connections do not reset it. On expiry the SDK releases and
+leaves the room, emitting `ended` with `reason: "error"` and a bounded diagnostic `code`
+(`agent_timeout` or `connection_timeout`). Show a failure/retry, never a successful-call receipt.
+Only an explicit `reconnect()` starts a fresh budget. See the SDK README's readiness contract.
+
 The slot is held from the moment `startCall` returns — **including the window before the
 client has joined the room**. A user who closes the tab right there leaves the call running
 until the join timeout reclaims it (measured: over a minute of held slot for a page that

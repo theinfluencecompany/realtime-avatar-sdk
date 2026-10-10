@@ -831,6 +831,8 @@ export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps)
     LiveKitRoom,
     {
       ...roomProps,
+      // A new grant owns a new room and bridge; an old room must not report its agent into it.
+      key: grant?.session_id ?? "no-session",
       serverUrl: grant?.livekit_url,
       token: grant?.participant_token,
       connect: shouldConnect,

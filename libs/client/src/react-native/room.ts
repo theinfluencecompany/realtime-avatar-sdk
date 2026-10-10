@@ -83,6 +83,8 @@ export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps)
     LiveKitRoom,
     {
       ...roomProps,
+      // Keep the room and its in-room observers scoped to the grant, as on web.
+      key: grant?.session_id ?? "no-session",
       serverUrl: grant?.livekit_url,
       token: grant?.participant_token,
       connect: shouldConnect,

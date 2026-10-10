@@ -224,6 +224,10 @@ export function retryStep(attempt: number, policy: ReconnectPolicy = resolveReco
  */
 export type SessionEndReason = "idle" | "disconnected" | "error" | "user";
 
+/** Client-observed readiness failure, not an HTTP/provider error code. `agent_timeout` means
+ * at least one room connected without reaching agent readiness; retries may also have transport delays. */
+export type SessionReadinessFailure = "agent_timeout" | "connection_timeout";
+
 export type SessionLifecyclePhase =
   // no session requested.
   | { kind: "idle" }
@@ -232,7 +236,7 @@ export type SessionLifecyclePhase =
   // all slots busy, holding a ticket, auto-retrying. NOT an error.
   | { kind: "queued"; busy: CapacityBusyResponse }
   // grant held, room socket connecting, agent not yet present.
-  | { kind: "connecting"; grant: LiveKitSessionGrant }
+  | { kind: "connecting"; grant: LiveKitSessionGrant; waitingFor?: "transport" | "agent" }
   // connected + agent present + activity fresh.
   | { kind: "live" }
   // within the warn window of the CLIENT-ENFORCED idle end (PREEMPTIVE). The
@@ -246,10 +250,11 @@ export type SessionLifecyclePhase =
       attempt: number;
       /** Native LiveKit recovery keeps the same grant; fresh-grant recovery re-mints. */
       strategy: "in-place" | "fresh-grant";
+      reason?: SessionReadinessFailure;
     }
   // terminal: deliberate end, idle expiry, OR give-up; lease released. `reason` is
   // OPTIONAL so a bare `{ kind: "ended" }` stays valid (no union fork).
-  | { kind: "ended"; reason?: SessionEndReason };
+  | { kind: "ended"; reason?: SessionEndReason; code?: SessionReadinessFailure };
 
 export type SessionLifecyclePhaseKind = SessionLifecyclePhase["kind"];
 
@@ -329,14 +334,14 @@ export type RecoveryState =
   | { kind: "in-place-reconnecting" }
   // A fresh-grant request/room connect is already in flight. It stays visible but
   // MUST NOT schedule another refresh until that attempt actually fails.
-  | { kind: "refreshing"; attempt: number }
+  | { kind: "refreshing"; attempt: number; reason?: SessionReadinessFailure }
   // The prior attempt failed and is waiting for the next bounded backoff.
-  | { kind: "reconnecting"; attempt: number }
-  | { kind: "failed" }
+  | { kind: "reconnecting"; attempt: number; reason?: SessionReadinessFailure }
+  | { kind: "failed"; reason?: SessionReadinessFailure }
   // `reason` carries the terminal cause onto the `ended` phase: `idle` when the
   // CLIENT-AUTHORITATIVE idle clock ended the session, else `disconnected` (a
   // deliberate server/peer end). Defaults to `disconnected` for back-compat.
-  | { kind: "ended"; reason?: SessionEndReason };
+  | { kind: "ended"; reason?: SessionEndReason; code?: SessionReadinessFailure };
 
 /** Only terminal room recovery is allowed to schedule a fresh grant. */
 export function needsFreshGrant(
@@ -380,6 +385,7 @@ export function lifecyclePhaseFrom(args: {
       reconnecting: true,
       attempt: recovery.attempt,
       strategy: "fresh-grant",
+      ...(recovery.reason ? { reason: recovery.reason } : {}),
     };
   }
   if (recovery.kind === "failed") {
@@ -388,12 +394,14 @@ export function lifecyclePhaseFrom(args: {
       reconnecting: false,
       attempt: MAX_RECONNECT_ATTEMPTS,
       strategy: "fresh-grant",
+      ...(recovery.reason ? { reason: recovery.reason } : {}),
     };
   }
   if (recovery.kind === "ended") {
     // Pass the terminal cause through so adopters can disambiguate (idle expiry
     // vs. a deliberate server/peer end) without forking the phase union.
-    return recovery.reason ? { kind: "ended", reason: recovery.reason } : { kind: "ended" };
+    return { kind: "ended", ...(recovery.reason ? { reason: recovery.reason } : {}),
+      ...(recovery.code ? { code: recovery.code } : {}) };
   }
 
   // 2) Pre-connect capacity gate.
@@ -413,7 +421,7 @@ export function lifecyclePhaseFrom(args: {
       // 3) Grant held; the room connects to it. Until the socket is connected AND
       // the agent has joined, we are `connecting`.
       if (!connected || !agentPresent) {
-        return { kind: "connecting", grant: capacity.grant };
+        return { kind: "connecting", grant: capacity.grant, waitingFor: connected ? "agent" : "transport" };
       }
       // 4) Connected + agent present → the idle clock decides.
       if (idle.kind === "idle-warning") {
@@ -516,8 +524,8 @@ export type UseSessionLifecycleInput<T extends LLMProvider = LLMProvider> = {
   /** Auto-reconnect give-up bound. Default {@link MAX_RECONNECT_ATTEMPTS}. */
   maxReconnectAttempts?: number;
   /**
-   * How long a held grant may sit UNCONNECTED before we give the slot back
-   * (seconds). Default {@link DEFAULT_CONNECT_WATCHDOG_SECONDS}.
+   * Per-attempt wait for the room connection, then for its first agent, before giving the
+   * slot back (seconds). Default {@link DEFAULT_CONNECT_WATCHDOG_SECONDS}.
    *
    * A grant that never reaches a live room is invisible to every other timer here:
    * the idle clock only runs once connected, and LiveKit reports no disconnect for
@@ -526,9 +534,16 @@ export type UseSessionLifecycleInput<T extends LLMProvider = LLMProvider> = {
    * the caller's only slot, so their retry is refused by a call they never saw.
    * Measured in prod: 8 of 12 never-connected sessions held for 76-81s.
    *
-   * Set 0 to disable (the platform timeout remains the backstop).
+   * Set 0 to disable per-attempt recovery; the total readiness budget still applies.
    */
   connectWatchdogSeconds?: number;
+  /**
+   * Total pre-live readiness budget from the first held grant, including automatic retries.
+   * A transport connection alone never resets it. Default {@link DEFAULT_READY_TIMEOUT_SECONDS}.
+   * Non-positive/non-finite overrides use the default. Explicit reconnect starts a new budget.
+   * The existing connect watchdog also bounds each connected room's wait for its first agent.
+   */
+  readyTimeoutSeconds?: number;
   /** Forwarded to {@link useLiveKitAvatarGrant}. Defaults true (queue auto-retry). */
   autoRetryBusy?: boolean;
   requestOptions?: UseLiveKitAvatarGrantInput<T>["requestOptions"];
@@ -550,7 +565,7 @@ export type SessionLifecycleApi = {
   grant: LiveKitSessionGrant | null;
   /** The underlying capacity signal (queue position/size, error) — unchanged. */
   capacity: LiveKitCapacityState;
-  /** The DOM recovery contract: auto-reconnect attempts since the last connect. */
+  /** The DOM recovery contract: auto-reconnect attempts since the last room + agent readiness. */
   attempt: number;
 
   // --- Idle lifecycle (CLIENT-AUTHORITATIVE: the SDK enforces the end) ---
@@ -648,6 +663,8 @@ const DEFAULT_WARN_CAP_MS = 30_000;
  * Long enough to clear a cold GPU boot's signalling on a slow network.
  */
 export const DEFAULT_CONNECT_WATCHDOG_SECONDS = 12;
+/** Maximum automatic startup wait across grants; successful room + agent readiness ends it. */
+export const DEFAULT_READY_TIMEOUT_SECONDS = 30;
 
 /**
  * Resolve the warn window (ms) before the client-enforced idle end. Precedence:
@@ -690,6 +707,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     maxReconnectAttempts,
     autoRetryBusy = true,
     connectWatchdogSeconds,
+    readyTimeoutSeconds,
     requestOptions,
     onBehaviorChange,
   } = input;
@@ -703,12 +721,14 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
   );
   const reconnectPolicyRef = useRef(reconnectPolicy);
   reconnectPolicyRef.current = reconnectPolicy;
-  // Negative/NaN is treated as "use the default"; an explicit 0 disables the watchdog
-  // and leaves the platform join timeout as the only backstop.
+  // Finite overrides retain the existing whole-second clamp. Zero disables per-attempt
+  // recovery; the separate total readiness deadline remains the client backstop.
   const connectWatchdogMs =
     typeof connectWatchdogSeconds === "number" && Number.isFinite(connectWatchdogSeconds)
       ? Math.max(0, Math.floor(connectWatchdogSeconds)) * 1000
       : DEFAULT_CONNECT_WATCHDOG_SECONDS * 1000;
+  const readyTimeoutMs = typeof readyTimeoutSeconds === "number" && Number.isFinite(readyTimeoutSeconds) && readyTimeoutSeconds > 0
+    ? Math.max(1, Math.floor(readyTimeoutSeconds)) * 1000 : DEFAULT_READY_TIMEOUT_SECONDS * 1000;
 
   // A user end is a latch, not a phase: `reset()` (mode/avatar switch plumbing) and LiveKit's own
   // events must not be able to walk it back into a phase that mints. Only `reconnect()` and the
@@ -716,17 +736,27 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
   // what stops the queue retry, cancels an in-flight mint and idles the grant the room joins.
   const [userEnded, setUserEnded] = useState(false);
   const userEndedRef = useRef(false);
+  const [readinessFailed, setReadinessFailed] = useState(false);
+  const readinessFailureRef = useRef<SessionReadinessFailure | null>(null);
+  // One absolute budget, retained across grant replacements and pre-live signaling recovery.
+  const readinessRef = useRef<{ startedAt: number; sawTransport: boolean } | null>(null);
+  const readyGrantRef = useRef<string | null>(null);
+  const agentWaitRef = useRef<{ sessionId: string; startedAt: number } | null>(null);
   // The latest phase, for actions that must not act on a call that already ended.
   const phaseRef = useRef<SessionLifecyclePhase>({ kind: "idle" });
 
   const grantState = useLiveKitAvatarGrant<T>({
     client,
     session,
-    active: active && !userEnded,
+    active: active && !userEnded && !readinessFailed,
     autoRetryBusy,
     requestOptions,
   });
   const capacity = grantState.capacity;
+  const grantId = grantState.grant?.session_id ?? null;
+  const grantIdRef = useRef<string | null>(null);
+  grantIdRef.current = grantId;
+  const retiredGrantRef = useRef<string | null>(null);
 
   // --- Recovery sub-machine (mirrors the lifted use-session-recovery hook) ---
   const [recovery, setRecovery] = useState<RecoveryState>({ kind: "connected" });
@@ -762,8 +792,21 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     grantIdleSeconds: grantState.grant?.idle_timeout_seconds ?? 0,
   });
   const warnAtMs = resolveWarnBeforeMs(idleTimeoutMs, warnBeforeMs, idleWarnLeadSeconds);
-  const [agentPresent, setAgentPresentState] = useState(false);
-  const [connected, setConnected] = useState(false);
+  // Facts belong to the grant that produced them. A replacement must not inherit a render of
+  // the old room's connected/agent state before its bridge has mounted and supplied fresh facts.
+  const [agentObservation, setAgentObservation] = useState<{ grantId: string | null; present: boolean }>({ grantId: null, present: false });
+  const [connectionObservation, setConnectionObservation] = useState<{ grantId: string | null; connected: boolean }>({ grantId: null, connected: false });
+  const agentPresent = agentObservation.grantId === grantId && agentObservation.present;
+  const connected = connectionObservation.grantId === grantId && connectionObservation.connected;
+  connectedRef.current = connected;
+  const setAgentPresentState = useCallback((present: boolean) => {
+    const owner = grantIdRef.current;
+    setAgentObservation((prev) => prev.grantId === owner && prev.present === present ? prev : { grantId: owner, present });
+  }, []);
+  const setConnected = useCallback((value: boolean) => {
+    const owner = grantIdRef.current;
+    setConnectionObservation((prev) => prev.grantId === owner && prev.connected === value ? prev : { grantId: owner, connected: value });
+  }, []);
   const lastActivityRef = useRef<number>(Date.now());
   // The in-room room-leave handle (room.disconnect), supplied by the bridge. The
   // idle-enforcement effect calls it to actually END the session on idle expiry.
@@ -785,7 +828,13 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     refreshBaselineCapacityRef.current = null;
     attemptRef.current = 0;
     setAttempt(0);
-    setRecovery(userEndedRef.current ? { kind: "ended", reason: "user" } : { kind: "connected" });
+    readinessRef.current = null;
+    readyGrantRef.current = null;
+    agentWaitRef.current = null;
+    retiredGrantRef.current = null;
+    setRecovery(userEndedRef.current ? { kind: "ended", reason: "user" }
+      : readinessFailureRef.current ? { kind: "ended", reason: "error", code: readinessFailureRef.current }
+      : { kind: "connected" });
     setConnected(false);
     setAgentPresentState(false);
     lastActivityRef.current = Date.now();
@@ -798,35 +847,44 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     if (active) return;
     userEndedRef.current = false;
     setUserEnded(false);
+    readinessFailureRef.current = null;
+    setReadinessFailed(false);
     reset();
   }, [active, reset]);
 
   const markActivity = useCallback(() => {
+    if (grantId === null || grantIdRef.current !== grantId) return;
     lastActivityRef.current = Date.now();
     // Drop straight out of the warn window on organic activity.
     setClockTick((value) => value + 1);
-  }, []);
+  }, [grantId]);
 
   const stayConnected = useCallback(() => {
+    if (grantId === null || grantIdRef.current !== grantId) return;
     // No-op if not connected — there is no idle clock to reset.
     if (!connectedRef.current) return;
     // Reset the CLIENT idle clock — the load-bearing effect that postpones the
     // client-enforced end (the SDK owns the reap).
     lastActivityRef.current = Date.now();
     setClockTick((value) => value + 1);
-  }, []);
+  }, [grantId]);
 
   const setAgentPresent = useCallback((present: boolean) => {
-    setAgentPresentState((prev) => {
+    if (grantId === null || grantIdRef.current !== grantId) return;
+    if (userEndedRef.current || readinessFailureRef.current ||
+      (retiredGrantRef.current !== null && retiredGrantRef.current === grantIdRef.current)) return;
+    setAgentObservation((prev) => {
       // Seed the clock the moment the agent first binds (connecting → live).
-      if (present && !prev) lastActivityRef.current = Date.now();
-      return present;
+      if (present && (prev.grantId !== grantId || !prev.present)) lastActivityRef.current = Date.now();
+      return prev.grantId === grantId && prev.present === present ? prev : { grantId, present };
     });
-  }, []);
+  }, [grantId]);
 
   const registerLeaveRoom = useCallback((leave: (() => void) | null) => {
+    // An old bridge's cleanup can run after the replacement registered its own room.
+    if (grantId === null || grantIdRef.current !== grantId) return;
     leaveRoomRef.current = leave;
-  }, []);
+  }, [grantId]);
 
   // CLIENT-ENFORCED idle end: end the session ourselves on idle expiry (there is
   // no server reap to wait for). Marks the terminal `ended{idle}` phase, frees the
@@ -848,30 +906,32 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
   }, [clearTimer]);
 
   const onConnected = useCallback(() => {
-    if (userEndedRef.current) return;
+    if (grantId === null || grantIdRef.current !== grantId) return;
+    if (userEndedRef.current || readinessFailureRef.current ||
+      (retiredGrantRef.current !== null && retiredGrantRef.current === grantIdRef.current)) return;
     clearTimer();
     connectedRef.current = true;
     manualReconnectPendingRef.current = false;
     refreshBaselineCapacityRef.current = null;
     setConnected(true);
-    attemptRef.current = 0;
-    setAttempt(0);
+    if (readinessRef.current) readinessRef.current.sawTransport = true;
     setRecovery({ kind: "connected" });
     lastActivityRef.current = Date.now();
-  }, [clearTimer]);
+  }, [clearTimer, grantId]);
 
   const onDisconnected = useCallback(
     (reason?: DisconnectReason) => {
+      if (grantId === null || grantIdRef.current !== grantId) return;
       // A user end already released and left; the room's own disconnect that follows (or any
       // other) must not reclassify the call into a recovery that mints.
-      if (!active || userEndedRef.current) return;
+      if (!active || userEndedRef.current || readinessFailureRef.current) return;
       const action = disconnectAction(reason, connectedRef.current);
       if (action === "noop") return;
       if (action === "reset") {
         // Replacing a failed room with a fresh grant disconnects the old room on
         // purpose. That CLIENT_INITIATED event belongs to the swap; resetting here
         // would erase the in-flight recovery state.
-        if (recoveryRef.current.kind === "refreshing") return;
+        if (recoveryRef.current.kind === "refreshing" || recoveryRef.current.kind === "reconnecting") return;
         reset();
         return;
       }
@@ -889,12 +949,13 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
       refreshBaselineCapacityRef.current = null;
       setRecovery({ kind: "reconnecting", attempt: attemptRef.current });
     },
-    [active, reset],
+    [active, reset, grantId],
   );
 
   const onConnectionError = useCallback(
     (error: Error) => {
-      if (!active || userEndedRef.current || !isRecoverableConnectionError(error)) return;
+      if (grantId === null || grantIdRef.current !== grantId) return;
+      if (!active || userEndedRef.current || readinessFailureRef.current || !isRecoverableConnectionError(error)) return;
       connectedRef.current = false;
       setConnected(false);
       setAgentPresentState(false);
@@ -907,7 +968,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
         return { kind: "reconnecting", attempt: attemptRef.current };
       });
     },
-    [active],
+    [active, grantId],
   );
 
   // A redial's mint has no `refreshing` recovery to fail into; when it fails, re-open the gate it
@@ -924,15 +985,16 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     const baseline = refreshBaselineCapacityRef.current;
     if (baseline?.kind === "error" && baseline.error === capacity.error) return;
     refreshBaselineCapacityRef.current = null;
-    setRecovery({ kind: "reconnecting", attempt: recovery.attempt });
+    setRecovery({ kind: "reconnecting", attempt: recovery.attempt, ...(recovery.reason ? { reason: recovery.reason } : {}) });
   }, [capacity, recovery]);
 
   const onConnectionStateChange = useCallback(
     (state: LiveKitConnectionStatus) => {
-      if (!active || userEndedRef.current) return;
+      if (grantId === null || grantIdRef.current !== grantId) return;
+      if (!active || userEndedRef.current || readinessFailureRef.current) return;
       if (state === "connected") {
         // An in-place reconnect healed (or the first connect landed). Treat the
-        // same as onConnected: clear the banner, reset the budget.
+        // same as onConnected. Only a room with its agent resets the retry budget.
         onConnected();
         return;
       }
@@ -949,8 +1011,85 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
       // "connecting" / "disconnected" are owned by onConnected/onDisconnected
       // (which carry the disconnect REASON the classifier needs).
     },
-    [active, onConnected],
+    [active, onConnected, grantId],
   );
+
+  // A socket connection is not a usable call. Reset retry/readiness budgets only when BOTH
+  // halves have arrived, or a sequence of empty rooms can reset the retry count forever.
+  useEffect(() => {
+    if (!active || userEnded || readinessFailed || !connected || !agentPresent || !grantState.grant) return;
+    readyGrantRef.current = grantState.grant.session_id;
+    readinessRef.current = null;
+    agentWaitRef.current = null;
+    attemptRef.current = 0;
+    setAttempt(0);
+  }, [active, userEnded, readinessFailed, connected, agentPresent, grantState.grant]);
+
+  const failReadiness = useCallback((code: SessionReadinessFailure) => {
+    if (userEndedRef.current || readinessFailureRef.current) return;
+    readinessFailureRef.current = code;
+    clearTimer();
+    connectedRef.current = false;
+    manualReconnectPendingRef.current = false;
+    refreshBaselineCapacityRef.current = null;
+    const ended = { kind: "ended", reason: "error", code } as const;
+    recoveryRef.current = ended;
+    setRecovery(ended);
+    setConnected(false);
+    setAgentPresentState(false);
+    // Deactivate the grant owner too: stop its queue, cancel in-flight requests, and give back
+    // any late grant. An error phase alone would leave its microphone/lease alive underneath.
+    releaseRef.current("disconnected");
+    setReadinessFailed(true);
+    leaveRoomRef.current?.();
+  }, [clearTimer]);
+
+  // One absolute startup budget, including retries and a queue reached during recovery.
+  // Signal reconnects, a new grant and re-renders cannot buy another thirty seconds.
+  useEffect(() => {
+    if (!active || userEnded || readinessFailed) return;
+    if (recovery.kind === "ended" || recovery.kind === "failed") return;
+    if (grantState.grant && readyGrantRef.current === grantState.grant.session_id) return;
+    if (!readinessRef.current && grantState.grant) {
+      readinessRef.current = { startedAt: Date.now(), sawTransport: connected };
+    }
+    const budget = readinessRef.current;
+    if (!budget) return;
+    const timer = window.setTimeout(() => {
+      if (readinessRef.current !== budget) return;
+      failReadiness(budget.sawTransport ? "agent_timeout" : "connection_timeout");
+    }, Math.max(0, budget.startedAt + readyTimeoutMs - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [active, userEnded, readinessFailed, connected, agentPresent, grantState.grant, recovery.kind, readyTimeoutMs, failReadiness]);
+
+  // The transport watchdog cannot see a connected room with no agent. Give that room one
+  // bounded wait, retained through pre-live signal recovery, then use the SAME retry ladder.
+  // A call that already became live keeps LiveKit's existing in-place recovery untouched.
+  useEffect(() => {
+    const sessionId = grantState.grant?.session_id;
+    if (!active || userEnded || readinessFailed || !sessionId || readyGrantRef.current === sessionId || agentPresent) return;
+    if (recovery.kind === "reconnecting" || recovery.kind === "failed" || recovery.kind === "ended") return;
+    if (agentWaitRef.current?.sessionId !== sessionId) {
+      if (!connected) return;
+      agentWaitRef.current = { sessionId, startedAt: Date.now() };
+    }
+    const wait = agentWaitRef.current;
+    // Explicitly disabling per-attempt recovery does not disable the total readiness budget.
+    if (connectWatchdogMs <= 0) return;
+    const timer = window.setTimeout(() => {
+      if (agentWaitRef.current !== wait || readinessFailureRef.current || userEndedRef.current) return;
+      retiredGrantRef.current = sessionId;
+      connectedRef.current = false;
+      setConnected(false);
+      setAgentPresentState(false);
+      const next = { kind: "reconnecting", attempt: attemptRef.current, reason: "agent_timeout" } as const;
+      recoveryRef.current = next;
+      setRecovery(next);
+      releaseRef.current("disconnected");
+      leaveRoomRef.current?.();
+    }, Math.max(0, wait.startedAt + connectWatchdogMs - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [active, userEnded, readinessFailed, connected, agentPresent, grantState.grant, recovery.kind, connectWatchdogMs]);
 
   // CONNECT WATCHDOG — give the slot back if the room never comes up.
   //
@@ -987,6 +1126,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     // the platform's own release path owns it.
     if (recovery.kind === "in-place-reconnecting") return;
     const timer = window.setTimeout(() => {
+      if (readinessFailureRef.current || userEndedRef.current) return;
       releaseRef.current("disconnected");
       // Carry the CURRENT attempt so the ladder's budget advances from where it is —
       // resetting to 0 here would let a room that never connects retry forever.
@@ -1002,6 +1142,10 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     if (!active || !needsFreshGrant(recovery)) return;
     const step = retryStep(attemptRef.current, reconnectPolicyRef.current);
     if (step.kind === "give-up") {
+      if (readinessRef.current) {
+        failReadiness(readinessRef.current.sawTransport ? "agent_timeout" : "connection_timeout");
+        return;
+      }
       manualReconnectPendingRef.current = false;
       refreshBaselineCapacityRef.current = null;
       releaseRef.current("disconnected");
@@ -1010,6 +1154,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     }
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
+      if (readinessFailureRef.current || userEndedRef.current) return;
       attemptRef.current = step.attempt;
       setAttempt(step.attempt);
       refreshBaselineCapacityRef.current = capacityRef.current;
@@ -1024,13 +1169,13 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
       // first; the session we are abandoning is by definition already broken, and
       // the give-up branch above releases anyway.
       releaseRef.current("superseded");
-      setRecovery({ kind: "refreshing", attempt: step.attempt });
+      setRecovery({ kind: "refreshing", attempt: step.attempt, ...(recovery.reason ? { reason: recovery.reason } : {}) });
       refreshRef.current();
     }, step.delayMs);
     return clearTimer;
     // `attempt` is in the deps so each scheduled attempt re-runs the effect and
     // the budget advances to the give-up branch instead of stalling after one try.
-  }, [recovery.kind, active, attempt, clearTimer]);
+  }, [recovery.kind, active, attempt, clearTimer, failReadiness]);
 
   const end = useCallback(() => {
     // An ended call has already released; ending it again must not rewrite WHY it ended (an
@@ -1053,6 +1198,13 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
 
   const reconnect = useCallback(() => {
     if (!active) return;
+    if (readinessFailureRef.current) {
+      readinessFailureRef.current = null;
+      setReadinessFailed(false);
+      reset();
+      manualReconnectPendingRef.current = true;
+      return;
+    }
     if (userEndedRef.current) {
       // A redial after a hang-up: re-activating the grant hook is itself the one fresh mint.
       // Held behind the same gate as every manual reconnect, so a second tap while that mint is
@@ -1069,6 +1221,12 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     if (manualReconnectPendingRef.current || recovery.kind === "in-place-reconnecting") return;
     manualReconnectPendingRef.current = true;
     clearTimer();
+    readinessRef.current = null;
+    agentWaitRef.current = null;
+    readyGrantRef.current = null;
+    connectedRef.current = false;
+    setConnected(false);
+    setAgentPresentState(false);
     attemptRef.current = 0;
     setAttempt(0);
     // One immediate refresh; it does not arm the backoff while in flight. A real
@@ -1311,6 +1469,10 @@ export function SessionLifecycleRoomBridge({
   const assistant = useVoiceAssistant();
   const transcriptions = useTranscriptions();
   const room = useRoomContext();
+  // A caller-supplied Room can outlive a grant while its disconnect/connect settles. Do not
+  // attribute that room's existing agent to a replacement merely because the props changed.
+  const roomMatchesGrant = lifecycle.grant === undefined ||
+    (lifecycle.grant !== null && room.name === lifecycle.grant.room_name);
   useCallMedia(room, {
     setMicrophoneFacts,
     setAudioPlayback,
@@ -1493,12 +1655,12 @@ export function SessionLifecycleRoomBridge({
   ]);
 
   useEffect(() => {
-    onConnectionStateChange(connectionState);
-  }, [connectionState, onConnectionStateChange]);
+    if (roomMatchesGrant) onConnectionStateChange(connectionState);
+  }, [connectionState, onConnectionStateChange, roomMatchesGrant]);
 
   useEffect(() => {
-    setAgentPresent(agentPresent);
-  }, [agentPresent, setAgentPresent]);
+    if (roomMatchesGrant) setAgentPresent(agentPresent);
+  }, [agentPresent, setAgentPresent, roomMatchesGrant]);
 
   // IDLE×CALL reset (the P0): a voice call has no per-turn text send, so feed the
   // client idle clock from the in-room voice signal — the agent actively producing
