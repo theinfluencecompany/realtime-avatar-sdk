@@ -94,6 +94,23 @@ test("the client cannot set policy — the session hook is the only source", asy
   assert.equal(seen.body?.max_session_seconds, 120);
 });
 
+test("content policy comes only from the server, never a browser choice or disable", async () => {
+  const { seen, restore } = upstream({ body: GRANT });
+  try {
+    for (const injected of ["minor-sexual-content-v1", "off", false, null]) {
+      const body = { avatarId: "ava_1", contentPolicy: injected, content_policy: injected };
+      const server = createProxyHandler({ apiKey: "k", session: () => ({ contentPolicy: "minor-sexual-content-v1" }) });
+      assert.equal((await server(connect(body))).status, 200);
+      assert.equal(seen.body?.content_policy, "minor-sexual-content-v1");
+      assert.equal("contentPolicy" in (seen.body ?? {}), false);
+      const omitted = createProxyHandler({ apiKey: "k" });
+      assert.equal((await omitted(connect(body))).status, 200);
+      assert.equal("content_policy" in (seen.body ?? {}), false);
+      assert.equal("contentPolicy" in (seen.body ?? {}), false);
+    }
+  } finally { restore(); }
+});
+
 test("the grant is relayed verbatim, including fields we do not model", async () => {
   const { restore } = upstream({ body: { ...GRANT, future_field: "unknown" } });
   const handler = createProxyHandler({ apiKey: "k" });

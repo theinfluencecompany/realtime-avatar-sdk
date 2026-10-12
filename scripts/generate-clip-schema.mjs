@@ -213,7 +213,22 @@ export function transcriptionToWire(input: z.input<typeof transcriptionOptionsSc
   };
 }
 `;
+definitions.length = 0;
+names.clear();
+const { description: _contentPolicyDescription, ...contentPolicySchema } = spec.components.schemas.LiveKitSessionRequest.properties.content_policy;
+const contentPolicyRoot = expression(contentPolicySchema);
+const contentPolicyTarget = new URL("../libs/http-client/src/generated/content-policy.ts", import.meta.url);
+const contentPolicyOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
+// Do not edit; the platform owns the policy vocabulary.
+import { z } from "zod";
+import type { components } from "./openapi.ts";
+
+${definitions.join("\n\n")}
+
+export const contentPolicySchema = ${contentPolicyRoot} satisfies z.ZodType<NonNullable<components["schemas"]["LiveKitSessionRequest"]["content_policy"]>>;
+`;
 if (check) {
+  if (await readFile(contentPolicyTarget, "utf8") !== contentPolicyOutput) throw new Error("Content policy schema is stale; run npm run spec:types");
   if (await readFile(target, "utf8") !== output) throw new Error("Clip schemas are stale; run npm run spec:types");
   if (await readFile(transcriptionTarget, "utf8") !== transcriptionOutput) throw new Error("Transcription schemas are stale; run npm run spec:types");
 } else {
@@ -225,5 +240,6 @@ if (check) {
   }
   await writeFile(target, output);
   await writeFile(transcriptionTarget, transcriptionOutput);
+  await writeFile(contentPolicyTarget, contentPolicyOutput);
 }
 console.log(`Clip contract SHA-256 ${hash}; response schemas ${check ? "verified" : "generated"}`);

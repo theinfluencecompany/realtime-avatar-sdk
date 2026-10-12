@@ -14,6 +14,7 @@ const files = [
   "libs/http-client/src/generated/character-motion.ts",
   "libs/http-client/src/generated/clip-library-schema.ts",
   "libs/http-client/src/generated/recording.ts",
+  "libs/http-client/src/generated/content-policy.ts",
 ] as const;
 const specBytes = await readFile(new URL(files[0], root));
 const vendorBytes = await readFile(new URL(files[1], root));
@@ -67,6 +68,10 @@ test("generation and --check verify the committed executable offline and reject 
     const before = await f.snapshot();
     await f.run([]);
     await f.run(["--check"]);
+    assert.deepEqual(await f.snapshot(), before);
+    await writeFile(join(f.dir, files[4]), "export const contentPolicySchema = z.any();");
+    await assert.rejects(f.run(["--check"]), /Content policy schema is stale/);
+    await f.run([]);
     assert.deepEqual(await f.snapshot(), before);
     await writeFile(join(f.dir, files[2]), "stale response schema");
     await assert.rejects(f.run(["--check"]), /Clip schemas are stale/);

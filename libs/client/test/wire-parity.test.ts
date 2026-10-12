@@ -55,6 +55,35 @@ async function coreWire(options: Parameters<RealtimeAvatar["startCall"]>[0]): Pr
   return body;
 }
 
+test("content policy is optional and identical in both translators", async () => {
+  const options = { avatarId: "ava_parity", contentPolicy: "minor-sexual-content-v1" as const };
+  const core = await coreWire(options);
+  const wire = toLiveKitSessionWireRequest(options);
+  assert.equal(core.content_policy, "minor-sexual-content-v1");
+  assert.equal(wire.content_policy, core.content_policy);
+  assert.equal(liveKitSessionWireRequestSchema.parse(wire).content_policy, core.content_policy);
+  assert.equal("content_policy" in await coreWire({ avatarId: "ava_parity" }), false);
+  assert.equal("content_policy" in toLiveKitSessionWireRequest({ avatarId: "ava_parity" }), false);
+});
+
+for (const invalid of ["off", "", false, null, "MINOR-SEXUAL-CONTENT-V1"]) {
+  test(`invalid content policy is refused before sending: ${JSON.stringify(invalid)}`, async () => {
+    let sent = false;
+    const rta = new RealtimeAvatar({ apiKey: "test", maxRetries: 0, fetch: async () => {
+      sent = true;
+      return new Response("{}", { headers: { "content-type": "application/json" } });
+    } });
+    await assert.rejects(rta.startCall({ avatarId: "ava_parity",
+      // @ts-expect-error Invalid values must also fail the public type contract.
+      contentPolicy: invalid,
+    }));
+    assert.equal(sent, false, "invalid policy must not reach the network");
+    // @ts-expect-error The second translator must reject invalid policies at compile time too.
+    assert.throws(() => toLiveKitSessionWireRequest({ avatarId: "ava_parity", contentPolicy: invalid }));
+    assert.equal(liveKitSessionWireRequestSchema.safeParse({ content_policy: invalid }).success, false);
+  });
+}
+
 test("camera authorization survives both translators", async () => {
   const core = await coreWire({ avatarId: "ava_parity", camera: true });
   const react = toLiveKitSessionWireRequest({ avatarId: "ava_parity", camera: true });

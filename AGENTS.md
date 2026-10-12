@@ -52,8 +52,14 @@ These are the ones that cost real time when broken. Each has been observed, not 
 
 ### 1. Never accept call policy from the client
 
-`instructions`, `context`, `transcription`, `maxSeconds`, `voice`, `video` are **your server's decisions**.
+`instructions`, `context`, `transcription`, `maxSeconds`, `voice`, `video`, `contentPolicy` are **your server's decisions**.
 A request body that supplies them is a request body that owns your character and your bill.
+
+Set `contentPolicy: "minor-sexual-content-v1"` only in server `startCall` options or the proxy's
+`session` callback. It serializes to `content_policy`; omission leaves existing calls unchanged.
+Invalid values are rejected, not treated as off. The proxy strips both client spellings, so a
+browser cannot choose, override or disable this policy. The platform's generated HTTP request
+owns the vocabulary; do not mirror the enum in handwritten SDK code.
 
 ```ts
 // ✗ WRONG — the caller now writes your system prompt and sets their own time limit
