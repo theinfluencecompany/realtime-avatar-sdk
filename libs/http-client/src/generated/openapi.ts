@@ -628,6 +628,11 @@ export interface components {
                 secret: string;
             };
             /**
+             * @description Server-authored content enforcement policy. API-key integrators may request it; browser mints strip it. No default. Requires worker enforcement before emission; transport alone does not provide protection.
+             * @enum {string}
+             */
+            content_policy?: "minor-sexual-content-v1";
+            /**
              * @description Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices.
              * @enum {string}
              */

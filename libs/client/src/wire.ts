@@ -14,6 +14,7 @@ import { z } from "zod";
 import { recordingArtifactSchema, recordingModeSchema } from "../../http-client/src/generated/recording.ts";
 import { connectionHistoryGrantSchema } from "../../http-client/src/generated/connection-history.ts";
 import { transcriptionOptionsSchema, transcriptionWireSchema, transcriptionToWire } from "../../http-client/src/generated/transcription.ts";
+import { contentPolicySchema } from "../../http-client/src/generated/content-policy.ts";
 
 const DEFAULT_AVATAR_ID = "maria";
 const DEFAULT_BACKGROUND_ID = "plain_white";
@@ -293,6 +294,7 @@ export const liveKitSessionWireRequestSchema = z
 
     client_metadata: clientMetadataSchema.optional(),
     connection_history: z.boolean().optional(),
+    content_policy: contentPolicySchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -373,6 +375,7 @@ export const liveKitSessionRequestSchema = z
 
     clientMetadata: clientMetadataSchema.optional(),
     connectionHistory: z.boolean().optional(),
+    contentPolicy: contentPolicySchema.optional(),
   })
   .strict();
 
@@ -587,6 +590,7 @@ export const toLiveKitSessionWireRequest = (
     transcript_webhook: request.transcriptWebhook,
     client_metadata: request.clientMetadata,
     connection_history: request.connectionHistory,
+    content_policy: request.contentPolicy,
   });
 };
 

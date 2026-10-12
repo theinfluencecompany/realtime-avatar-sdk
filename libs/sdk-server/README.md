@@ -220,9 +220,22 @@ the top of that file with the reason for each: two are gaps in the contract itse
 query parameters for `GET /v1/usage/sessions`, and the transcript webhook body is not in it at
 all), and the `video` policy types are deliberately not one-to-one with the wire.
 
+`contentPolicy: "minor-sexual-content-v1"` is an optional **server-owned** call policy,
+serialized as `content_policy`. Omission sends no policy field and preserves existing behavior.
+Unknown values, `null`, and disable values are refused before the request is sent. Set it in
+`startCall` or a proxy `session` callback, never from browser input: the proxy strips both
+`contentPolicy` and `content_policy` from incoming client bodies.
+
+Pre-release contract provenance: this field was generated with
+`node scripts/generate-clip-schema.mjs --sync <absolute sibling realtime-policy-platform root>`
+from `packages/realtime-avatar-contracts/openapi/realtime-avatar.openapi.json`, then
+`npm run spec:types`. The checked-in snapshot is that reviewed platform artifact, not the
+older deployed spec. **Before release, deploy the platform and regenerate with `npm run spec`
+against its deployed OpenAPI, then run `npm run check`.** Do not hand-edit the generated enum.
+
 ```ts
 // calls
-rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, connectionHistory?, transcript?, metadata?, llm? })
+rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, connectionHistory?, contentPolicy?, transcript?, metadata?, llm? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 rta.leaveQueue(queueTicketId, { reason? }) // give up a queued call's place in line; idempotent, never throws
 

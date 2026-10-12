@@ -772,6 +772,13 @@
             ],
             "additionalProperties": false
           },
+          "content_policy": {
+            "type": "string",
+            "enum": [
+              "minor-sexual-content-v1"
+            ],
+            "description": "Server-authored content enforcement policy. API-key integrators may request it; browser mints strip it. No default. Requires worker enforcement before emission; transport alone does not provide protection."
+          },
           "recording": {
             "type": "string",
             "enum": [

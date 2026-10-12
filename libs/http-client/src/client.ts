@@ -14,6 +14,7 @@ import type { ConnectionHistoryResponse } from "./generated/connection-history.t
 import type { components } from "./generated/openapi.ts";
 import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 import { transcriptionToWire } from "./generated/transcription.ts";
+import { contentPolicySchema } from "./generated/content-policy.ts";
 import type {
   Asset,
   ListSessionsOptions,
@@ -42,7 +43,7 @@ import type {
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.27.1";
+export const SDK_VERSION = "0.27.2";
 
 
 
@@ -156,6 +157,7 @@ export class RealtimeAvatar {
     if (options.metadata !== undefined) body.client_metadata = options.metadata;
     if (options.recording !== undefined) body.recording = recordingModeSchema.parse(options.recording);
     if (options.connectionHistory !== undefined) body.connection_history = options.connectionHistory;
+    if (options.contentPolicy !== undefined) body.content_policy = contentPolicySchema.parse(options.contentPolicy);
     // The grant is the gate: the worker only exposes tool registration for a session whose
     // mint carried this capability.
     if (options.clientTools) body.capabilities = ["client_tools"];

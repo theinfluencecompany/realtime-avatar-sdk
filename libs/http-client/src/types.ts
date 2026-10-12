@@ -173,6 +173,8 @@ export interface ExternalLlm {
 
 /** What YOUR SERVER decides about a call. Never accept any of this from a browser. */
 export interface CallPolicy {
+  /** Optional server-owned content safety policy. Never accept a selection or disable from the browser. */
+  contentPolicy?: Wire["LiveKitSessionRequest"]["content_policy"];
   /** Ask the platform to grant the SDK's optional LiveKit connection history collector. */
   connectionHistory?: boolean;
   /** Optional server recording policy. Omitted means off; obtain user consent before enabling. */
