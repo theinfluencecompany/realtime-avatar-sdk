@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.27.3
+
+- Add the server-owned `safe-content-v1` call policy from the platform contract. It selects no-sexual-content enforcement for voice and video while preserving the existing minor protections. Browser policy overrides remain stripped. Deploy worker enforcement and platform support before selecting this policy.
+
 ## 0.27.0
 
 A minor release: a call can take its replies from an endpoint your server hosts, and the live

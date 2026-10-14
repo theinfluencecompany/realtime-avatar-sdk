@@ -3,6 +3,6 @@
 import { z } from "zod";
 import type { components } from "./openapi.ts";
 
-const schema0 = z.enum(["minor-sexual-content-v1"]);
+const schema0 = z.enum(["minor-sexual-content-v1","safe-content-v1"]);
 
 export const contentPolicySchema = schema0 satisfies z.ZodType<NonNullable<components["schemas"]["LiveKitSessionRequest"]["content_policy"]>>;
