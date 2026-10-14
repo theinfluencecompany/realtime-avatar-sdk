@@ -86,8 +86,12 @@ if (recording.status === "ready") {
 
 Omitted or `"off"` disables recording. `"audio"` records published user and avatar audio;
 `"video"` records published video without audio; `"audio_video"` keeps both on one media timeline.
+`"participants"` keeps each participant's voice and camera in its own continuous file.
+`"tracks"` saves separate published audio/video tracks and replacement-camera segments;
+use `listRecordings({ sessionId: call.sessionId })` because its initial grant omits recording
+metadata so older installed clients remain compatible.
 Recording does not enable the microphone, camera, or screen sharing. Only tracks that participants
-authorize and publish can be recorded. Camera controls remain a future SDK feature.
+authorize and publish can be recorded.
 
 Recordings may finish processing after a call ends. Use `listRecordings({ sessionId })` to find
 them, or refresh `getRecording(recordingId)` while processing. These methods and
@@ -97,6 +101,15 @@ Save `recordingId`, not a playback URL. Files are retained until `retainedUntil`
 default); each URL expires at `expiresAt` (up to one hour, capped by retention). Obtain fresh
 access before replaying or seeking after expiry. An expired URL does not delete the file.
 Treat the URL as private: anyone who has it can play that file until it expires.
+
+For participant replay, pass every ready `{ recording, url }` asset to `RecordingPlayer`
+from `realtime-avatar/react`. It accepts combined participant MP4s and separate audio/video
+segments, including camera republication. Follow `nextCursor` when listing a session's recordings.
+The optional `mediaStartOffsetMs` preserves a file's first native media timestamp; it delays
+that track's visibility without shifting its playback clock. The player preserves native
+timestamps across gaps and uses the artifact's duration instead of an initially truncated
+WebM container duration. `mediaMutedIntervalsMs` hides a muted camera while keeping media
+clocks and audio running, including audio carried by a legacy combined file.
 
 ## Optional connection history
 

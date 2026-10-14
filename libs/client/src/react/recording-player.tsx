@@ -1,21 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RecordingArtifact } from "../../../http-client/src/generated/recording.ts";
-import { recordingPositions, recordingTimeline } from "../../../browser/src/recording-playback.ts";
+import { recordingPositions, recordingTimeline, recordingVideoVisible } from "../../../browser/src/recording-playback.ts";
 
 export type RecordingPlaybackAsset = { recording: RecordingArtifact; url: string };
 
-function exhausted(element: HTMLMediaElement, seconds: number): boolean {
-  return (Number.isFinite(element.duration) && seconds >= element.duration) ||
-    (element.ended && seconds >= element.currentTime);
-}
-
-/** Each participant file carries only its own voice; one clock drives both files. */
+/** Participant files and separate track segments share one clock without mixing voices. */
 export function RecordingPlayer({ assets, className }: { assets: readonly RecordingPlaybackAsset[]; className?: string }) {
+  const timelineKey = JSON.stringify(assets.map((asset) => asset.recording));
   const timeline = useMemo(() => {
     try { return recordingTimeline(assets.map((asset) => asset.recording)); }
     catch { return null; }
-  }, [assets]);
+  }, [timelineKey]);
   const media = useRef(new Map<string, HTMLMediaElement>());
+  const seeks = useRef(new Map<string, { seconds: number; retries: number }>());
   const position = useRef(0);
   const anchor = useRef<{ sessionId: string; originMs: number } | null>(null);
   const [displayPosition, setDisplayPosition] = useState(0);
@@ -23,6 +20,12 @@ export function RecordingPlayer({ assets, className }: { assets: readonly Record
   const [buffering, setBuffering] = useState(false);
   const [error, setError] = useState("");
   const sourceKey = assets.map((asset) => `${asset.recording.recordingId}:${asset.url}`).join("|");
+
+  const seekMedia = (recordingId: string, element: HTMLMediaElement, seconds: number) => {
+    if (element.readyState < 1 || Math.abs(element.currentTime - seconds) <= 0.02) return;
+    seeks.current.set(recordingId, { seconds, retries: 0 });
+    element.currentTime = seconds;
+  };
 
   useEffect(() => {
     if (!timeline) return;
@@ -40,6 +43,7 @@ export function RecordingPlayer({ assets, className }: { assets: readonly Record
     let last = performance.now();
     let painted = last;
     const starting = new Set<string>();
+    const active = new Set<string>();
     const stopMedia = () => { for (const element of media.current.values()) element.pause(); };
     const fail = () => {
       if (cancelled) return;
@@ -54,17 +58,19 @@ export function RecordingPlayer({ assets, className }: { assets: readonly Record
       const states = recordingPositions(timeline, proposed);
       const waiting = playing && states.some((state) => {
         const element = media.current.get(state.recordingId);
-        return state.active && (!element || (!exhausted(element, state.timeSeconds) && (element.readyState < 2 || element.seeking)));
+        return state.active && (!element || ((!element.ended || seeks.current.has(state.recordingId)) && (element.readyState < 2 || element.seeking)));
       });
       setBuffering(waiting);
       if (!waiting) position.current = proposed;
       for (const state of recordingPositions(timeline, position.current)) {
         const element = media.current.get(state.recordingId);
         if (!element) continue;
-        if (!state.active || exhausted(element, state.timeSeconds)) { element.pause(); continue; }
-        if (element.readyState >= 1 && Math.abs(element.currentTime - state.timeSeconds) > 0.08) {
-          element.currentTime = state.timeSeconds;
-        }
+        if (!state.active) { element.pause(); active.delete(state.recordingId); continue; }
+        // Let native playback cross recorded gaps. Repeated clock-correction seeks can
+        // jump over a blank interval to the next decodable frame in an MP4.
+        if (!active.has(state.recordingId)) seekMedia(state.recordingId, element, state.timeSeconds);
+        if (element.readyState >= 1) active.add(state.recordingId);
+        if (element.ended && !seeks.current.has(state.recordingId)) { element.pause(); continue; }
         if (!playing || waiting) { element.pause(); continue; }
         if (element.paused && !starting.has(state.recordingId)) {
           starting.add(state.recordingId);
@@ -88,14 +94,14 @@ export function RecordingPlayer({ assets, className }: { assets: readonly Record
     return () => { cancelled = true; cancelAnimationFrame(frame); stopMedia(); };
   }, [timeline, playing, sourceKey]);
 
-  const activeIds = new Set(timeline ? recordingPositions(timeline, displayPosition).filter((state) => state.active).map((state) => state.recordingId) : []);
+  const positions = new Map(timeline ? recordingPositions(timeline, displayPosition).map((state) => [state.recordingId, state]) : []);
   const seek = (value: number) => {
     position.current = value;
     setDisplayPosition(value);
     if (timeline) for (const state of recordingPositions(timeline, value)) {
       const element = media.current.get(state.recordingId);
       if (!element) continue;
-      if (element.readyState >= 1) element.currentTime = state.timeSeconds;
+      seekMedia(state.recordingId, element, state.timeSeconds);
       if (!state.active) element.pause();
     }
   };
@@ -107,8 +113,8 @@ export function RecordingPlayer({ assets, className }: { assets: readonly Record
     // Call play in the click gesture so audible tracks receive browser activation.
     for (const state of recordingPositions(timeline, position.current)) {
       const element = media.current.get(state.recordingId);
-      if (state.active && element && !exhausted(element, state.timeSeconds)) {
-        if (element.readyState >= 1) element.currentTime = state.timeSeconds;
+      if (state.active && element) {
+        seekMedia(state.recordingId, element, state.timeSeconds);
         void element.play().catch((cause: unknown) => {
           if (cause instanceof Error && cause.name === "AbortError") return;
           for (const current of media.current.values()) current.pause();
@@ -124,20 +130,35 @@ export function RecordingPlayer({ assets, className }: { assets: readonly Record
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: 12 }}>
       {assets.map(({ recording, url }) => {
         if (!recording.participant) return null;
+        const state = positions.get(recording.recordingId);
+        const visible = Boolean(state?.active && recordingVideoVisible(recording, state.timeSeconds));
         const label = recording.participant.role === "user" ? "User" : "Character";
         const ref = (element: HTMLMediaElement | null) => {
           if (element) media.current.set(recording.recordingId, element);
           else media.current.delete(recording.recordingId);
         };
         const onError = () => { for (const current of media.current.values()) current.pause(); setPlaying(false); setError("A recording could not load. Refresh access and try again."); };
+        const onLoadedMetadata = (event: { currentTarget: HTMLMediaElement }) => {
+          const state = timeline && recordingPositions(timeline, position.current).find((item) => item.recordingId === recording.recordingId);
+          if (state) seekMedia(recording.recordingId, event.currentTarget, state.timeSeconds);
+        };
+        const onSeeked = (event: { currentTarget: HTMLMediaElement }) => {
+          const pending = seeks.current.get(recording.recordingId);
+          if (!pending) return;
+          // WebM duration can grow when the final packets decode. Its initial duration
+          // must not permanently clamp a seek into that newly discovered tail.
+          if (Math.abs(event.currentTarget.currentTime - pending.seconds) > 0.08 && pending.retries < 2) {
+            pending.retries++;
+            event.currentTarget.currentTime = pending.seconds;
+          } else seeks.current.delete(recording.recordingId);
+        };
         return recording.mode !== "audio"
-          ? <figure key={recording.recordingId} hidden={!activeIds.has(recording.recordingId)} style={{ margin: 0 }}>
+          ? <figure key={recording.recordingId} hidden={!visible} style={{ margin: 0 }}>
               <figcaption>{label}</figcaption>
-              <video ref={ref} src={url} playsInline preload="auto" onError={onError}
-                hidden={!activeIds.has(recording.recordingId)} style={{ width: "100%", maxHeight: 360, objectFit: "contain" }} />
-              {!activeIds.has(recording.recordingId) ? <p>No recording at this time.</p> : null}
+              <video ref={ref} src={url} muted={recording.mode === "video"} playsInline preload="auto" onError={onError} onLoadedMetadata={onLoadedMetadata} onSeeked={onSeeked}
+                hidden={!visible} style={{ width: "100%", maxHeight: 360, objectFit: "contain" }} />
             </figure>
-          : <audio key={recording.recordingId} ref={ref} src={url} preload="auto" onError={onError} aria-label={`${label} audio`} />;
+          : <audio key={recording.recordingId} ref={ref} src={url} preload="auto" onError={onError} onLoadedMetadata={onLoadedMetadata} onSeeked={onSeeked} aria-label={`${label} audio`} />;
       })}
     </div>
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

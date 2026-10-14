@@ -633,10 +633,10 @@ export interface components {
              */
             content_policy?: "minor-sexual-content-v1";
             /**
-             * @description Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices.
+             * @description Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices. tracks saves each published participant audio/video track separately; list recordings by session after capture.
              * @enum {string}
              */
-            recording?: "off" | "audio" | "video" | "audio_video" | "participants";
+            recording?: "off" | "audio" | "video" | "audio_video" | "participants" | "tracks";
             connection_history?: boolean;
             client_metadata?: {
                 [key: string]: string;
@@ -721,6 +721,13 @@ export interface components {
                 mediaStartedAt?: string;
                 /** Format: date-time */
                 mediaEndedAt?: string;
+                /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+                mediaStartOffsetMs?: number;
+                /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+                mediaMutedIntervalsMs?: {
+                    startMs: number;
+                    endMs: number;
+                }[];
                 /** @enum {string} */
                 status: "pending" | "recording" | "processing" | "expired";
             } | {
@@ -741,10 +748,17 @@ export interface components {
                 mediaStartedAt?: string;
                 /** Format: date-time */
                 mediaEndedAt?: string;
+                /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+                mediaStartOffsetMs?: number;
+                /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+                mediaMutedIntervalsMs?: {
+                    startMs: number;
+                    endMs: number;
+                }[];
                 /** @constant */
                 status: "ready";
                 /** @enum {string} */
-                mediaType: "audio/mp4" | "video/mp4";
+                mediaType: "audio/mp4" | "video/mp4" | "audio/ogg" | "video/webm";
                 sizeBytes: number;
                 durationMs: number | null;
             } | {
@@ -765,16 +779,23 @@ export interface components {
                 mediaStartedAt?: string;
                 /** Format: date-time */
                 mediaEndedAt?: string;
+                /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+                mediaStartOffsetMs?: number;
+                /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+                mediaMutedIntervalsMs?: {
+                    startMs: number;
+                    endMs: number;
+                }[];
                 /** @constant */
                 status: "failed";
                 /** @enum {string} */
                 errorCode: "recording_failed" | "recording_unavailable";
             };
             /**
-             * @description Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices.
+             * @description Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices. tracks saves each published participant audio/video track separately; list recordings by session after capture.
              * @enum {string}
              */
-            readonly recording_mode?: "off" | "audio" | "video" | "audio_video" | "participants";
+            readonly recording_mode?: "off" | "audio" | "video" | "audio_video" | "participants" | "tracks";
             readonly recordings?: ({
                 sessionId: string;
                 recordingId: string;
@@ -793,6 +814,13 @@ export interface components {
                 mediaStartedAt?: string;
                 /** Format: date-time */
                 mediaEndedAt?: string;
+                /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+                mediaStartOffsetMs?: number;
+                /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+                mediaMutedIntervalsMs?: {
+                    startMs: number;
+                    endMs: number;
+                }[];
                 /** @enum {string} */
                 status: "pending" | "recording" | "processing" | "expired";
             } | {
@@ -813,10 +841,17 @@ export interface components {
                 mediaStartedAt?: string;
                 /** Format: date-time */
                 mediaEndedAt?: string;
+                /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+                mediaStartOffsetMs?: number;
+                /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+                mediaMutedIntervalsMs?: {
+                    startMs: number;
+                    endMs: number;
+                }[];
                 /** @constant */
                 status: "ready";
                 /** @enum {string} */
-                mediaType: "audio/mp4" | "video/mp4";
+                mediaType: "audio/mp4" | "video/mp4" | "audio/ogg" | "video/webm";
                 sizeBytes: number;
                 durationMs: number | null;
             } | {
@@ -837,6 +872,13 @@ export interface components {
                 mediaStartedAt?: string;
                 /** Format: date-time */
                 mediaEndedAt?: string;
+                /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+                mediaStartOffsetMs?: number;
+                /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+                mediaMutedIntervalsMs?: {
+                    startMs: number;
+                    endMs: number;
+                }[];
                 /** @constant */
                 status: "failed";
                 /** @enum {string} */
@@ -1376,6 +1418,13 @@ export interface components {
             mediaStartedAt?: string;
             /** Format: date-time */
             mediaEndedAt?: string;
+            /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+            mediaStartOffsetMs?: number;
+            /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+            mediaMutedIntervalsMs?: {
+                startMs: number;
+                endMs: number;
+            }[];
             /** @enum {string} */
             status: "pending" | "recording" | "processing" | "expired";
         } | {
@@ -1396,10 +1445,17 @@ export interface components {
             mediaStartedAt?: string;
             /** Format: date-time */
             mediaEndedAt?: string;
+            /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+            mediaStartOffsetMs?: number;
+            /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+            mediaMutedIntervalsMs?: {
+                startMs: number;
+                endMs: number;
+            }[];
             /** @constant */
             status: "ready";
             /** @enum {string} */
-            mediaType: "audio/mp4" | "video/mp4";
+            mediaType: "audio/mp4" | "video/mp4" | "audio/ogg" | "video/webm";
             sizeBytes: number;
             durationMs: number | null;
         } | {
@@ -1420,6 +1476,13 @@ export interface components {
             mediaStartedAt?: string;
             /** Format: date-time */
             mediaEndedAt?: string;
+            /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+            mediaStartOffsetMs?: number;
+            /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+            mediaMutedIntervalsMs?: {
+                startMs: number;
+                endMs: number;
+            }[];
             /** @constant */
             status: "failed";
             /** @enum {string} */
@@ -1444,6 +1507,13 @@ export interface components {
                 mediaStartedAt?: string;
                 /** Format: date-time */
                 mediaEndedAt?: string;
+                /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+                mediaStartOffsetMs?: number;
+                /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+                mediaMutedIntervalsMs?: {
+                    startMs: number;
+                    endMs: number;
+                }[];
                 /** @enum {string} */
                 status: "pending" | "recording" | "processing" | "expired";
             } | {
@@ -1464,10 +1534,17 @@ export interface components {
                 mediaStartedAt?: string;
                 /** Format: date-time */
                 mediaEndedAt?: string;
+                /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+                mediaStartOffsetMs?: number;
+                /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+                mediaMutedIntervalsMs?: {
+                    startMs: number;
+                    endMs: number;
+                }[];
                 /** @constant */
                 status: "ready";
                 /** @enum {string} */
-                mediaType: "audio/mp4" | "video/mp4";
+                mediaType: "audio/mp4" | "video/mp4" | "audio/ogg" | "video/webm";
                 sizeBytes: number;
                 durationMs: number | null;
             } | {
@@ -1488,6 +1565,13 @@ export interface components {
                 mediaStartedAt?: string;
                 /** Format: date-time */
                 mediaEndedAt?: string;
+                /** @description First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero. */
+                mediaStartOffsetMs?: number;
+                /** @description Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals. */
+                mediaMutedIntervalsMs?: {
+                    startMs: number;
+                    endMs: number;
+                }[];
                 /** @constant */
                 status: "failed";
                 /** @enum {string} */
