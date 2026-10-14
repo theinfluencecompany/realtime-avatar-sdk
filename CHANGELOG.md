@@ -1,9 +1,12 @@
 # Changelog
 
+## 0.27.4
+
+- Add the server-owned `safe-content-v1` call policy from the platform contract. It selects no-sexual-content enforcement for voice and video while preserving the existing minor protections. Browser policy overrides remain stripped. Deploy worker enforcement and platform support before selecting this policy.
+
 ## 0.27.3
 
-- Refresh the generated recording contract to accept the platform's published per-track recording artifacts.
-- Add the server-owned `safe-content-v1` call policy from the platform contract. It selects no-sexual-content enforcement for voice and video while preserving the existing minor protections. Browser policy overrides remain stripped. Deploy worker enforcement and platform support before selecting this policy.
+- Support separate recording tracks and preserve native replay timing.
 
 ## 0.27.0
 
