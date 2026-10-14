@@ -762,10 +762,23 @@ video. Camera permission is separate; camera toggles do not start new files.
 Use `call.recordings` for the initial metadata and list by session after finalization.
 `call.recording` remains the legacy single-file result.
 
+`recording: "tracks"` retains published audio and video tracks separately, including
+new segments when a camera is republished. Find those artifacts with
+`listRecordings({ sessionId: call.sessionId })`, following every `nextCursor`.
+The initial call grant intentionally omits recording fields for this policy so
+older installed clients can still join the call.
+
 For synchronized web replay, load authorized URLs through your backend and pass
 `{ recording, url }` assets to `RecordingPlayer` from `realtime-avatar/react`.
-Each video file contains its own audio: muting both videos loses both voices,
-and adding a mixed soundtrack duplicates them. The player owns one playback clock.
+Continuous `audio_video` files contain their own voices. Separate `video` tracks
+are silent and play alongside that participant's `audio` track; the player handles
+both formats and sequential replacement tracks on one clock. Never add a mixed
+soundtrack on top of participant voices. When `mediaStartOffsetMs` is present, it
+marks the first native media timestamp; keep that leading gap and seek relative to
+`mediaStartedAt`, without subtracting the offset. Native container duration can
+underreport a WebM tail until it is decoded; use the artifact's media timestamps.
+`mediaMutedIntervalsMs` masks camera video on that same native clock; it must not
+pause the track or silence audio carried by a combined legacy file.
 Keep original files and per-file failures visible; never infer synchronization
 from request or creation timestamps when media timestamps are missing.
 

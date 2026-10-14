@@ -5,6 +5,8 @@ import { ConnectionQuality, ConnectionState } from "livekit-client";
 import type { components } from "../src/generated/openapi.ts";
 import type { RecordingArtifact, RecordingAccessResponse, ListRecordingsResponse } from "../src/generated/recording.ts";
 import type { ConnectionHistoryResponse } from "../src/generated/connection-history.ts";
+import { recordingModeSchema } from "../src/generated/recording.ts";
+import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 const contractParity: [
@@ -127,4 +129,21 @@ test("independent capture is server-selected, with no fictitious single recordin
   assert.deepEqual(call.recordings, trackGrant.recordings);
   assert.equal("recording" in call, false);
   assert.deepEqual(call.raw, trackGrant);
+});
+
+test("raw-track policy leaves the call grant compatible with the legacy strict recording discriminator", async () => {
+  const { recording: _recording, ...plainGrant } = grant;
+  const legacyGrant = liveKitSessionGrantSchema.extend({ recording_mode: recordingModeSchema.exclude(["tracks"]).optional() });
+  const rta = new RealtimeAvatar({ apiKey: "test-key", fetch: async (input, init) => {
+    const body: unknown = await new Request(input, init).json();
+    assert.ok(typeof body === "object" && body !== null && "recording" in body);
+    assert.equal(body.recording, "tracks");
+    return Response.json(plainGrant);
+  } });
+  const call = await rta.startCall({ avatarId: "avatar_test", recording: "tracks" });
+  assert.ok("raw" in call);
+  assert.deepEqual(call.raw, plainGrant);
+  assert.equal(legacyGrant.safeParse(call.raw).success, true);
+  assert.equal(legacyGrant.safeParse({ ...plainGrant, recording_mode: "tracks" }).success, false);
+  for (const field of ["recording", "recording_mode", "recordings"]) assert.equal(field in call.raw, false);
 });
