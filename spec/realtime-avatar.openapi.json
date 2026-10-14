@@ -787,9 +787,10 @@
               "audio",
               "video",
               "audio_video",
-              "participants"
+              "participants",
+              "tracks"
             ],
-            "description": "Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices."
+            "description": "Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices. tracks saves each published participant audio/video track separately; list recordings by session after capture."
           },
           "connection_history": {
             "type": "boolean"
@@ -1104,6 +1105,36 @@
                     "format": "date-time",
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                   },
+                  "mediaStartOffsetMs": {
+                    "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "mediaMutedIntervalsMs": {
+                    "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "startMs": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "endMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "startMs",
+                        "endMs"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
                   "status": {
                     "type": "string",
                     "enum": [
@@ -1185,6 +1216,36 @@
                     "format": "date-time",
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                   },
+                  "mediaStartOffsetMs": {
+                    "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "mediaMutedIntervalsMs": {
+                    "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "startMs": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "endMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "startMs",
+                        "endMs"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
                   "status": {
                     "type": "string",
                     "const": "ready"
@@ -1193,7 +1254,9 @@
                     "type": "string",
                     "enum": [
                       "audio/mp4",
-                      "video/mp4"
+                      "video/mp4",
+                      "audio/ogg",
+                      "video/webm"
                     ]
                   },
                   "sizeBytes": {
@@ -1288,6 +1351,36 @@
                     "format": "date-time",
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                   },
+                  "mediaStartOffsetMs": {
+                    "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "mediaMutedIntervalsMs": {
+                    "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "startMs": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "endMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "startMs",
+                        "endMs"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
                   "status": {
                     "type": "string",
                     "const": "failed"
@@ -1321,9 +1414,10 @@
               "audio",
               "video",
               "audio_video",
-              "participants"
+              "participants",
+              "tracks"
             ],
-            "description": "Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices."
+            "description": "Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices. tracks saves each published participant audio/video track separately; list recordings by session after capture."
           },
           "recordings": {
             "readOnly": true,
@@ -1391,6 +1485,36 @@
                       "type": "string",
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "mediaStartOffsetMs": {
+                      "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mediaMutedIntervalsMs": {
+                      "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "startMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "endMs": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "startMs",
+                          "endMs"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
                     "status": {
                       "type": "string",
@@ -1473,6 +1597,36 @@
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                     },
+                    "mediaStartOffsetMs": {
+                      "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mediaMutedIntervalsMs": {
+                      "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "startMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "endMs": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "startMs",
+                          "endMs"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "status": {
                       "type": "string",
                       "const": "ready"
@@ -1481,7 +1635,9 @@
                       "type": "string",
                       "enum": [
                         "audio/mp4",
-                        "video/mp4"
+                        "video/mp4",
+                        "audio/ogg",
+                        "video/webm"
                       ]
                     },
                     "sizeBytes": {
@@ -1575,6 +1731,36 @@
                       "type": "string",
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "mediaStartOffsetMs": {
+                      "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mediaMutedIntervalsMs": {
+                      "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "startMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "endMs": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "startMs",
+                          "endMs"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
                     "status": {
                       "type": "string",
@@ -3735,6 +3921,36 @@
                 "format": "date-time",
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
+              "mediaStartOffsetMs": {
+                "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "mediaMutedIntervalsMs": {
+                "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "startMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "endMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "startMs",
+                    "endMs"
+                  ],
+                  "additionalProperties": false
+                }
+              },
               "status": {
                 "type": "string",
                 "enum": [
@@ -3816,6 +4032,36 @@
                 "format": "date-time",
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
               },
+              "mediaStartOffsetMs": {
+                "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "mediaMutedIntervalsMs": {
+                "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "startMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "endMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "startMs",
+                    "endMs"
+                  ],
+                  "additionalProperties": false
+                }
+              },
               "status": {
                 "type": "string",
                 "const": "ready"
@@ -3824,7 +4070,9 @@
                 "type": "string",
                 "enum": [
                   "audio/mp4",
-                  "video/mp4"
+                  "video/mp4",
+                  "audio/ogg",
+                  "video/webm"
                 ]
               },
               "sizeBytes": {
@@ -3918,6 +4166,36 @@
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "mediaStartOffsetMs": {
+                "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "mediaMutedIntervalsMs": {
+                "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "startMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "endMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "startMs",
+                    "endMs"
+                  ],
+                  "additionalProperties": false
+                }
               },
               "status": {
                 "type": "string",
@@ -4013,6 +4291,36 @@
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                     },
+                    "mediaStartOffsetMs": {
+                      "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mediaMutedIntervalsMs": {
+                      "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "startMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "endMs": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "startMs",
+                          "endMs"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
@@ -4094,6 +4402,36 @@
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                     },
+                    "mediaStartOffsetMs": {
+                      "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mediaMutedIntervalsMs": {
+                      "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "startMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "endMs": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "startMs",
+                          "endMs"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "status": {
                       "type": "string",
                       "const": "ready"
@@ -4102,7 +4440,9 @@
                       "type": "string",
                       "enum": [
                         "audio/mp4",
-                        "video/mp4"
+                        "video/mp4",
+                        "audio/ogg",
+                        "video/webm"
                       ]
                     },
                     "sizeBytes": {
@@ -4196,6 +4536,36 @@
                       "type": "string",
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "mediaStartOffsetMs": {
+                      "description": "First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mediaMutedIntervalsMs": {
+                      "description": "Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals.",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "startMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "endMs": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "startMs",
+                          "endMs"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
                     "status": {
                       "type": "string",
@@ -7743,7 +8113,7 @@
   },
   "x-recording-contract": {
     "source": "/recording.contract.ts",
-    "sha256": "b1f407c7424e8afa7b0b3f62dc2505daccbbbedc67ab9a2ea3b25ac66a72de28"
+    "sha256": "02e18ab663879c38c620ba9ef911c6c3dd3c0ea554604abd4403d7b2185d0f9e"
   },
   "tags": [
     {

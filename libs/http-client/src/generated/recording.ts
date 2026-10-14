@@ -11,8 +11,8 @@ export type RecordedMediaMode = (typeof RECORDED_MEDIA_MODES)[number];
 // CHECKs, and the annotation is what keeps it a subset of the one above.
 export const PARTICIPANT_RECORDED_MEDIA_MODES: readonly [RecordedMediaMode, ...RecordedMediaMode[]] = ["audio", "audio_video"];
 export const recordingModeSchema = z
-  .enum(["off", ...RECORDED_MEDIA_MODES, "participants"])
-  .describe("Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices.");
+  .enum(["off", ...RECORDED_MEDIA_MODES, "participants", "tracks"])
+  .describe("Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices. tracks saves each published participant audio/video track separately; list recordings by session after capture.");
 export type RecordingMode = z.infer<typeof recordingModeSchema>;
 export const DEFAULT_RECORDING_MODE: RecordingMode = "off";
 export const DEFAULT_RECORDING_RETENTION_DAYS = 30;
@@ -25,6 +25,10 @@ export const recordingParticipantSchema = z.object({
   role: z.enum(["user", "avatar"]),
 }).strict();
 export type RecordingParticipant = z.infer<typeof recordingParticipantSchema>;
+const recordingMutedIntervalSchema = z.object({
+  startMs: z.number().int().min(0),
+  endMs: z.number().int().positive(),
+}).strict().refine((interval) => interval.endMs > interval.startMs, "Muted interval must end after it starts");
 const recordingMetadataSchema = z.object({
   sessionId: z.string().min(1),
   recordingId: z.string().min(1),
@@ -34,12 +38,16 @@ const recordingMetadataSchema = z.object({
   participant: recordingParticipantSchema.optional(),
   mediaStartedAt: z.string().datetime({ offset: true }).optional(),
   mediaEndedAt: z.string().datetime({ offset: true }).optional(),
+  mediaStartOffsetMs: z.number().int().min(0).optional()
+    .describe("First playable native media timestamp relative to mediaStartedAt. Playback retains this offset; it does not reset the file clock to zero."),
+  mediaMutedIntervalsMs: z.array(recordingMutedIntervalSchema).optional()
+    .describe("Intervals of hidden camera video relative to mediaStartedAt, using native media timestamps. Audio playback continues through these intervals."),
 });
 export const recordingArtifactSchema = z.discriminatedUnion("status", [
   recordingMetadataSchema.extend({ status: z.enum(["pending", "recording", "processing", "expired"]) }).strict(),
   recordingMetadataSchema.extend({
     status: z.literal("ready"),
-    mediaType: z.enum(["audio/mp4", "video/mp4"]),
+    mediaType: z.enum(["audio/mp4", "video/mp4", "audio/ogg", "video/webm"]),
     sizeBytes: z.number().int().positive(),
     durationMs: z.number().int().nonnegative().nullable(),
   }).strict(),
