@@ -37,8 +37,8 @@ for (const egress of probe.egress) {
   const nativeEnd = packets.length ? Math.max(...packets.map(packet => Number(packet.pts_time) + Number(packet.duration_time || 0))) : evidence.container_duration_s;
   const duration = Math.round(nativeEnd * 1000);
   const role = name.startsWith("synthetic-user-") ? "user" : "avatar";
-  const audio = name.endsWith(".ogg");
-  const mediaType = audio ? "audio/ogg" : name.endsWith(".webm") ? "video/webm" : "video/mp4";
+  const audio = evidence.streams.every(stream => stream.type === "audio");
+  const mediaType = audio ? name.endsWith(".ogg") ? "audio/ogg" : "audio/mp4" : name.endsWith(".webm") ? "video/webm" : "video/mp4";
   const sidecarPath = join(sourceDir, "media", probe.room, `${egress.egress_id}.json`);
   const sidecar = JSON.parse(await readFile(sidecarPath, "utf8").catch(() => "{}"));
   const mutedIntervals = [];
