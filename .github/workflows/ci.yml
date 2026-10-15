@@ -82,6 +82,12 @@ jobs:
       - name: Quality policy survives renders and reconnects
         if: matrix.node == '22'
         run: npm run eval:quality
+      # Separate voice and face files are kept together only by RecordingPlayer's own loop, and #114
+      # shipped a player whose face fell seconds behind after one stalled download with every
+      # existing check green. This plays real codecs through gaps, seeks and a mid-play stall.
+      - name: Call replay keeps each voice with its face
+        if: matrix.node == '22'
+        run: npm run eval:recording
       - uses: actions/upload-artifact@v4
         if: failure() && matrix.node == '22'
         with:

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.27.5
+
+- `RecordingPlayer` keeps each participant's separate voice and face together. A face whose download stalls (Chromium leaves it at `readyState` 2, which the buffering check missed) used to resume seconds behind its voice for the rest of the replay; it is now re-seeked, holding playback until it can play. An element that runs ahead holds its frame until the clock reaches it, so a seek that lands past a recorded MP4 gap is not chased by another, and smaller drift, such as the voice starting later than the face, is closed by a ±5% playback rate. `eval:recording` covers a mid-play stall and now runs in CI.
+
 ## 0.27.4
 
 - Add the server-owned `safe-content-v1` call policy from the platform contract. It selects no-sexual-content enforcement for voice and video while preserving the existing minor protections. Browser policy overrides remain stripped. Deploy worker enforcement and platform support before selecting this policy.

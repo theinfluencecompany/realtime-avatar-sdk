@@ -4,6 +4,18 @@ import { recordingPositions, recordingTimeline, recordingVideoVisible } from "..
 
 export type RecordingPlaybackAsset = { recording: RecordingArtifact; url: string };
 
+// A participant's voice and face can be separate elements, so nothing but this loop keeps them together.
+// Chromium reports a starved file at readyState 2, which the buffering check does not catch: the master
+// and the voice run on while the face freezes, and it resumes that far behind. An element that falls
+// behind is re-seeked, which holds every element until it can play. One that runs ahead holds its frame
+// until the clock reaches it, the way a recorded gap does, so a seek that lands past a blank MP4 interval
+// is never chased by another. Smaller drift, such as one element starting later, is closed by rate.
+const RESEEK_BEHIND_SECONDS = 0.25;
+const RESEEK_INTERVAL_MS = 1_000;
+const HOLD_AHEAD_SECONDS = 0.25;
+const RATE_DEADBAND_SECONDS = 0.04;
+const RATE_NUDGE = 0.05;
+
 /** Participant files and separate track segments share one clock without mixing voices. */
 export function RecordingPlayer({ assets, className }: { assets: readonly RecordingPlaybackAsset[]; className?: string }) {
   const timelineKey = JSON.stringify(assets.map((asset) => asset.recording));
@@ -44,7 +56,9 @@ export function RecordingPlayer({ assets, className }: { assets: readonly Record
     let painted = last;
     const starting = new Set<string>();
     const active = new Set<string>();
-    const stopMedia = () => { for (const element of media.current.values()) element.pause(); };
+    const held = new Set<string>();
+    const reseekedAt = new Map<string, number>();
+    const stopMedia = () => { for (const element of media.current.values()) { element.pause(); element.playbackRate = 1; } };
     const fail = () => {
       if (cancelled) return;
       stopMedia();
@@ -66,12 +80,24 @@ export function RecordingPlayer({ assets, className }: { assets: readonly Record
         const element = media.current.get(state.recordingId);
         if (!element) continue;
         if (!state.active) { element.pause(); active.delete(state.recordingId); continue; }
-        // Let native playback cross recorded gaps. Repeated clock-correction seeks can
-        // jump over a blank interval to the next decodable frame in an MP4.
         if (!active.has(state.recordingId)) seekMedia(state.recordingId, element, state.timeSeconds);
         if (element.readyState >= 1) active.add(state.recordingId);
         if (element.ended && !seeks.current.has(state.recordingId)) { element.pause(); continue; }
         if (!playing || waiting) { element.pause(); continue; }
+        const drift = element.currentTime - state.timeSeconds;
+        if (held.has(state.recordingId)) {
+          if (drift > 0.01) continue;
+          held.delete(state.recordingId);
+        } else if (!element.seeking && !seeks.current.has(state.recordingId) && element.readyState >= 2) {
+          if (drift > HOLD_AHEAD_SECONDS) { element.pause(); element.playbackRate = 1; held.add(state.recordingId); continue; }
+          if (drift < -RESEEK_BEHIND_SECONDS) {
+            if (now - (reseekedAt.get(state.recordingId) ?? -Infinity) >= RESEEK_INTERVAL_MS) {
+              reseekedAt.set(state.recordingId, now);
+              element.playbackRate = 1;
+              seekMedia(state.recordingId, element, state.timeSeconds);
+            }
+          } else element.playbackRate = Math.abs(drift) <= RATE_DEADBAND_SECONDS ? 1 : drift > 0 ? 1 - RATE_NUDGE : 1 + RATE_NUDGE;
+        }
         if (element.paused && !starting.has(state.recordingId)) {
           starting.add(state.recordingId);
           void element.play().catch((cause: unknown) => {
