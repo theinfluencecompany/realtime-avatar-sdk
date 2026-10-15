@@ -25,6 +25,13 @@ for (const [name, duration, codec, extension] of [
 }
 ffmpeg(["-f", "lavfi", "-i", "testsrc2=size=160x120:rate=10:duration=12", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=12",
   "-c:v", "libx264", "-g", "10", "-c:a", "aac", "-shortest", join(reportDir, "user-legacy.mp4")]);
+// The production avatar track pair: a separate AAC voice and a 1 Mbps H.264 face with sparse keyframes.
+ffmpeg(["-f", "lavfi", "-i", "sine=frequency=660:sample_rate=48000:duration=20", "-c:a", "aac", "-b:a", "64k", join(reportDir, "stall-voice.m4a")]);
+ffmpeg(["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25:duration=20", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+  "-b:v", "1M", "-maxrate", "1M", "-bufsize", "1M", "-g", "250", join(reportDir, "stall-face.mp4")]);
+// Bytes per second for /slow/ files: a little above the face's bitrate, so a stall starves it within seconds.
+const SLOW_BYTES_PER_SECOND = 160_000;
+let blackoutUntil = 0;
 const entries = [
   ["user-audio", "user", "audio", 0, 12000, "user.ogg", "audio/ogg"],
   ["avatar-audio", "avatar", "audio", 250, 11750, "avatar.ogg", "audio/ogg"],
@@ -39,17 +46,23 @@ import {RecordingPlayer} from './libs/client/src/react/recording-player.tsx';
 import {recordingArtifactSchema} from './libs/http-client/src/generated/recording.ts';
 const origin = Date.parse('2026-10-13T00:00:00.000Z');
 const entries = ${JSON.stringify(entries)};
+const stallEntries = [
+  ['stall-voice', 'avatar', 'audio', 0, 20000, 'stall-voice.m4a', 'audio/mp4'],
+  ['stall-face', 'avatar', 'video', 0, 20000, 'slow/stall-face.mp4', 'video/mp4'],
+];
 function App() {
   const [revision, setRevision] = useState(0);
   const [, setMetadataRevision] = useState(0);
   const [legacy, setLegacy] = useState(false);
+  const [stall, setStall] = useState(false);
   window.refreshAccess = () => setRevision(value => value + 1);
   window.refreshMetadata = () => setMetadataRevision(value => value + 1);
   window.showLegacy = () => setLegacy(true);
-  const selected = legacy ? [...entries.filter(entry => entry[1] === 'avatar'), ['user-legacy', 'user', 'audio_video', 0, 12000, 'user-legacy.mp4', 'video/mp4']] : entries;
+  window.showStall = () => setStall(true);
+  const selected = stall ? stallEntries : legacy ? [...entries.filter(entry => entry[1] === 'avatar'), ['user-legacy', 'user', 'audio_video', 0, 12000, 'user-legacy.mp4', 'video/mp4']] : entries;
   const assets = selected.map(([id, role, mode, start, duration, filename, mediaType]) => ({
     recording: recordingArtifactSchema.parse({
-      sessionId:legacy ? 'legacy-call' : 'offline-call', recordingId:id, mode, status:'ready',
+      sessionId:stall ? 'stall-call' : legacy ? 'legacy-call' : 'offline-call', recordingId:id, mode, status:'ready',
       createdAt:new Date(origin).toISOString(), retainedUntil:new Date(origin + 86400000).toISOString(),
       mediaStartedAt:new Date(origin + start).toISOString(), mediaEndedAt:new Date(origin + start + duration).toISOString(),
       ...(id === 'user-before' ? {mediaMutedIntervalsMs:[{startMs:2200,endMs:2700}]} : {}),
@@ -65,11 +78,14 @@ const bundle = await build({ stdin: { contents: entry, resolveDir: root, loader:
 const javascript = bundle.outputFiles[0].contents;
 const media = new Map(await Promise.all(entries.map(async ([, , , , , filename, type]) => [filename, { bytes: await readFile(join(reportDir, filename)), type }])));
 media.set("user-legacy.mp4", { bytes: await readFile(join(reportDir, "user-legacy.mp4")), type: "video/mp4" });
-const server = createServer((request, response) => {
+media.set("stall-voice.m4a", { bytes: await readFile(join(reportDir, "stall-voice.m4a")), type: "audio/mp4" });
+media.set("stall-face.mp4", { bytes: await readFile(join(reportDir, "stall-face.mp4")), type: "video/mp4" });
+const server = createServer(async (request, response) => {
   const path = new URL(request.url, "http://localhost").pathname.slice(1);
   if (!path) { response.writeHead(200, { "Content-Type": "text/html" }); response.end('<div id="app"></div><script src="/app.js"></script>'); return; }
   if (path === "app.js") { response.writeHead(200, { "Content-Type": "text/javascript" }); response.end(javascript); return; }
-  const file = media.get(path);
+  const slow = path.startsWith("slow/");
+  const file = media.get(slow ? path.slice("slow/".length) : path);
   if (!file) { response.writeHead(404); response.end(); return; }
   const range = request.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
   const start = range ? Number(range[1]) : 0;
@@ -77,7 +93,18 @@ const server = createServer((request, response) => {
   response.writeHead(range ? 206 : 200, { "Content-Type": file.type, "Accept-Ranges": "bytes", "Content-Length": end - start + 1,
     ...(range ? { "Content-Range": `bytes ${start}-${end}/${file.bytes.length}` } : {}),
   });
-  response.end(file.bytes.subarray(start, end + 1));
+  if (!slow) { response.end(file.bytes.subarray(start, end + 1)); return; }
+  // A throttled network that can black out: delivery stops entirely while blackoutUntil is ahead.
+  let closed = false;
+  response.on("close", () => { closed = true; });
+  for (let offset = start; offset <= end && !closed;) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    if (Date.now() < blackoutUntil) continue;
+    const next = Math.min(offset + SLOW_BYTES_PER_SECOND / 20, end + 1);
+    if (!response.write(file.bytes.subarray(offset, next))) await new Promise(resolve => response.once("drain", resolve));
+    offset = next;
+  }
+  response.end();
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const browser = await chromium.launch({ headless: true, executablePath: process.env.RECORDING_CHROMIUM_PATH || undefined });
@@ -194,10 +221,25 @@ try {
   assert.equal(combined.muted, false);
   assert.ok(legacyMasked.voices[0] > 0.01, "hiding the legacy camera preserves the voice carried by that same video element");
   reports.push({ scenario: "legacy combined camera mute preserves its own audible voice", ...legacyMasked });
+  // A separate face whose download stalls mid-play: Chromium reports it at readyState 2, not below, so
+  // the player must notice the face falling behind its voice and hold both until it can play again.
+  await page.evaluate(() => window.showStall());
+  await page.waitForFunction(() => document.querySelectorAll("audio,video").length === 2 && [...document.querySelectorAll("audio,video")].every(element => element.readyState >= 2));
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await page.waitForFunction(() => Number(document.querySelector('input[type="range"]').value) > 2000);
+  blackoutUntil = Date.now() + 6000;
+  await page.waitForFunction(() => Number(document.querySelector('input[type="range"]').value) > 12000, null, { timeout: 60000 });
+  await page.waitForTimeout(1500);
+  const starved = await snapshot();
+  const voiceTime = starved.media.find(item => item.file === "/stall-voice.m4a").time;
+  const faceTime = starved.media.find(item => item.file === "/slow/stall-face.mp4").time;
+  assert.ok(starved.media.every(item => !item.paused), "both tracks play again after the stall");
+  assert.ok(Math.abs(faceTime - voiceTime) < 0.15, `a starved face rejoins its voice (face ${faceTime.toFixed(3)} s, voice ${voiceTime.toFixed(3)} s)`);
+  reports.push({ scenario: "a separate face that stalls mid-play rejoins its voice", ...starved });
   assert.deepEqual(errors, []);
   await page.screenshot({ path: join(reportDir, "playback.png") });
   await writeFile(join(reportDir, "report.json"), JSON.stringify({ passed: true, reports }, null, 2));
-  console.log(`PASS: raw audio/video playback, camera gaps, segment republish, seeks, voice decoding and URL renewal. Evidence: ${reportDir}`);
+  console.log(`PASS: raw audio/video playback, camera gaps, segment republish, seeks, voice decoding, URL renewal and a stalled face. Evidence: ${reportDir}`);
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
