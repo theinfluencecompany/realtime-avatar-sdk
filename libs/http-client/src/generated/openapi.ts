@@ -891,21 +891,6 @@ export interface components {
                 /** Format: date-time */
                 expiresAt: string;
             };
-            /** @description Returned only for X-RTA-Mint-Timing: 1 (the platform web tier asks for it and keeps it server-side). Omitted by default so a grant never carries a key an older reader does not know. */
-            readonly mint_timing?: {
-                total_ms: number;
-                stages_ms: {
-                    [key: string]: number;
-                };
-                /** @enum {string} */
-                outcome: "ready" | "queued" | "refused" | "failed";
-                /** @enum {string} */
-                mode: "avatar" | "voice";
-                capacity_pool: string;
-                provider?: string;
-                colo?: string;
-                failed_stage?: string;
-            };
         };
         LiveKitCapacitySnapshot: {
             capacity_pool: string;
