@@ -3683,17 +3683,20 @@
                             "properties": {
                               "count": {
                                 "type": "integer",
-                                "minimum": -9007199254740991,
+                                "exclusiveMinimum": 0,
                                 "maximum": 9007199254740991
                               },
                               "max": {
-                                "type": "number"
+                                "type": "number",
+                                "minimum": 0
                               },
                               "p50": {
-                                "type": "number"
+                                "type": "number",
+                                "minimum": 0
                               },
                               "p90": {
-                                "type": "number"
+                                "type": "number",
+                                "minimum": 0
                               }
                             },
                             "required": [
@@ -3740,7 +3743,7 @@
                             },
                             "lines": {
                               "type": "integer",
-                              "minimum": -9007199254740991,
+                              "minimum": 0,
                               "maximum": 9007199254740991
                             }
                           },

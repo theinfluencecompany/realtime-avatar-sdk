@@ -60,7 +60,7 @@ const recording = await readContract("x-recording-contract", "packages/realtime-
 const supported = new Set([
   "$schema", "type", "properties", "required", "additionalProperties",
   "anyOf", "oneOf", "enum", "format", "pattern", "minLength", "maxLength", "minimum", "maximum",
-  "items", "minItems", "maxItems", "const", "description", "readOnly", "default", "propertyNames",
+  "items", "minItems", "maxItems", "const", "description", "readOnly", "default", "propertyNames", "exclusiveMinimum", "exclusiveMaximum",
 ]);
 const definitions = [];
 const behavior = JSON.stringify(spec.components.schemas.ListAvatarClipsResponse.properties.behavior);
@@ -165,6 +165,8 @@ function expression(schema) {
         result = schema.type === "integer" ? "z.int()" : "z.number()";
         if (schema.minimum !== undefined) result += `.min(${schema.minimum})`;
         if (schema.maximum !== undefined) result += `.max(${schema.maximum})`;
+        if (schema.exclusiveMinimum !== undefined) result += `.gt(${schema.exclusiveMinimum})`;
+        if (schema.exclusiveMaximum !== undefined) result += `.lt(${schema.exclusiveMaximum})`;
         break;
       case "boolean": result = "z.boolean()"; break;
       case "null": result = "z.null()"; break;

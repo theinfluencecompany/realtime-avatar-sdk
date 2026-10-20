@@ -13,9 +13,9 @@ const schema2 = z.literal("interrupt_stop");
 
 const schema3 = z.union([schema1, schema2]);
 
-const schema4 = z.int().min(-9007199254740991).max(9007199254740991);
+const schema4 = z.int().max(9007199254740991).gt(0);
 
-const schema5 = z.number();
+const schema5 = z.number().min(0);
 
 const schema6 = z.strictObject({
   "count": schema4,
@@ -36,67 +36,67 @@ const schema11 = z.null();
 
 const schema12 = z.union([schema10, schema11]);
 
-const schema13 = z.strictObject({
-  "first_at": schema12,
-  "last_at": schema12,
-  "lines": schema4,
-});
+const schema13 = z.int().min(0).max(9007199254740991);
 
 const schema14 = z.strictObject({
+  "first_at": schema12,
+  "last_at": schema12,
+  "lines": schema13,
+});
+
+const schema15 = z.strictObject({
   "latency_ms": schema7,
   "status": schema8,
   "sourceRole": schema9,
-  "coverage": schema13,
+  "coverage": schema14,
 });
 
-const schema15 = z.literal("unavailable");
+const schema16 = z.literal("unavailable");
 
-const schema16 = z.enum(["not_closed","unconfigured","missing","invalid","oversized","unscorable","no_measured_latency","timeout","aborted","storage_unavailable"]);
+const schema17 = z.enum(["not_closed","unconfigured","missing","invalid","oversized","unscorable","no_measured_latency","timeout","aborted","storage_unavailable"]);
 
-const schema17 = z.strictObject({
-  "status": schema15,
-  "reason": schema16,
+const schema18 = z.strictObject({
+  "status": schema16,
+  "reason": schema17,
 });
 
-const schema18 = z.union([schema14, schema17]);
+const schema19 = z.union([schema15, schema18]);
 
-const schema19 = z.string().min(1).max(200);
+const schema20 = z.string().min(1).max(200);
 
-const schema20 = z.union([schema19, schema11]);
+const schema21 = z.union([schema20, schema11]);
 
-const schema21 = z.string().regex(new RegExp("^[0-9a-f]{40}$"));
+const schema22 = z.string().regex(new RegExp("^[0-9a-f]{40}$"));
 
-const schema22 = z.union([schema21, schema11]);
+const schema23 = z.union([schema22, schema11]);
 
-const schema23 = z.literal("cloudflare-worker-version");
+const schema24 = z.literal("cloudflare-worker-version");
 
-const schema24 = z.literal("authenticated-worker-heartbeat");
+const schema25 = z.literal("authenticated-worker-heartbeat");
 
-const schema25 = z.union([schema24, schema11]);
+const schema26 = z.union([schema25, schema11]);
 
-const schema26 = z.string().min(1).max(160);
+const schema27 = z.string().min(1).max(160);
 
-const schema27 = z.union([schema26, schema11]);
+const schema28 = z.union([schema27, schema11]);
 
-const schema28 = z.int().min(0).max(9007199254740991);
-
-const schema29 = z.union([schema28, schema11]);
+const schema29 = z.union([schema13, schema11]);
 
 const schema30 = z.iso.datetime({ offset: true }).regex(new RegExp("^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"));
 
 const schema31 = z.union([schema30, schema11]);
 
 const schema32 = z.strictObject({
-  "deploymentSource": schema23,
-  "workerSource": schema25,
-  "workerId": schema27,
+  "deploymentSource": schema24,
+  "workerSource": schema26,
+  "workerId": schema28,
   "podStartedAtMs": schema29,
   "workerObservedAt": schema31,
 });
 
 const schema33 = z.strictObject({
-  "deploymentId": schema20,
-  "workerRevision": schema22,
+  "deploymentId": schema21,
+  "workerRevision": schema23,
   "provenance": schema32,
 });
 
@@ -106,39 +106,37 @@ const schema35 = z.union([schema34, schema11]);
 
 const schema36 = z.enum(["reserved","started","released","failed"]);
 
-const schema37 = z.number().min(0);
+const schema37 = z.union([schema5, schema11]);
 
-const schema38 = z.union([schema37, schema11]);
+const schema38 = z.custom<Record<string, unknown>>((value): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value));
 
-const schema39 = z.custom<Record<string, unknown>>((value): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value));
-
-const schema40 = z.strictObject({
+const schema39 = z.strictObject({
   "sessionId": schema0,
-  "speechDiagnostics": schema18.optional(),
+  "speechDiagnostics": schema19.optional(),
   "releaseIdentity": schema33.optional(),
   "avatarId": schema35,
   "avatarName": schema35,
   "status": schema36,
   "startedAt": schema35,
   "endedAt": schema35,
-  "activeSeconds": schema38,
+  "activeSeconds": schema37,
   "billedCreditMicros": schema29,
-  "metadata": schema39,
+  "metadata": schema38,
   "createdAt": schema34,
 });
 
-const schema41 = z.array(schema40);
+const schema40 = z.array(schema39);
 
-const schema42 = z.iso.datetime({ offset: true }).regex(new RegExp("^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"));
+const schema41 = z.iso.datetime({ offset: true }).regex(new RegExp("^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"));
 
-const schema43 = z.strictObject({
-  "data": schema41,
+const schema42 = z.strictObject({
+  "data": schema40,
   "nextCursor": schema35,
-  "from": schema42,
-  "to": schema42,
+  "from": schema41,
+  "to": schema41,
 });
 
-export const listUsageSessionsResponseSchema = schema43 satisfies z.ZodType<Wire["ListUsageSessionsResponse"], Wire["ListUsageSessionsResponse"]>;
+export const listUsageSessionsResponseSchema = schema42 satisfies z.ZodType<Wire["ListUsageSessionsResponse"], Wire["ListUsageSessionsResponse"]>;
 type AssertTrue<Value extends true> = Value;
 type _ListUsageSessionsAcceptsWire = AssertTrue<
   [Wire["ListUsageSessionsResponse"]] extends [z.input<typeof listUsageSessionsResponseSchema>] ? true : false
