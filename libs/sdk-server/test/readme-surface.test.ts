@@ -3,6 +3,30 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { RealtimeAvatar } from "../../http-client/src/client.ts";
+import { RealtimeAvatar as PublicRealtimeAvatar, RealtimeAvatarError as PublicRealtimeAvatarError } from "realtime-avatar";
+
+test("malformed session pages use the public server error hierarchy without response contents", async () => {
+  const fetchImpl: typeof fetch = async () => new Response(JSON.stringify({
+    data: [{ sessionId: "private-session", activeSeconds: "secret-response-value" }],
+    nextCursor: null,
+    from: "2026-10-20T00:00:00Z",
+    to: "2026-10-20T06:00:00Z",
+  }), { headers: { "content-type": "application/json" } });
+  const client = new PublicRealtimeAvatar({ apiKey: "secret-api-token", fetch: fetchImpl });
+  for (const read of [() => client.listSessions(), () => client.iterateSessions().next()]) {
+    await assert.rejects(read(), (error: unknown) => {
+      assert.ok(error instanceof PublicRealtimeAvatarError);
+      assert.equal(error.name, "RealtimeAvatarError");
+      assert.match(error.message, /usage sessions.*contract/i);
+      assert.doesNotMatch(`${error}\n${error.stack}\n${JSON.stringify(error)}`,
+        /private-session|secret-response-value|secret-api-token/);
+      assert.equal(error.cause, undefined);
+      assert.equal(Object.hasOwn(error, "value"), false);
+      assert.equal(Object.hasOwn(error, "issues"), false);
+      return true;
+    });
+  }
+});
 
 /**
  * Two READMEs carry an `## API` block — the repo root's, and this package's, which is the one

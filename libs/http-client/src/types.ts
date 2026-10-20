@@ -17,11 +17,8 @@
  * `npm run spec:check` reports drift between the vendored copy and the live one, and exits 0
  * offline so a fork or an air-gapped runner does not go red for it.
  *
- * THREE types here are NOT derived, and each has a reason rather than an oversight:
+ * TWO types here are NOT derived, and each has a reason rather than an oversight:
  *
- *   ListSessionsOptions   the contract declares NO query parameters on GET /v1/usage/sessions.
- *                         The route reads them; the spec does not describe them. Fixing that
- *                         belongs upstream in the spec export, not here.
  *   TranscriptPayload     the transcript webhook body is not in the published contract at all.
  *                         Same upstream gap, bigger: nothing describes this shape publicly.
  *   VideoPolicy/VideoEdits curate renderer and look-editing options. Clip behavior is declared
@@ -31,7 +28,8 @@
  * Verified by mutation: renaming `participant_token` in the generated file fails the typecheck.
  */
 
-import type { components } from "./generated/openapi.ts";
+import type { components, operations } from "./generated/openapi.ts";
+import type { toSessionsPage } from "./generated/usage-sessions.ts";
 import type { RecordingMode, RecordingArtifact } from "./generated/recording.ts";
 export type { RecordingMode, RecordingArtifactStatus, RecordingArtifact, ListRecordingsQuery, ListRecordingsResponse, RecordingAccessResponse } from "./generated/recording.ts";
 
@@ -374,44 +372,27 @@ export type AvatarUpdate = Pick<Wire["UpdateAvatarRequest"], "displayName" | "de
 export type AvatarSourceSwap = Required<Pick<Wire["UpdateAvatarRequest"], "sourceAssetId">> &
   Pick<Wire["UpdateAvatarRequest"], "anchorTimeMs">;
 
-type UsageSessionsResponse = Wire["ListUsageSessionsResponse"];
-
 /**
  * One billable session — when it ran, how long it was billable for, what it cost.
  *
  * `activeSeconds` is billable wall time in SECONDS and is null until the session settles;
- * `metadata` is whatever you passed to `startCall`, `{}` if you passed nothing. The contract
- * declares this shape inline inside the page rather than as a named schema, so it is indexed
- * out of the array rather than picked off a `Wire[...]` key.
+ * `metadata` is whatever you passed to `startCall`, `{}` if you passed nothing.
+ * DERIVATION: the generated runtime page preserves finite propertyNames records that
+ * openapi-typescript currently widens to string index signatures.
  */
-export type UsageSession = UsageSessionsResponse["data"][number];
+export type UsageSession = UsageSessionPage["sessions"][number];
 
-export interface UsageSessionPage {
-  /** The contract calls this `data`; it is surfaced under the name of what it holds. */
-  sessions: UsageSession[];
-  /** Pass as `cursor` for the next page. Null on the last one. */
-  nextCursor: UsageSessionsResponse["nextCursor"];
-  /** The window actually served — the platform clamps wide or inverted ranges. */
-  from: UsageSessionsResponse["from"];
-  to: UsageSessionsResponse["to"];
-}
+/** The validated wire page with `data` renamed to `sessions`; pagination is unchanged. */
+export type UsageSessionPage = ReturnType<typeof toSessionsPage>;
 
 /**
- * DERIVATION: hand-written, because the published contract declares no query parameters on
- * `GET /v1/usage/sessions` — the route reads them, the spec does not describe them. This is
- * the one place in this file where a shape is asserted rather than taken from the contract,
- * and the fix belongs upstream in the spec export, not here.
+ * Session window, tenant-owned user filter and pagination from the canonical query contract.
+ * DERIVATION: speechDiagnostics is a product boolean for the canonical header's opt-in ability,
+ * not a query parameter. Only true sends that header; false and omission leave it absent.
  */
-export interface ListSessionsOptions {
-  /** ISO timestamps. Defaults to the trailing 30 days; 90 days is the widest served. */
-  from?: string;
-  to?: string;
-  /** Only sessions you tagged with this `metadata.user_id`. */
-  endUserId?: string;
-  /** Page size, capped at 200. */
-  limit?: number;
-  cursor?: string;
-}
+export type ListSessionsOptions = NonNullable<operations["listUsageSessions"]["parameters"]["query"]> & {
+  speechDiagnostics?: NonNullable<operations["listUsageSessions"]["parameters"]["header"]>["X-RTA-Speech-Diagnostics"] extends "1" | undefined ? boolean : never;
+};
 
 export type CreditBalance = Pick<
   Wire["CreditBalance"],

@@ -97,10 +97,11 @@ Recordings may finish processing after a call ends. Use `listRecordings({ sessio
 them, or refresh `getRecording(recordingId)` while processing. These methods and
 `getRecordingAccess` require a server key with `recordings:read`.
 
-Save `recordingId`, not a playback URL. Files are retained until `retainedUntil` (30 days by
-default); each URL expires at `expiresAt` (up to one hour, capped by retention). Obtain fresh
+Save `recordingId`, not a playback URL. Files are retained until `retainedUntil` (the platform's
+existing default is 36,500 days); each URL expires at `expiresAt` (up to one hour, capped by retention). Obtain fresh
 access before replaying or seeking after expiry. An expired URL does not delete the file.
 Treat the URL as private: anyone who has it can play that file until it expires.
+This is the existing platform retention policy, not a new SDK setting or extension.
 
 For participant replay, pass every ready `{ recording, url }` asset to `RecordingPlayer`
 from `realtime-avatar/react`. It accepts combined participant MP4s and separate audio/video
@@ -287,6 +288,48 @@ rta.iterateSessions({ from, to })                   // the same, paging handled
 // webhooks
 verifyTranscript(rawBytes, headers, secret)
 ```
+
+### Session page validation
+
+`listSessions` parses the complete response using the generated platform contract and
+returns `{ sessions, nextCursor, from, to }`. Missing required fields, invalid statuses,
+invalid billing numbers and unknown page or session fields throw
+the public `RealtimeAvatarError` with a contract-mismatch message, without retaining the
+rejected response or validation details, including when successful response bytes are not JSON.
+They are not coerced into empty pages, failed sessions or null values. Every own metadata key,
+including `__proto__`, is preserved without prototype mutation. Metadata is an open
+record and keeps its contents, and optional contract fields such as `releaseIdentity` are
+preserved when returned. `iterateSessions` applies the same validation on every page;
+cursor forwarding and the served window remain unchanged.
+
+### Optional speech diagnostics
+
+```ts
+for await (const session of rta.iterateSessions({ from, to, speechDiagnostics: true })) {
+  const diagnostics = session.speechDiagnostics;
+  if (diagnostics?.status === "available") {
+    const endToEndMs = diagnostics.latency_ms.e2e?.p50;
+    // An absent leg is unknown, not zero.
+  } else if (diagnostics?.status === "unavailable") {
+    console.log(diagnostics.reason);
+  }
+}
+```
+
+`listSessions` accepts the same option. Only `true` sends `X-RTA-Speech-Diagnostics: 1`;
+false and omission send no header. Iteration keeps it on every page without adding a query
+parameter, request body or call metadata. There is no general request-header override.
+The `available` branch carries whole-session dialogue per-leg `latency_ms` statistics
+(`count`, `p50`, `p90`, `max`) and coverage (`first_at`, `last_at`, `lines`). Coverage timestamps
+may be null or log timestamps without a timezone. Missing legs remain absent. These are
+not pooled turn percentiles, query-date-window slices, or browser-audible latency. The
+`unavailable` branch carries a canonical reason, never fabricated healthy zero. Older servers
+may omit `speechDiagnostics` even when requested; preserve that absence. No raw logs or
+warnings are returned. Malformed diagnostics throw the same public `RealtimeAvatarError`.
+
+The API owns opt-in limits: at most 50 sessions per page, 65,536 bytes per summary,
+a 5,000 ms total page deadline and concurrency 4. The SDK does not clamp `limit` locally or
+reimplement server budgets; it follows the returned cursor and served window.
 
 ---
 

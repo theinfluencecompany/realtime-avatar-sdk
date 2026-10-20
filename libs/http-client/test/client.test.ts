@@ -11,6 +11,8 @@ import {
   clipLibraryResponseSchema, clipLibraryUpdateSchema,
 } from "../src/generated/clip-library-schema.ts";
 import { CLIP_DECLARATION, CLIP_LIBRARY, CLIP_UPDATE, INVALID_CLIP_DECLARATIONS } from "./clip-library.fixture.ts";
+import { listUsageSessionsResponseSchema } from "../src/generated/usage-sessions.ts";
+import type { ListSessionsOptions, UsageSession, UsageSessionPage } from "../src/types.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Accepts<Value, Input> = [Value] extends [Input] ? true : false;
@@ -499,7 +501,7 @@ function scripted(script: Array<{ status?: number; body?: unknown } | "network">
       body: typeof init.body === "string" ? init.body : undefined,
     });
     if (step === "network") throw Object.assign(new TypeError("fetch failed"), { name: "TypeError" });
-    return new Response(JSON.stringify(step.body ?? {}), {
+    return new Response(JSON.stringify(step.body === undefined ? {} : step.body), {
       status: step.status ?? 200,
       headers: { "content-type": "application/json" },
     });
@@ -869,16 +871,200 @@ test("every request identifies the SDK, and a caller can name their app", async 
   assert.equal(first.headers.get("idempotency-key"), null);
 });
 
+const USAGE_SESSION = {
+  sessionId: "518b8bad-3287-45f3-bf98-d91db29e2c4f", avatarId: "ava_1", avatarName: "Rin", status: "released",
+  startedAt: "2026-08-01T10:00:00Z", endedAt: "2026-08-01T10:01:02Z",
+  activeSeconds: 61.5, billedCreditMicros: 2500,
+  metadata: { userId: "u_42" }, createdAt: "2026-08-01T10:00:00Z",
+} satisfies components["schemas"]["ListUsageSessionsResponse"]["data"][number];
+const USAGE_PAGE = {
+  data: [USAGE_SESSION], nextCursor: null,
+  from: "2026-07-11T00:00:00Z", to: "2026-08-10T00:00:00Z",
+} satisfies components["schemas"]["ListUsageSessionsResponse"];
+
+test("speech diagnostics opt-in sends the exact canonical header only when true", async () => {
+  const { attempts, fetchImpl } = scripted(Array.from({ length: 3 }, () => ({ body: USAGE_PAGE })));
+  const client = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  const optedIn = { speechDiagnostics: true };
+  const optedOut = { speechDiagnostics: false };
+  await client.listSessions({ ...optedIn, limit: 200 });
+  await client.listSessions({ ...optedOut });
+  await client.listSessions();
+  assert.deepEqual(attempts.map(attempt => attempt.headers.get("X-RTA-Speech-Diagnostics")), ["1", null, null]);
+  for (const attempt of attempts) {
+    const query = new URL(attempt.url).searchParams;
+    assert.equal(query.has("speechDiagnostics"), false);
+    assert.equal(query.has("speech_diagnostics"), false);
+    assert.equal(attempt.headers.get("authorization"), "Bearer k");
+    assert.match(attempt.headers.get("user-agent") ?? "", /realtime-avatar-sdk\//);
+    assert.equal(attempt.headers.get("idempotency-key"), null);
+  }
+  assert.equal(new URL(attempts[0]!.url).searchParams.get("limit"), "200", "the server owns the page cap");
+});
+
+const speechSchema = listUsageSessionsResponseSchema.shape.data.element.shape.speechDiagnostics.unwrap();
+const availableSpeechSchema = speechSchema.options[0];
+const unavailableSpeechSchema = speechSchema.options[1];
+const LATENCY_STATS = { count: 4, p50: 120.5, p90: 240, max: 300 };
+const AVAILABLE_SPEECH = {
+  status: "available", sourceRole: "dialogue",
+  latency_ms: { e2e: LATENCY_STATS, interrupt_stop: { ...LATENCY_STATS, count: 1, p50: 0, p90: 0, max: 0 } },
+  coverage: { first_at: "2026-08-01T10:00:00", last_at: "2026-08-01T10:01:02Z", lines: 8 },
+} satisfies Extract<NonNullable<UsageSession["speechDiagnostics"]>, { status: "available" }>;
+
+function speechPage(speechDiagnostics: unknown) {
+  return { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, speechDiagnostics }] };
+}
+
+test("usage schema input, output and SDK page retain the exact canonical diagnostics types", () => {
+  type WirePage = components["schemas"]["ListUsageSessionsResponse"];
+  const exact: [
+    Accepts<z.output<typeof listUsageSessionsResponseSchema>, WirePage>,
+    Accepts<WirePage, z.input<typeof listUsageSessionsResponseSchema>>,
+    Equal<z.input<typeof listUsageSessionsResponseSchema>, z.output<typeof listUsageSessionsResponseSchema>>,
+    Equal<UsageSession, z.output<typeof listUsageSessionsResponseSchema>["data"][number]>,
+    Equal<UsageSessionPage["sessions"][number]["speechDiagnostics"], UsageSession["speechDiagnostics"]>,
+  ] = [true, true, true, true, true];
+  assert.ok(exact.every(Boolean));
+  const compileOnly = (unknownValue: unknown) => {
+    const input = (value: z.input<typeof listUsageSessionsResponseSchema>) => value;
+    const options = (value: ListSessionsOptions) => value;
+    // @ts-expect-error unknown decoded JSON is not a usage page
+    input(unknownValue);
+    // @ts-expect-error diagnostics opt-in is a product boolean, not the wire literal
+    options({ speechDiagnostics: "1" });
+    // @ts-expect-error callers cannot override authorization or general headers
+    options({ headers: { authorization: "Bearer other" } });
+    const row = input(USAGE_PAGE).data[0];
+    // @ts-expect-error unknown legs cannot enter the canonical finite record
+    row.speechDiagnostics = { ...AVAILABLE_SPEECH, latency_ms: { unknown_leg: LATENCY_STATS } };
+    const available = (value: z.input<typeof availableSpeechSchema>) => value;
+    // @ts-expect-error p50 remains numeric
+    available({ ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, p50: "120" } } });
+    // @ts-expect-error unknown legs are not part of the finite record input
+    available({ ...AVAILABLE_SPEECH, latency_ms: { unknown_leg: LATENCY_STATS } });
+    // @ts-expect-error unknown values cannot become typed diagnostics
+    available(unknownValue);
+    const session = (value: UsageSession) => value;
+    // @ts-expect-error public SDK consumers cannot supply unknown latency legs
+    session({ ...USAGE_SESSION, speechDiagnostics: { ...AVAILABLE_SPEECH, latency_ms: { unknown_leg: LATENCY_STATS } } });
+    // @ts-expect-error unknown decoded rows must cross the runtime boundary first
+    session(unknownValue);
+  };
+  void compileOnly;
+});
+
+test("speech diagnostics preserves every canonical latency leg without pooling or rounding", async () => {
+  const keys = availableSpeechSchema.shape.latency_ms.keyType.options.flatMap(key =>
+    key instanceof z.ZodEnum ? key.options : [key.value]);
+  const diagnostics = {
+    ...AVAILABLE_SPEECH,
+    latency_ms: Object.fromEntries(keys.map((key, index) => [key, { ...LATENCY_STATS, p50: index + 0.25 }])),
+  };
+  const { fetchImpl } = scripted([{ body: speechPage(diagnostics) }]);
+  const page = await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).listSessions({ speechDiagnostics: true });
+  assert.deepEqual(page.sessions[0]?.speechDiagnostics, diagnostics);
+  assert.deepEqual(Object.keys(diagnostics.latency_ms), keys);
+});
+
+test("speech diagnostics preserves gaps, nullable log coverage and old-server absence", async () => {
+  const partial = { ...AVAILABLE_SPEECH, latency_ms: { e2e: LATENCY_STATS }, coverage: { first_at: null, last_at: null, lines: 0 } };
+  const { fetchImpl } = scripted([{ body: speechPage(partial) }, { body: USAGE_PAGE }]);
+  const client = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  const diagnostic = (await client.listSessions({ speechDiagnostics: true })).sessions[0]?.speechDiagnostics;
+  assert.deepEqual(diagnostic, partial);
+  if (diagnostic?.status === "available") {
+    assert.equal(Object.hasOwn(diagnostic.latency_ms, "tts"), false);
+    assert.equal(Object.hasOwn(diagnostic.latency_ms, "interrupt_stop"), false);
+  }
+  const old = (await client.listSessions({ speechDiagnostics: true })).sessions[0];
+  assert.ok(old);
+  assert.equal(Object.hasOwn(old, "speechDiagnostics"), false);
+});
+
+for (const reason of unavailableSpeechSchema.shape.reason.options) {
+  test(`speech diagnostics preserves explicit unavailable reason ${reason}`, async () => {
+    const diagnostics = { status: "unavailable", reason } as const;
+    const { fetchImpl } = scripted([{ body: speechPage(diagnostics) }]);
+    const page = await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).listSessions({ speechDiagnostics: true });
+    assert.deepEqual(page.sessions[0]?.speechDiagnostics, diagnostics);
+  });
+}
+
+for (const [name, diagnostics] of [
+  ["null diagnostics", null],
+  ["unknown status", { ...AVAILABLE_SPEECH, status: "healthy" }],
+  ["wrong source", { ...AVAILABLE_SPEECH, sourceRole: "browser" }],
+  ["missing source", { status: "available", latency_ms: {}, coverage: AVAILABLE_SPEECH.coverage }],
+  ["missing latency", { status: "available", sourceRole: "dialogue", coverage: AVAILABLE_SPEECH.coverage }],
+  ["missing coverage", { status: "available", sourceRole: "dialogue", latency_ms: {} }],
+  ["unknown leg", { ...AVAILABLE_SPEECH, latency_ms: { unknown_leg: LATENCY_STATS } }],
+  ["string p50", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, p50: "120" } } }],
+  ["credential-shaped invalid measurement", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, p50: "secret-api-token" } } }],
+  ["string p90", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, p90: "240" } } }],
+  ["null max", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, max: null } } }],
+  ["fractional count", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, count: 0.5 } } }],
+  ["zero measured count", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, count: 0 } } }],
+  ["negative measured count", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, count: -1 } } }],
+  ["negative latency", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, p50: -1 } } }],
+  ["missing count", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { p50: 1, p90: 2, max: 3 } } }],
+  ["unsafe count", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, count: Number.MAX_SAFE_INTEGER + 1 } } }],
+  ["extra statistic", { ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, average: 100 } } }],
+  ["invalid first timestamp", { ...AVAILABLE_SPEECH, coverage: { ...AVAILABLE_SPEECH.coverage, first_at: "2026-02-30T10:00:00Z" } }],
+  ["invalid last timestamp", { ...AVAILABLE_SPEECH, coverage: { ...AVAILABLE_SPEECH.coverage, last_at: "yesterday" } }],
+  ["fractional coverage", { ...AVAILABLE_SPEECH, coverage: { ...AVAILABLE_SPEECH.coverage, lines: 0.5 } }],
+  ["extra coverage", { ...AVAILABLE_SPEECH, coverage: { ...AVAILABLE_SPEECH.coverage, raw: "private-log" } }],
+  ["raw logs", { ...AVAILABLE_SPEECH, logs: ["private-log"] }],
+  ["warnings", { ...AVAILABLE_SPEECH, warnings: ["private-warning"] }],
+  ["unknown unavailable reason", { status: "unavailable", reason: "healthy" }],
+  ["missing unavailable reason", { status: "unavailable" }],
+  ["unavailable measurements", { status: "unavailable", reason: "missing", latency_ms: {} }],
+  ["mixed union branches", { ...AVAILABLE_SPEECH, reason: "missing" }],
+] as const) {
+  test(`speech diagnostics rejects ${name} at the real HTTP boundary`, async () => {
+    const { fetchImpl } = scripted([{ body: speechPage(diagnostics) }]);
+    await assert.rejects(new RealtimeAvatar({ apiKey: "secret-api-token", fetch: fetchImpl }).listSessions({ speechDiagnostics: true }),
+      (error: unknown) => {
+        assert.ok(error instanceof RealtimeAvatarError);
+        assert.match(error.message, /usage sessions.*contract/i);
+        assert.doesNotMatch(String(error), /secret-api-token|private-log|private-warning/);
+        return true;
+      });
+  });
+}
+
+for (const value of [NaN, Infinity, -Infinity]) {
+  test(`speech diagnostics refuses nonfinite latency ${String(value)}`, () => {
+    assert.equal(listUsageSessionsResponseSchema.safeParse(speechPage({
+      ...AVAILABLE_SPEECH, latency_ms: { e2e: { ...LATENCY_STATS, p50: value } },
+    })).success, false);
+  });
+}
+
+test("speech diagnostics opt-in survives every iterator page without query or body leakage", async () => {
+  const { attempts, fetchImpl } = scripted([
+    { body: { ...speechPage(AVAILABLE_SPEECH), nextCursor: "page+/=?" } },
+    { body: speechPage({ status: "unavailable", reason: "missing" }) },
+  ]);
+  const seen = [];
+  for await (const session of new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).iterateSessions({
+    speechDiagnostics: true, from: USAGE_PAGE.from, to: USAGE_PAGE.to, endUserId: "u_42", limit: 200,
+  })) seen.push(session.speechDiagnostics);
+  assert.deepEqual(seen, [AVAILABLE_SPEECH, { status: "unavailable", reason: "missing" }]);
+  assert.equal(attempts.length, 2);
+  for (const attempt of attempts) {
+    assert.equal(attempt.headers.get("X-RTA-Speech-Diagnostics"), "1");
+    const query = new URL(attempt.url).searchParams;
+    assert.deepEqual([...query.keys()].sort(), attempt === attempts[0]
+      ? ["endUserId", "from", "limit", "to"] : ["cursor", "endUserId", "from", "limit", "to"]);
+    assert.equal(query.get("limit"), "200");
+    assert.equal(attempt.body, undefined);
+  }
+  assert.equal(new URL(attempts[1]!.url).searchParams.get("cursor"), "page+/=?");
+});
+
 test("listSessions returns when each session ran, how long, and what it cost", async () => {
-  const { attempts, fetchImpl } = scripted([{ body: {
-    data: [{
-      sessionId: "518b8bad-3287-45f3-bf98-d91db29e2c4f", avatarId: "ava_1", status: "released",
-      startedAt: "2026-08-01T10:00:00Z", endedAt: "2026-08-01T10:01:02Z",
-      activeSeconds: 61.5, billedCreditMicros: 2500,
-      metadata: { userId: "u_42" }, createdAt: "2026-08-01T10:00:00Z",
-    }],
-    nextCursor: null, from: "2026-07-11T00:00:00Z", to: "2026-08-10T00:00:00Z",
-  } }]);
+  const { attempts, fetchImpl } = scripted([{ body: USAGE_PAGE }]);
 
   const page = await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl })
     .listSessions({ from: "2026-07-11T00:00:00Z", limit: 50 });
@@ -893,37 +1079,151 @@ test("listSessions returns when each session ran, how long, and what it cost", a
   assert.match(attempts[0]?.headers.get("user-agent") ?? "", /realtime-avatar-sdk\//);
 });
 
-test("a missing field becomes null, never the string 'undefined'", async () => {
-  // A `String(x)` on an absent field is how `asset.url` once shipped the literal
-  // "undefined" to callers. Read defensively and prove it.
-  const { fetchImpl } = scripted([{ body: { data: [{ sessionId: "s1" }], nextCursor: null } }]);
+for (const [name, body] of [
+  ["missing page", null],
+  ["missing page data", { nextCursor: null, from: USAGE_PAGE.from, to: USAGE_PAGE.to }],
+  ["missing page window", { data: [], nextCursor: null }],
+  ["missing row fields", { ...USAGE_PAGE, data: [{ sessionId: USAGE_SESSION.sessionId }] }],
+  ["non-object row", { ...USAGE_PAGE, data: [null] }],
+  ["invalid status", { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, status: "finished" }] }],
+  ["string duration", { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, activeSeconds: "61.5" }] }],
+  ["negative duration", { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, activeSeconds: -1 }] }],
+  ["string cost", { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, billedCreditMicros: "2500" }] }],
+  ["fractional cost", { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, billedCreditMicros: 0.5 }] }],
+  ["unsafe cost", { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, billedCreditMicros: Number.MAX_SAFE_INTEGER + 1 }] }],
+  ["negative cost", { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, billedCreditMicros: -1 }] }],
+  ["array metadata", { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, metadata: [] }] }],
+  ["invalid release evidence", { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, releaseIdentity: {} }] }],
+  ["invalid cursor", { ...USAGE_PAGE, nextCursor: 1 }],
+  ["invalid window date", { ...USAGE_PAGE, from: "2026-02-30T00:00:00Z" }],
+  ["unknown page field", { ...USAGE_PAGE, extra: true }],
+  ["unknown row field", { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, extra: true }] }],
+] as const) {
+  test(`listSessions rejects ${name} at the HTTP boundary`, async () => {
+    const { attempts, fetchImpl } = scripted([{ body }]);
+    await assert.rejects(new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).listSessions(),
+      (error: unknown) => {
+        assert.ok(error instanceof RealtimeAvatarError);
+        assert.match(error.message, /usage sessions.*contract/i);
+        assert.equal(error.cause, undefined);
+        assert.equal(Object.hasOwn(error, "value"), false);
+        assert.equal(Object.hasOwn(error, "issues"), false);
+        return true;
+      });
+    assert.equal(attempts.length, 1);
+  });
+}
+
+test("listSessions sanitizes malformed successful JSON through the public error hierarchy", async () => {
+  const fetchImpl: typeof fetch = async () => new Response("private-json-response-sentinel", { headers: { "content-type": "application/json" } });
+  const client = new RealtimeAvatar({ apiKey: "private-key-sentinel", fetch: fetchImpl });
+  for (const read of [() => client.listSessions(), () => client.iterateSessions().next()]) {
+    await assert.rejects(read(), (error: unknown) => {
+      assert.ok(error instanceof RealtimeAvatarError);
+      assert.doesNotMatch(`${error}\n${error.stack}\n${JSON.stringify(error)}`, /private-json-response-sentinel|private-key-sentinel/);
+      assert.equal(error.cause, undefined);
+      return true;
+    });
+  }
+});
+
+test("listSessions preserves every own arbitrary metadata key without prototype mutation", async () => {
+  const metadata: unknown = JSON.parse('{"__proto__":{"private":"value"},"constructor":"own-value","nested":{"__proto__":"nested-value"}}');
+  const { fetchImpl } = scripted([{ body: { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, metadata }] } }]);
+  const [session] = (await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).listSessions()).sessions;
+  assert.ok(session);
+  assert.deepEqual(session.metadata, metadata);
+  assert.equal(Object.hasOwn(session.metadata, "__proto__"), true);
+  assert.equal(Object.getPrototypeOf(session.metadata), Object.prototype);
+  assert.equal(Object.hasOwn({}, "private"), false);
+});
+
+test("listSessions retains optional release evidence and open metadata without stripping", async () => {
+  const session = {
+    ...USAGE_SESSION,
+    releaseIdentity: {
+      deploymentId: "deployment-1", workerRevision: "a".repeat(40),
+      provenance: {
+        deploymentSource: "cloudflare-worker-version", workerSource: "authenticated-worker-heartbeat",
+        workerId: "worker-1", podStartedAtMs: 1_700_000_000_000,
+        workerObservedAt: "2026-08-01T12:00:00+02:00",
+      },
+    },
+    metadata: { user_id: "u_42", nested: { values: [1, true, null, { other: "value" }] } },
+  } satisfies components["schemas"]["ListUsageSessionsResponse"]["data"][number];
+  const { fetchImpl } = scripted([{ body: { ...USAGE_PAGE, data: [session] } }]);
   const page = await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).listSessions();
-  const s = page.sessions[0];
-  assert.ok(s);
-  assert.equal(s.activeSeconds, null);
-  assert.equal(s.billedCreditMicros, null);
-  assert.equal(s.avatarId, null);
-  assert.deepEqual(s.metadata, {});
+  assert.deepEqual(page, {
+    sessions: [session], nextCursor: USAGE_PAGE.nextCursor, from: USAGE_PAGE.from, to: USAGE_PAGE.to,
+  });
+});
+
+test("listSessions preserves explicit nulls for unsettled sessions and an empty last page", async () => {
+  const session = {
+    ...USAGE_SESSION, avatarId: null, avatarName: null, status: "started",
+    startedAt: null, endedAt: null, activeSeconds: null, billedCreditMicros: null,
+    releaseIdentity: {
+      deploymentId: null, workerRevision: null,
+      provenance: {
+        deploymentSource: "cloudflare-worker-version", workerSource: null,
+        workerId: null, podStartedAtMs: null, workerObservedAt: null,
+      },
+    },
+  } satisfies components["schemas"]["ListUsageSessionsResponse"]["data"][number];
+  const { fetchImpl } = scripted([
+    { body: { ...USAGE_PAGE, data: [session] } },
+    { body: { ...USAGE_PAGE, data: [] } },
+  ]);
+  const client = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  assert.deepEqual((await client.listSessions()).sessions, [session]);
+  assert.deepEqual(await client.listSessions(), {
+    sessions: [], nextCursor: null, from: USAGE_PAGE.from, to: USAGE_PAGE.to,
+  });
 });
 
 test("iterateSessions follows the cursor to the end, exactly once each", async () => {
-  const row = (id: string) => ({ sessionId: id, status: "released", metadata: {}, createdAt: "x" });
+  const row = (id: string) => ({ ...USAGE_SESSION, sessionId: id });
   const { attempts, fetchImpl } = scripted([
-    { body: { data: [row("a"), row("b")], nextCursor: "cur1", from: "f", to: "t" } },
-    { body: { data: [row("c")], nextCursor: null, from: "f", to: "t" } },
+    { body: { ...USAGE_PAGE, data: [row("session-a"), row("session-b")], nextCursor: "cur1" } },
+    { body: { ...USAGE_PAGE, data: [row("session-c")] } },
   ]);
 
   const seen: string[] = [];
   for await (const s of new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).iterateSessions()) {
     seen.push(s.sessionId);
   }
-  assert.deepEqual(seen, ["a", "b", "c"]);
+  assert.deepEqual(seen, ["session-a", "session-b", "session-c"]);
   assert.equal(attempts.length, 2);
   assert.match(attempts[1]?.url ?? "", /cursor=cur1/);
 });
 
+test("iterateSessions rejects a malformed later page without manufacturing a session", async () => {
+  const { fetchImpl } = scripted([
+    { body: { ...USAGE_PAGE, nextCursor: "next-page" } },
+    { body: { ...USAGE_PAGE, data: [{ ...USAGE_SESSION, status: "finished" }] } },
+  ]);
+  const sessions = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).iterateSessions();
+  assert.deepEqual(await sessions.next(), { value: USAGE_SESSION, done: false });
+  await assert.rejects(sessions.next(), RealtimeAvatarError);
+});
+
+test("iterateSessions passes duplicate cursors through unchanged", async () => {
+  const { attempts, fetchImpl } = scripted([
+    { body: { ...USAGE_PAGE, nextCursor: "same+/=?" } },
+    { body: { ...USAGE_PAGE, nextCursor: "same+/=?" } },
+    { body: USAGE_PAGE },
+  ]);
+  const seen = [];
+  for await (const session of new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).iterateSessions({ cursor: "initial" })) {
+    seen.push(session.sessionId);
+  }
+  assert.deepEqual(seen, Array(3).fill(USAGE_SESSION.sessionId));
+  assert.deepEqual(attempts.map(attempt => new URL(attempt.url).searchParams.get("cursor")),
+    ["initial", "same+/=?", "same+/=?"]);
+});
+
 test("endUserId narrows to one of YOUR users", async () => {
-  const { attempts, fetchImpl } = scripted([{ body: { data: [], nextCursor: null } }]);
+  const { attempts, fetchImpl } = scripted([{ body: { ...USAGE_PAGE, data: [] } }]);
   await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).listSessions({ endUserId: "u_42" });
   assert.match(attempts[0]?.url ?? "", /endUserId=u_42/);
 });
@@ -931,10 +1231,9 @@ test("endUserId narrows to one of YOUR users", async () => {
 test("an untagged session still bills, it just has no user on it", async () => {
   // Tagging is opt-in. The row must come back complete either way, or "billing by session"
   // would quietly depend on remembering to set metadata.
-  const { fetchImpl } = scripted([{ body: { data: [{
-    sessionId: "518b8bad-3287-45f3-bf98-d91db29e2c4f", status: "released",
-    activeSeconds: 61.5, billedCreditMicros: 2500, createdAt: "2026-08-01T10:00:00Z",
-  }], nextCursor: null } }]);
+  const { fetchImpl } = scripted([{ body: { ...USAGE_PAGE, data: [{
+    ...USAGE_SESSION, avatarId: null, avatarName: null, metadata: {},
+  }] } }]);
   const page = await new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl }).listSessions();
   const s = page.sessions[0];
   assert.ok(s);
