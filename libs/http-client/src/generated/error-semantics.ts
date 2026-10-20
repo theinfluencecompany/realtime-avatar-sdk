@@ -9,6 +9,9 @@
  * stray code from being read as a refusal the caller could act on.
  */
 export const ERROR_SEMANTICS = {
+  "capacity_full": { statuses: [429], message: "All session seats are busy. Keep your queue ticket and retry shortly.", retryable: true },
+  "capacity_no_workers": { statuses: [429], message: "No session workers are available. Keep your queue ticket and retry shortly.", retryable: true },
+  "capacity_draining": { statuses: [429], message: "Session workers are restarting or draining. Keep your queue ticket and retry shortly.", retryable: true },
   "bad_request": { statuses: [400], message: "Check the request and try again.", retryable: false },
   "unauthorized": { statuses: [401], message: "Authentication is required to use Realtime Avatar.", retryable: false },
   "payment_required": { statuses: [402], message: "Add credits to continue using realtime avatars.", retryable: false },

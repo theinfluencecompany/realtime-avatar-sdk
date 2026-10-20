@@ -91,7 +91,7 @@ test("list_avatars counts the ones that can actually take a call", async () => {
 test("list_sessions reports seconds and never rounds up to a minute", async () => {
   const { client } = await connect({}, {
     data: [{
-      sessionId: "s1", avatarId: "ava_video", status: "released",
+      sessionId: "session-1", avatarId: "ava_video", avatarName: "Rin", status: "released",
       startedAt: "2026-08-10T05:00:00Z", endedAt: "2026-08-10T05:01:02Z",
       activeSeconds: 61.5, billedCreditMicros: 61_500_000,
       metadata: { user_id: "u_42" }, createdAt: "2026-08-10T05:00:00Z",

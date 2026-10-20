@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
@@ -15,6 +16,8 @@ const files = [
   "libs/http-client/src/generated/clip-library-schema.ts",
   "libs/http-client/src/generated/recording.ts",
   "libs/http-client/src/generated/content-policy.ts",
+  "libs/http-client/src/generated/transcription.ts",
+  "libs/http-client/src/generated/usage-sessions.ts",
 ] as const;
 const specBytes = await readFile(new URL(files[0], root));
 const vendorBytes = await readFile(new URL(files[1], root));
@@ -73,9 +76,158 @@ test("generation and --check verify the committed executable offline and reject 
     await assert.rejects(f.run(["--check"]), /Content policy schema is stale/);
     await f.run([]);
     assert.deepEqual(await f.snapshot(), before);
+    await writeFile(join(f.dir, files[6]), "stale usage sessions schema");
+    await assert.rejects(f.run(["--check"]), /Usage sessions schema is stale/);
+    await f.run([]);
+    assert.deepEqual(await f.snapshot(), before);
     await writeFile(join(f.dir, files[2]), "stale response schema");
     await assert.rejects(f.run(["--check"]), /Clip schemas are stale/);
     await f.run([]);
+    assert.deepEqual(await f.snapshot(), before);
+  } finally { await rm(f.dir, { recursive: true, force: true }); }
+});
+
+test("canonical numeric field mutations fail generated mapping and public consumer typechecks in isolation", async () => {
+  const f = await fixture();
+  try {
+    for (const library of ["http-client", "client"] as const) {
+      await cp(new URL(`libs/${library}/src`, root), join(f.dir, `libs/${library}/src`), { recursive: true });
+    }
+    await symlink(fileURLToPath(new URL("node_modules", root)), join(f.dir, "node_modules"), "dir");
+    await writeFile(join(f.dir, "package.json"), '{"type":"module"}');
+    await writeFile(join(f.dir, "consumer.ts"), `
+      import { RealtimeAvatar } from "./libs/http-client/src/index.ts";
+      async function report(client: RealtimeAvatar) {
+        const page = await client.listSessions();
+        for (const session of page.sessions) {
+          const seconds: number | null = session.activeSeconds;
+          const cost: number | null = session.billedCreditMicros;
+          const diagnostic = session.speechDiagnostics;
+          if (diagnostic?.status === "available") {
+            const p50: number | undefined = diagnostic.latency_ms.e2e?.p50;
+            void p50;
+          }
+          void [seconds, cost];
+        }
+      }
+      void report;
+    `);
+    await writeFile(join(f.dir, "tsconfig.json"), JSON.stringify({
+      compilerOptions: {
+        target: "ES2023", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
+        skipLibCheck: true, noEmit: true, allowImportingTsExtensions: true, types: ["node"],
+      },
+      include: ["consumer.ts"],
+    }));
+    const compile = () => exec(process.execPath, [fileURLToPath(new URL("node_modules/typescript/bin/tsc", root)),
+      "--project", join(f.dir, "tsconfig.json")]);
+    const regenerateTypes = () => exec(process.execPath, [fileURLToPath(new URL("node_modules/openapi-typescript/bin/cli.js", root)),
+      join(f.dir, files[0]), "-o", join(f.dir, "libs/http-client/src/generated/openapi.ts")]);
+    await regenerateTypes();
+    await f.run([]);
+    await compile();
+    const safeConsumer = await readFile(join(f.dir, "consumer.ts"), "utf8");
+    for (const unsafe of [
+      `import type { UsageSession } from "./libs/http-client/src/index.ts";
+       declare const decoded: unknown;
+       const row: UsageSession = decoded;`,
+      `import { listUsageSessionsResponseSchema } from "./libs/http-client/src/generated/usage-sessions.ts";
+       import type { z } from "zod";
+       declare const decoded: unknown;
+       const page: z.input<typeof listUsageSessionsResponseSchema> = decoded;`,
+      `import type { UsageSession } from "./libs/http-client/src/index.ts";
+       const diagnostic: UsageSession["speechDiagnostics"] = {
+         status: "available", sourceRole: "dialogue", coverage: { first_at: null, last_at: null, lines: 1 },
+         latency_ms: { unknown_leg: { count: 1, p50: 1, p90: 1, max: 1 } },
+       };`,
+    ]) {
+      await writeFile(join(f.dir, "consumer.ts"), unsafe);
+      await assert.rejects(compile(), (error: unknown) => {
+        assert.ok(error instanceof Error && "stdout" in error && typeof error.stdout === "string");
+        assert.match(error.stdout, /consumer\.ts/);
+        assert.match(error.stdout, /not assignable|unknown_leg.*does not exist/);
+        assert.doesNotMatch(error.stdout, /usage-sessions\.ts/);
+        return true;
+      });
+    }
+    await writeFile(join(f.dir, "consumer.ts"), safeConsumer);
+    await compile();
+    for (const [field, originalType] of [["activeSeconds", "number"], ["billedCreditMicros", "integer"], ["p50", "number"]] as const) {
+      const spec = JSON.parse(specBytes.toString("utf8"));
+      const properties = spec.components.schemas.ListUsageSessionsResponse.properties.data.items.properties;
+      const numeric = field === "p50"
+        ? properties.speechDiagnostics.oneOf[0].properties.latency_ms.additionalProperties.properties.p50
+        : properties[field].anyOf.find((schema: { type?: unknown }) => schema.type === originalType);
+      assert.ok(numeric);
+      numeric.type = "string";
+      delete numeric.minimum;
+      delete numeric.maximum;
+      await writeFile(join(f.dir, files[0]), JSON.stringify(spec));
+      await regenerateTypes();
+      await assert.rejects(compile(), (error: unknown) => {
+        assert.ok(error instanceof Error && "stdout" in error && typeof error.stdout === "string");
+        assert.match(error.stdout, /usage-sessions\.ts/);
+        assert.match(error.stdout, /not assignable/);
+        return true;
+      });
+      await f.run([]);
+      await assert.rejects(compile(), (error: unknown) => {
+        assert.ok(error instanceof Error && "stdout" in error && typeof error.stdout === "string");
+        assert.match(error.stdout, /consumer\.ts/);
+        assert.match(error.stdout, field === "p50" ? /string \| undefined/ : /string \| null/);
+        assert.doesNotMatch(error.stdout, /usage-sessions\.ts/);
+        return true;
+      });
+      await writeFile(join(f.dir, files[0]), specBytes);
+      await regenerateTypes();
+      await f.run([]);
+      await compile();
+    }
+  } finally { await rm(f.dir, { recursive: true, force: true }); }
+});
+
+test("generation emits the canonical diagnostics union and finite propertyNames record", async () => {
+  const f = await fixture();
+  try {
+    await rm(join(f.dir, files[6]));
+    await f.run([]);
+    const output = await readFile(join(f.dir, files[6]), "utf8");
+    assert.match(output, /z\.partialRecord\(/);
+    assert.match(output, /z\.union\(/);
+    assert.match(output, /z\.literal\("available"\)/);
+    assert.match(output, /z\.literal\("unavailable"\)/);
+    assert.equal(output, await readFile(new URL(files[6], root), "utf8"));
+    await f.run(["--check"]);
+  } finally { await rm(f.dir, { recursive: true, force: true }); }
+});
+
+for (const location of ["oneOf", "propertyNames", "recordValue"] as const) {
+  test(`generation rejects unsupported diagnostics keyword in ${location} before any writes`, async () => {
+    const f = await fixture();
+    try {
+      const spec = JSON.parse(specBytes.toString("utf8"));
+      const diagnostics = spec.components.schemas.ListUsageSessionsResponse.properties.data.items.properties.speechDiagnostics;
+      const record = diagnostics.oneOf[0].properties.latency_ms;
+      const node = location === "oneOf" ? diagnostics
+        : location === "propertyNames" ? record.propertyNames.anyOf[0] : record.additionalProperties;
+      node.not = { type: "null" };
+      await writeFile(join(f.dir, files[0]), JSON.stringify(spec));
+      const before = await f.snapshot();
+      await assert.rejects(f.run([]), /Unsupported clip schema keyword: not/);
+      assert.deepEqual(await f.snapshot(), before);
+    } finally { await rm(f.dir, { recursive: true, force: true }); }
+  });
+}
+
+test("generation rejects nonfinite record keys instead of widening them to arbitrary strings", async () => {
+  const f = await fixture();
+  try {
+    const spec = JSON.parse(specBytes.toString("utf8"));
+    const record = spec.components.schemas.ListUsageSessionsResponse.properties.data.items.properties.speechDiagnostics.oneOf[0].properties.latency_ms;
+    record.propertyNames = { type: "string", pattern: "^unknown_" };
+    await writeFile(join(f.dir, files[0]), JSON.stringify(spec));
+    const before = await f.snapshot();
+    await assert.rejects(f.run([]), /Unsupported response record key schema/);
     assert.deepEqual(await f.snapshot(), before);
   } finally { await rm(f.dir, { recursive: true, force: true }); }
 });

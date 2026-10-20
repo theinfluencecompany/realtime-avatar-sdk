@@ -401,6 +401,25 @@ Requires a key with the `usage:read` scope. The window defaults to the trailing 
 is clamped to 90 — a wider range is served narrowed, not refused, so read back `page.from`
 and `page.to` rather than assuming you got what you asked for.
 
+Every page is validated against the generated platform contract before `data` is renamed to
+`sessions`. A malformed page throws the public `RealtimeAvatarError` with a contract-mismatch
+message and no rejected response or validation details; do not treat it as an empty bill or
+default its fields. Malformed successful JSON uses that same safe error. Every own metadata
+key is retained without prototype mutation, including `__proto__`. Required nullable
+fields must still be present. Page and session objects are strict, while metadata is open
+and retained, as are optional contract fields such as `releaseIdentity` when returned.
+`iterateSessions` validates each page and forwards cursors without changing their semantics.
+
+For speech measurements, use `{ speechDiagnostics: true }` with either method. Only true
+sends `X-RTA-Speech-Diagnostics: 1`, on every page; it is never query data or caller-owned
+metadata. The optional response field is `available` with whole-session dialogue per-leg
+`latency_ms` (`count`, `p50`, `p90`, `max`) and nullable log timestamps plus line count, or
+`unavailable` with a reason. Do not pool these percentiles, slice them to the query window,
+or describe them as browser-audible latency. Missing legs and old-server field absence
+stay absent, not healthy zero. No raw logs or warnings are exposed. The API caps opt-in
+pages at 50, summaries at 65,536 bytes, total page work at 5,000 ms and concurrency at 4;
+the SDK forwards limits and cursors unchanged. Invalid diagnostics reject the whole page.
+
 ### 9. `queued` is not an error
 
 Every slot busy → `{ queued: true, position, retryAfterMs }`. Render the position and retry.
@@ -808,6 +827,11 @@ try {
 | 422 | Schema rejection | An unknown or mis-cased field — the wire is strict |
 | 429 | Capacity queue, concurrent session limit, or rate limited | Only capacity returns a queue; other refusals throw. Release/wait for occupied slots or back off. Not auto-retried |
 | 503 | Transient upstream | Retried for you, up to `maxRetries`, by the server client only. `createProxyClient` never retries a mint |
+
+The canonical error vocabulary includes `capacity_full`, `capacity_no_workers` and
+`capacity_draining`, all retryable 429 refusals with published copy. The normalized default
+for a known code on the wrong 429 status is now `capacity_full`, following the platform's
+published ordering; do not infer that every 429 is a queue response.
 
 ### The vocabulary is derived, never restated
 

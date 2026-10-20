@@ -235,11 +235,36 @@ rta.iterateSessions({ from, to })                   // the same, paging handled
 verifyTranscript(rawBytes, headers, secret)
 ```
 
+`listSessions` validates the entire response against the generated platform contract before
+returning `{ sessions, nextCursor, from, to }`. Malformed pages reject with
+the public `RealtimeAvatarError` with a contract-mismatch message, rather than silently
+becoming empty pages, failed sessions or null billing values. The error does not retain
+the rejected response or validation details; malformed successful JSON uses the same safe
+error. All own metadata keys, including `__proto__`, are preserved without mutating prototypes.
+Nullable fields must
+be present; unknown page and session fields are rejected, while metadata remains an open
+record and is preserved. Contract-defined optional fields, including `releaseIdentity` when
+returned, are retained. `iterateSessions` uses the same validation and follows cursors unchanged.
+
+Opt in to closed-session speech measurements with `listSessions({ speechDiagnostics: true })`
+or `iterateSessions({ speechDiagnostics: true })`. Only `true` sends
+`X-RTA-Speech-Diagnostics: 1` on every page; false or omission sends no header. This is not a
+query parameter or call metadata. `session.speechDiagnostics` is either `available` with
+whole-session dialogue `latency_ms` statistics (`count`, `p50`, `p90`, `max`) per measured leg
+and log coverage (`first_at`, `last_at`, `lines`), or `unavailable` with an explicit reason.
+Coverage timestamps can be null. Missing legs stay absent; these are not pooled turn
+percentiles, a query-window slice, or browser-audible latency. No raw logs or warnings are
+returned. Older servers may omit the field even after opt-in; absence does not mean zero or
+healthy. Opt-in pages are capped by the API at 50 sessions, with a 65,536-byte summary limit,
+a 5,000 ms total page deadline and concurrency 4. The SDK forwards your requested limit and
+cursor rather than reimplementing those server limits.
+
 Recording defaults to off. `"participants"` keeps one continuous user file and one character file, each with only its own voice and permitted video. Camera toggles do not split the user file. `"tracks"` stores separate published audio/video tracks and replacement-camera segments; list them by session after capture. Its initial grant omits recording fields for compatibility with older clients. Your server can choose `"audio"`, `"video"`, `"audio_video"`, `"participants"`, or `"tracks"`
 after obtaining consent. Keep `recordingId` and `sessionId` for your admin views; fetch temporary
-playback access when needed. File retention (`retainedUntil`, normally 30 days) is independent
+playback access when needed. File retention (`retainedUntil`, the platform default is 36,500 days) is independent
 of URL expiry (`expiresAt`, up to one hour). Join transcripts and your script revisions by
-session ID. See [recording details](./libs/sdk-server/README.md#optional-call-recordings).
+session ID. Retention follows the existing platform policy; the SDK does not set or extend it.
+See [recording details](./libs/sdk-server/README.md#optional-call-recordings).
 
 Connection history is separately opt-in: set `connectionHistory: true` in the server policy. When
 RTA grants it, the browser SDK batches existing LiveKit connection snapshots automatically (no

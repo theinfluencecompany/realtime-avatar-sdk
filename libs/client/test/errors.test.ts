@@ -152,7 +152,7 @@ test("an uncopied code prefers the server's own sentence", () => {
  */
 test("status mismatch and unknown codes do not become refusals", () => {
   const mismatched = normalizeRealtimeAvatarError({ status: 429, code: "avatar_not_ready", message: "" });
-  assert.equal(mismatched.code, "rate_limited");
+  assert.equal(mismatched.code, "capacity_full");
 
   const unknown = normalizeRealtimeAvatarError({ status: 418, code: "totally_made_up", message: "" });
   assert.equal(unknown.code, "request_failed");

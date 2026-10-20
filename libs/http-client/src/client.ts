@@ -11,10 +11,11 @@ import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
 import { clipLibraryResponseSchema, clipLibraryUpdateSchema } from "./generated/clip-library-schema.ts";
 import { recordingModeSchema, recordingArtifactSchema, listRecordingsQuerySchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
 import type { ConnectionHistoryResponse } from "./generated/connection-history.ts";
-import type { components } from "./generated/openapi.ts";
+import type { components, operations } from "./generated/openapi.ts";
 import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 import { transcriptionToWire } from "./generated/transcription.ts";
 import { contentPolicySchema } from "./generated/content-policy.ts";
+import { listUsageSessionsResponseSchema, toSessionsPage } from "./generated/usage-sessions.ts";
 import type {
   Asset,
   ListSessionsOptions,
@@ -43,7 +44,7 @@ import type {
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.27.4";
+export const SDK_VERSION = "0.27.5";
 
 
 
@@ -582,6 +583,10 @@ export class RealtimeAvatar {
    *
    * Tagging is optional and nothing degrades without it — you just cannot attribute a
    * session to one of your users. Requires a key with the `usage:read` scope.
+   *
+   * `speechDiagnostics: true` opts into whole-session dialogue per-leg measurements, not
+   * browser-audible latency. Unavailable evidence is explicit; old-server absence stays absent.
+   * The API owns the opt-in page cap and budgets; the SDK forwards the requested limit.
    */
   async listSessions(options: ListSessionsOptions = {}): Promise<UsageSessionPage> {
     const query = new URLSearchParams();
@@ -591,8 +596,22 @@ export class RealtimeAvatar {
     if (options.cursor) query.set("cursor", options.cursor);
     if (options.endUserId) query.set("endUserId", options.endUserId);
     const suffix = query.size > 0 ? `?${query}` : "";
-    const page = await this.#json(await this.#request("GET", `/usage/sessions${suffix}`));
-    return toUsageSessionPage(page);
+    const response = await this.#request("GET", `/usage/sessions${suffix}`, {
+      headers: options.speechDiagnostics === true ? { "X-RTA-Speech-Diagnostics": "1" } : undefined,
+    });
+    const mismatch = "Usage sessions response did not match the SDK contract";
+    let raw: unknown;
+    try {
+      raw = await this.#json(response);
+    } catch (error) {
+      if (error instanceof SyntaxError) throw new RealtimeAvatarError(mismatch);
+      throw error;
+    }
+    const page = listUsageSessionsResponseSchema.safeParse(raw);
+    if (!page.success) {
+      throw new RealtimeAvatarError(mismatch);
+    }
+    return toSessionsPage(page.data);
   }
 
   /**
@@ -649,12 +668,19 @@ export class RealtimeAvatar {
   async #request(
     method: string,
     path: string,
-    init: { json?: unknown; body?: BodyInit } = {},
+    init: {
+      json?: unknown;
+      body?: BodyInit;
+      headers?: Pick<NonNullable<operations["listUsageSessions"]["parameters"]["header"]>, "X-RTA-Speech-Diagnostics">;
+    } = {},
   ): Promise<Response> {
     const headers: Record<string, string> = {
       authorization: `Bearer ${this.#apiKey}`,
       "user-agent": this.#userAgent,
     };
+    if (init.headers?.["X-RTA-Speech-Diagnostics"] === "1") {
+      headers["X-RTA-Speech-Diagnostics"] = "1";
+    }
     let body = init.body;
     if (init.json !== undefined) {
       headers["content-type"] = "application/json";
@@ -706,38 +732,6 @@ export class RealtimeAvatar {
     }
     throw new RealtimeAvatarHttpError(response.status, code, text, response.headers.get("x-request-id") ?? undefined);
   }
-}
-
-/** The wire is camelCase here; read defensively so a missing field cannot become "undefined". */
-function toUsageSessionPage(raw: unknown): UsageSessionPage {
-  const body = isRecord(raw) ? raw : {};
-  const rows = Array.isArray(body.data) ? body.data : [];
-  return {
-    sessions: rows.filter(isRecord).map((row) => ({
-      sessionId: String(row.sessionId ?? ""),
-      avatarId: typeof row.avatarId === "string" ? row.avatarId : null,
-      // Added to the contract alongside avatarId so a usage row is readable without a
-      // second lookup. Defensive like its siblings: an older server that omits it
-      // yields null rather than the string "undefined".
-      avatarName: typeof row.avatarName === "string" ? row.avatarName : null,
-      status: usageStatus(row.status),
-      startedAt: typeof row.startedAt === "string" ? row.startedAt : null,
-      endedAt: typeof row.endedAt === "string" ? row.endedAt : null,
-      activeSeconds: typeof row.activeSeconds === "number" ? row.activeSeconds : null,
-      billedCreditMicros: typeof row.billedCreditMicros === "number" ? row.billedCreditMicros : null,
-      metadata: isRecord(row.metadata) ? row.metadata : {},
-      createdAt: String(row.createdAt ?? ""),
-    })),
-    nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : null,
-    from: String(body.from ?? ""),
-    to: String(body.to ?? ""),
-  };
-}
-
-const USAGE_STATUSES = ["reserved", "started", "released", "failed"] as const;
-
-function usageStatus(value: unknown): UsageSession["status"] {
-  return USAGE_STATUSES.find((s) => s === value) ?? "failed";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

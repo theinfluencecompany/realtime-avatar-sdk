@@ -29,7 +29,7 @@ const source = await readFile(FILE, "utf8");
 const lines = source.split("\n");
 
 /** Indexes into the generated contract — the compiler enforces these, so no note is required. */
-const DERIVED = /\b(Wire|Grant|UsageSessionsResponse)\[/;
+const DERIVED = /\b(Wire|Grant|UsageSessionPage|operations)\[|ReturnType<typeof toSessionsPage>/;
 
 const undocumented = [];
 const counts = { derived: 0, declared: 0 };

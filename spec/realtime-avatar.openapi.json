@@ -394,6 +394,7 @@
                           "speech-1.6",
                           "s1",
                           "s2-pro",
+                          "drama-3",
                           "speech-1.5",
                           "s1-mini"
                         ]
@@ -1812,6 +1813,83 @@
               "endpoint",
               "token",
               "expiresAt"
+            ],
+            "additionalProperties": false
+          },
+          "mint_timing": {
+            "readOnly": true,
+            "description": "Returned only for X-RTA-Mint-Timing: 1 (the platform web tier asks for it and keeps it server-side). Omitted by default so a grant never carries a key an older reader does not know.",
+            "type": "object",
+            "properties": {
+              "total_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "stages_ms": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "enum": [
+                    "parse",
+                    "reserve",
+                    "admission",
+                    "room",
+                    "dispatch",
+                    "recording",
+                    "token",
+                    "late_provisioning"
+                  ]
+                },
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "ready",
+                  "queued",
+                  "refused",
+                  "failed"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "avatar",
+                  "voice"
+                ]
+              },
+              "capacity_pool": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "colo": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16
+              },
+              "failed_stage": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              }
+            },
+            "required": [
+              "total_ms",
+              "stages_ms",
+              "outcome",
+              "mode",
+              "capacity_pool"
             ],
             "additionalProperties": false
           }
@@ -3648,6 +3726,147 @@
                   "type": "string",
                   "minLength": 8,
                   "maxLength": 80
+                },
+                "speechDiagnostics": {
+                  "readOnly": true,
+                  "description": "Only returned for X-RTA-Speech-Diagnostics: 1. Closed dialogue record, whole-session cohort, not sliced to query dates or pooled across turns. Missing legs remain absent. Opt-in pages cap at 50; 65536 bytes per summary, 5000 ms total page deadline, concurrency 4. Unavailable evidence is explicit, never zero.",
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "latency_ms": {
+                          "type": "object",
+                          "propertyNames": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "eou",
+                                  "llm",
+                                  "tts",
+                                  "decision",
+                                  "hold",
+                                  "e2e"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "const": "interrupt_stop"
+                              }
+                            ]
+                          },
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "count": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "max": {
+                                "type": "number"
+                              },
+                              "p50": {
+                                "type": "number"
+                              },
+                              "p90": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "count",
+                              "max",
+                              "p50",
+                              "p90"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "status": {
+                          "type": "string",
+                          "const": "available"
+                        },
+                        "sourceRole": {
+                          "type": "string",
+                          "const": "dialogue"
+                        },
+                        "coverage": {
+                          "type": "object",
+                          "properties": {
+                            "first_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d))|(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?)$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "last_at": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d))|(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?)$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "lines": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "first_at",
+                            "last_at",
+                            "lines"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "latency_ms",
+                        "status",
+                        "sourceRole",
+                        "coverage"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "const": "unavailable"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "not_closed",
+                            "unconfigured",
+                            "missing",
+                            "invalid",
+                            "oversized",
+                            "unscorable",
+                            "no_measured_latency",
+                            "timeout",
+                            "aborted",
+                            "storage_unavailable"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "reason"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 },
                 "releaseIdentity": {
                   "readOnly": true,
@@ -6077,6 +6296,27 @@
   "x-error-semantics": {
     "description": "What a failure `code` means to the caller. `statuses` is the set of HTTP statuses a code may legitimately accompany — a code arriving on any other status is a mismatch and must be answered by the status alone. `message` is authored product copy safe to show a user. `retryable` says whether the same request is worth sending again. Codes listed in `x-error-codes-uncopied` are recognised by the platform but have their copy written elsewhere, because the sentence names a number this table cannot know (a plan ceiling, an amount owed); treat them as known, and prefer the server's own `message`.",
     "codes": {
+      "capacity_full": {
+        "statuses": [
+          429
+        ],
+        "message": "All session seats are busy. Keep your queue ticket and retry shortly.",
+        "retryable": true
+      },
+      "capacity_no_workers": {
+        "statuses": [
+          429
+        ],
+        "message": "No session workers are available. Keep your queue ticket and retry shortly.",
+        "retryable": true
+      },
+      "capacity_draining": {
+        "statuses": [
+          429
+        ],
+        "message": "Session workers are restarting or draining. Keep your queue ticket and retry shortly.",
+        "retryable": true
+      },
       "bad_request": {
         "statuses": [
           400
@@ -6358,7 +6598,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6448,7 +6688,21 @@
             }
           },
           "429": {
-            "description": "Either the workspace session limit was reached (code \"concurrency_limit_reached\", top-level maxConcurrentSessions, liveSessions, activeSessions, connectingSessions, pendingSessions), or GPU capacity is full (the queue contract). Starting and connecting sessions count toward the workspace limit. End a session or wait for pending starts to clear before retrying; avoid parallel duplicate starts. This refusal is not a queue position. Retain requestId for support.",
+            "description": "Either the workspace session limit was reached (code \"concurrency_limit_reached\", top-level maxConcurrentSessions, liveSessions, activeSessions, connectingSessions, pendingSessions), or session capacity is unavailable (the queue contract). Queue responses classify full seats, no workers, or draining workers in x-rta-capacity-refusal; absent or unknown headers mean capacity_full. Starting and connecting sessions count toward the workspace limit. End a session or wait for pending starts to clear before retrying; avoid parallel duplicate starts. Plan refusals are not queue positions. Retain requestId for support.",
+            "headers": {
+              "x-rta-capacity-refusal": {
+                "description": "Queue refusal class. Optional for older deployments; missing or unknown means capacity_full. The strict queue body is unchanged.",
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "string",
+                  "enum": [
+                    "capacity_full",
+                    "capacity_no_workers",
+                    "capacity_draining"
+                  ]
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -6465,7 +6719,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6531,7 +6785,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6606,7 +6860,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6682,7 +6936,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6736,7 +6990,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6799,7 +7053,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6864,7 +7118,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6937,7 +7191,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6993,7 +7247,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7058,7 +7312,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7131,7 +7385,7 @@
             }
           },
           "403": {
-            "description": "The key lacks the scope for this operation, the tenant is not active, or the clip-library write is not yet enabled for the tenant — code \"clip_library_not_enabled\", a per-tenant rollout gate. Contact support to opt in; until then an avatar keeps the library its creation pipeline generated.",
+            "description": "The key lacks the scope for this operation, the tenant is not active, or clip-library editing has been disabled for the workspace — code \"clip_library_not_enabled\". Editing is enabled by default for active workspaces; an administrator may explicitly disable it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7141,7 +7395,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7163,7 +7417,7 @@
     "/v1/avatars/{avatarId}/clips/review": {
       "post": {
         "operationId": "reviewAvatarClip",
-        "description": "Accept an uploaded clip after human quality review. Requires avatars:write and the clip-library rollout. Revision and asset identity must match; active source swaps, unavailable assets and non-pose failures cannot be overridden. Preserves the original machine verdict and records the review before publishing the asset.\n\nRequires an API key with the `avatars:write` scope.",
+        "description": "Accept an uploaded clip after human quality review. Requires avatars:write and clip-library access, which is enabled by default for active workspaces. Revision and asset identity must match; active source swaps, unavailable assets and non-pose failures cannot be overridden. Preserves the original machine verdict and records the review before publishing the asset.\n\nRequires an API key with the `avatars:write` scope.",
         "parameters": [
           {
             "name": "avatarId",
@@ -7209,7 +7463,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7293,7 +7547,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7358,7 +7612,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7413,7 +7667,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7495,7 +7749,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7560,7 +7814,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7616,7 +7870,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7681,7 +7935,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7777,7 +8031,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7862,7 +8116,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7967,7 +8221,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8004,6 +8258,18 @@
             "description": "Send 1 to include optional session-bound releaseIdentity in this response. Without this opt-in the field is omitted for strict client compatibility. Capture and storage are independent of this header; missing evidence remains null. Older servers may ignore this header."
           },
           {
+            "name": "X-RTA-Speech-Diagnostics",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Send exactly 1 to include numeric closed dialogue speechDiagnostics. Otherwise omitted and no summary reads occur. Opt-in pages clamp to 50 rows with normal keyset pagination; each row has explicit availability. Whole-session cohorts, not query-time slices or pooled turn percentiles. Summary budget 65536 bytes, total page deadline 5000 ms, concurrency 4. Older servers may ignore this header."
+          },
+          {
             "name": "from",
             "in": "query",
             "required": false,
@@ -8030,7 +8296,7 @@
             "schema": {
               "type": "integer"
             },
-            "description": "Rows per page. Defaults to 50, clamped to 1–200."
+            "description": "Rows per page. Defaults to 50, clamped to 1–200; with X-RTA-Speech-Diagnostics: 1 clamped to 1–50. Read the actual returned rows and nextCursor."
           },
           {
             "name": "cursor",
@@ -8083,7 +8349,7 @@
             }
           },
           "default": {
-            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8113,7 +8379,7 @@
   },
   "x-recording-contract": {
     "source": "/recording.contract.ts",
-    "sha256": "02e18ab663879c38c620ba9ef911c6c3dd3c0ea554604abd4403d7b2185d0f9e"
+    "sha256": "f32b468bb70561d26ae376954242c50364100147eacb66a966398d5115d98016"
   },
   "tags": [
     {

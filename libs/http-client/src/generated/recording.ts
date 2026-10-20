@@ -15,7 +15,10 @@ export const recordingModeSchema = z
   .describe("Server-owned recording policy; omitted means off. Legacy audio includes user and avatar audio. participants saves one continuous audio/video file per participant, without mixing their voices. tracks saves each published participant audio/video track separately; list recordings by session after capture.");
 export type RecordingMode = z.infer<typeof recordingModeSchema>;
 export const DEFAULT_RECORDING_MODE: RecordingMode = "off";
-export const DEFAULT_RECORDING_RETENTION_DAYS = 30;
+// Recordings are not auto-deleted. The platform asks RTA to capture the call so the media survives
+// it, and nothing removes that media later. `retainedUntil` is a required, finite field on the
+// public artifact, so this 100-year horizon is how "no expiry" is expressed without a wire change.
+export const DEFAULT_RECORDING_RETENTION_DAYS = 36_500;
 export const DEFAULT_RECORDING_URL_TTL_SECONDS = 3600;
 export const RECORDING_STATUSES = ["pending", "recording", "processing", "ready", "failed", "expired"] as const;
 export const recordingArtifactStatusSchema = z.enum(RECORDING_STATUSES);

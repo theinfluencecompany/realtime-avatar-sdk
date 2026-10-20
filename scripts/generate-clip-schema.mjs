@@ -59,8 +59,8 @@ const recording = await readContract("x-recording-contract", "packages/realtime-
 
 const supported = new Set([
   "$schema", "type", "properties", "required", "additionalProperties",
-  "anyOf", "enum", "format", "pattern", "minLength", "maxLength", "minimum", "maximum",
-  "items", "minItems", "maxItems",
+  "anyOf", "oneOf", "enum", "format", "pattern", "minLength", "maxLength", "minimum", "maximum",
+  "items", "minItems", "maxItems", "const", "description", "readOnly", "default", "propertyNames",
 ]);
 const definitions = [];
 const behavior = JSON.stringify(spec.components.schemas.ListAvatarClipsResponse.properties.behavior);
@@ -68,6 +68,13 @@ if (behavior !== JSON.stringify(spec.components.schemas.PutAvatarClipsResponse.p
   throw new Error("Clip response behavior schemas disagree");
 }
 const names = new Map([[behavior, "clipBehaviorSchema"]]);
+
+function finiteRecordKeys(schema) {
+  return (schema.type === "string" && Array.isArray(schema.enum) && schema.enum.length > 0
+    && schema.enum.every(value => typeof value === "string"))
+    || (schema.type === "string" && typeof schema.const === "string")
+    || (Array.isArray(schema.anyOf) && schema.anyOf.length > 0 && schema.anyOf.every(finiteRecordKeys));
+}
 
 function expression(schema) {
   const key = JSON.stringify(schema);
@@ -104,15 +111,36 @@ function expression(schema) {
     return expression(schema.type.length === 1 ? spelled : { anyOf: [spelled, { type: "null" }] });
   }
   let result;
-  if (schema.anyOf) {
-    result = `z.union([${schema.anyOf.map(expression).join(", ")}])`;
+  if (Object.keys(schema).length === 0) {
+    result = "z.unknown()";
+  } else if (schema.const !== undefined) {
+    result = `z.literal(${JSON.stringify(schema.const)})`;
+  } else if (schema.anyOf || schema.oneOf) {
+    result = `z.union([${(schema.anyOf ?? schema.oneOf).map(expression).join(", ")}])`;
   } else if (schema.enum) {
     if (schema.type !== "string") throw new Error("Only string enums are supported");
     result = `z.enum(${JSON.stringify(schema.enum)})`;
   } else {
     switch (schema.type) {
       case "object": {
-        if (!schema.properties || schema.additionalProperties !== false) throw new Error("Expected a closed clip response object");
+        const finiteKeys = schema.propertyNames && finiteRecordKeys(schema.propertyNames);
+        if (schema.propertyNames && !finiteKeys
+          && JSON.stringify(schema.propertyNames) !== JSON.stringify({ type: "string" })) {
+          throw new Error("Unsupported response record key schema");
+        }
+        if (!schema.properties) {
+          if (!schema.additionalProperties || typeof schema.additionalProperties !== "object") {
+            throw new Error("Expected an explicit response record value schema");
+          }
+          result = finiteKeys
+            ? `z.partialRecord(${expression(schema.propertyNames)}, ${expression(schema.additionalProperties)})`
+            : Object.keys(schema.additionalProperties).length === 0
+              ? `z.custom<Record<string, unknown>>((value): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value))`
+              : `z.record(z.string(), ${expression(schema.additionalProperties)})`;
+          break;
+        }
+        if (finiteKeys) throw new Error("Finite record keys cannot accompany explicit properties");
+        if (schema.additionalProperties !== false) throw new Error("Expected a closed response object");
         const required = new Set(schema.required ?? []);
         result = `z.strictObject({\n${Object.entries(schema.properties).map(([field, value]) =>
           `  ${JSON.stringify(field)}: ${expression(value)}${required.has(field) ? "" : ".optional()"},`
@@ -125,8 +153,9 @@ function expression(schema) {
         if (schema.maxItems !== undefined) result += `.max(${schema.maxItems})`;
         break;
       case "string":
-        if (schema.format && schema.format !== "uri") throw new Error(`Unsupported format: ${schema.format}`);
-        result = schema.format === "uri" ? "z.url()" : "z.string()";
+        if (schema.format && !["uri", "date-time"].includes(schema.format)) throw new Error(`Unsupported format: ${schema.format}`);
+        result = schema.format === "uri" ? "z.url()"
+          : schema.format === "date-time" ? "z.iso.datetime({ offset: true })" : "z.string()";
         if (schema.pattern) result += `.regex(new RegExp(${JSON.stringify(schema.pattern)}))`;
         if (schema.minLength !== undefined) result += `.min(${schema.minLength})`;
         if (schema.maxLength !== undefined) result += `.max(${schema.maxLength})`;
@@ -227,7 +256,32 @@ ${definitions.join("\n\n")}
 
 export const contentPolicySchema = ${contentPolicyRoot} satisfies z.ZodType<NonNullable<components["schemas"]["LiveKitSessionRequest"]["content_policy"]>>;
 `;
+definitions.length = 0;
+names.clear();
+const usageSessionsRoot = expression(spec.components.schemas.ListUsageSessionsResponse);
+const usageSessionsTarget = new URL("../libs/http-client/src/generated/usage-sessions.ts", import.meta.url);
+const usageSessionsOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
+// Do not edit; the platform owns the session response contract.
+import { z } from "zod";
+import type { components } from "./openapi.ts";
+
+type Wire = components["schemas"];
+
+${definitions.join("\n\n")}
+
+export const listUsageSessionsResponseSchema = ${usageSessionsRoot} satisfies z.ZodType<Wire["ListUsageSessionsResponse"], Wire["ListUsageSessionsResponse"]>;
+type AssertTrue<Value extends true> = Value;
+type _ListUsageSessionsAcceptsWire = AssertTrue<
+  [Wire["ListUsageSessionsResponse"]] extends [z.input<typeof listUsageSessionsResponseSchema>] ? true : false
+>;
+
+export function toSessionsPage(page: z.infer<typeof listUsageSessionsResponseSchema>) {
+  const { data, ...pagination } = page;
+  return { ...pagination, sessions: data };
+}
+`;
 if (check) {
+  if (await readFile(usageSessionsTarget, "utf8") !== usageSessionsOutput) throw new Error("Usage sessions schema is stale; run npm run spec:types");
   if (await readFile(contentPolicyTarget, "utf8") !== contentPolicyOutput) throw new Error("Content policy schema is stale; run npm run spec:types");
   if (await readFile(target, "utf8") !== output) throw new Error("Clip schemas are stale; run npm run spec:types");
   if (await readFile(transcriptionTarget, "utf8") !== transcriptionOutput) throw new Error("Transcription schemas are stale; run npm run spec:types");
@@ -241,5 +295,6 @@ if (check) {
   await writeFile(target, output);
   await writeFile(transcriptionTarget, transcriptionOutput);
   await writeFile(contentPolicyTarget, contentPolicyOutput);
+  await writeFile(usageSessionsTarget, usageSessionsOutput);
 }
 console.log(`Clip contract SHA-256 ${hash}; response schemas ${check ? "verified" : "generated"}`);
