@@ -89,6 +89,7 @@ function controlledRoom(t: TestContext) {
 test("native dependency contract pins one compatible context and transport group", async () => {
   const manifest = z.object({
     devDependencies: z.record(z.string(), z.string()),
+    dependencies: z.record(z.string(), z.string()).optional(),
     peerDependencies: z.record(z.string(), z.string()).optional(),
   });
   for (const workspace of ["client", "sdk-server"]) {
@@ -106,6 +107,10 @@ test("native dependency contract pins one compatible context and transport group
       assert.equal(pkg.peerDependencies["@livekit/react-native"], `~${pkg.devDependencies["@livekit/react-native"]}`);
       assert.equal(pkg.peerDependencies["@livekit/react-native-webrtc"],
         tested.peerDependencies?.["@livekit/react-native-webrtc"]);
+      // The tested release DEPENDS on components-react; a looser peer lets an app keep an older
+      // one, and npm then nests a second copy under @livekit/react-native: two room contexts.
+      assert.equal(pkg.peerDependencies["@livekit/components-react"],
+        tested.dependencies?.["@livekit/components-react"]);
       assert.equal(pkg.peerDependencies["livekit-client"], "^2.22.3");
     }
   }

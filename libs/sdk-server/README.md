@@ -31,15 +31,22 @@ The next release requires **LiveKit React Native 3** for `/react-native`; it doe
 compatibility with LiveKit React Native 2. Install the tested group together:
 
 ```bash
-npm install --save-exact @livekit/react-native@3.0.0 @livekit/react-native-webrtc@144.2.0 livekit-client@2.22.3 @livekit/components-react@2.9.21
+npm install --save-exact @livekit/react-native@3.0.0 @livekit/react-native-webrtc@144.2.0 livekit-client@2.22.3 @livekit/components-react@2.9.21 react-dom@<your react version>
 ```
+
+`react-dom` is pinned to the app's own React version (for example `react-dom@19.2.7` with React
+19.2.7) because components-react requires it as a peer, and an unpinned one resolves to the newest
+release, which then demands a newer React and fails with `ERESOLVE`. Install this exact group with
+pnpm or bun too: they do not enforce peer ranges, so a bare `add @livekit/react-native` resolves
+3.1.0 with WebRTC 150 (pnpm only warns, bun says nothing), a pair this SDK does not support.
 
 `@livekit/components-react@2.9.21` retains `@livekit/components-core@0.12.13`; both satisfy the
 native 3.0.0 peer contracts. Keep a single resolved components-react instance: the native room
 provides its context and the SDK's shared hooks consume that same context. SDK checks use React
 19.2.7 and React Native 0.81.5. The web binding also uses client 2.22.3; no components upgrade or
-stream-handling patch is required for this tuple. Peer ranges allow compatible updates, but only
-this exact tuple has been checked here. Client 2.22.3 introduces `machina@7.0.1`, whose Node
+stream-handling patch is required for this tuple. The `@livekit/react-native` peer stops at
+`~3.0.0` because 3.1.0 moved to WebRTC 150; the other peer ranges allow compatible updates, but
+only this exact tuple has been checked here. Client 2.22.3 introduces `machina@7.0.1`, whose Node
 engine is `>=22.22`; use Node 22.22 or newer for client/native tooling (verified on 22.23.1).
 This does not change the dependency-free server entry's Node floor. Node 20 tooling is not
 verified for the new LiveKit group.

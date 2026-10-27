@@ -13,6 +13,13 @@ A patch release: a plain `npm install realtime-avatar` resolves again.
   with `--legacy-peer-deps`. The range is now `~3.0.0`, the tested pair
   (`@livekit/react-native` 3.0.0 with `@livekit/react-native-webrtc` 144.2.0); the test that
   pins the peers now derives both from that tested release. Present since at least 0.27.5.
+- **A second copy of components-react can no longer install silently.** The
+  `@livekit/components-react` peer was `^2.9.0`, but `@livekit/react-native` 3.0.0 depends on
+  `^2.9.17`; an app on 2.9.0–2.9.16 installed cleanly and got a second copy nested under
+  `@livekit/react-native`, splitting the room context the native room and the SDK's hooks must
+  share. The peer is now `^2.9.17`, derived in the same test from what the tested release depends on.
+- The React Native install line pins `react-dom` to the app's React version, and the README says
+  that pnpm and bun do not enforce peer ranges, so native apps install the tested group exactly.
 
 ## 0.28.0
 
