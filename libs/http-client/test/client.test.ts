@@ -435,9 +435,11 @@ test("a voiceWebhook the contract refuses never leaves the server", async () => 
   for (const voiceWebhook of [
     { url: "https://voice.example.test/speak", secret: "short" },
     { url: "not a url", secret: "voice-secret-0123456789" },
+    { url: "http://voice.example.test/speak", secret: "voice-secret-0123456789" },
+    { url: "javascript:alert(1)", secret: "voice-secret-0123456789" },
     { url: "https://voice.example.test/speak", secret: "voice-secret-0123456789", timeoutMs: 100 },
   ]) {
-    await assert.rejects(() => rta.startCall({ avatarId: "ava_1", voiceWebhook }));
+    await assert.rejects(() => rta.startCall({ avatarId: "ava_1", voiceWebhook }), Error, voiceWebhook.url);
   }
   assert.equal(seen.url, undefined, "an invalid voice webhook was sent to the platform");
 });

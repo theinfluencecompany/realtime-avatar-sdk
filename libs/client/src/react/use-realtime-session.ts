@@ -114,10 +114,12 @@ export type ClipResult = { requestId: string; accepted: boolean; reason: string 
 export type { VoiceErrorCode };
 
 /**
- * Your voice webhook failed, so a sentence was not spoken (a call minted with `voiceWebhook`).
+ * Your voice webhook failed (a call minted with `voiceWebhook`), so the rest of that reply is not
+ * spoken: the sentences after the failed one are not POSTed, and the next reply tries again.
  * `message` is one developer-facing sentence, never your URL, secret or response body. `status` is
- * the HTTP status when your endpoint answered. `fatal` means the call is ending: a 401 or 403, or
- * a URL the worker refuses to call. `onEnded` follows with reason `failed`.
+ * the HTTP status when your endpoint answered. `fatal` means the call is ending: a 401 or 403, a
+ * URL the worker refuses to call, or repeated failures, which end it with the last failure's code,
+ * whatever that code is. `onEnded` follows with reason `failed`.
  */
 export type VoiceError = {
   code: VoiceErrorCode;
@@ -263,7 +265,11 @@ export type RealtimeSessionApi = SessionLifecycleApi & {
   end: (reason?: EndReason) => void;
   /** The avatar's live nonverbal behavior, or null pre-choreo (see {@link BehaviorSnapshot}). */
   behavior: BehaviorSnapshot | null;
-  /** The last {@link VoiceError} of this call, or null. Cleared by `reset()` and by redialling an ended call. */
+  /**
+   * The last {@link VoiceError} of this call, or null. It outlives the call it ended; the next call
+   * starts at null, whether it starts by deactivating and reactivating, a new avatar or mode, a
+   * redial, or `reset()`.
+   */
   voiceError: VoiceError | null;
   /** Request a declared semantic action; acceptance schedules it and does not prove playback. */
   performAction: (actionId: string, opts?: { timeoutMs?: number }) => Promise<ClipResult>;
@@ -715,7 +721,20 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     if (active) return;
     lastLabeledEndReasonRef.current = null;
     setMicrophoneMuted(false);
+    setVoiceError(null);
   }, [active]);
+
+  // A voice error describes the call it arrived on, so a fresh mint (an avatar or mode switch, a
+  // redial) or a different grant starts clean. A grant going away is not a new call: the call that
+  // failed keeps its error after it ends, which is when an app shows it.
+  const grantSessionId = lifecycle.grant?.session_id ?? null;
+  const voiceErrorGrantRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (phaseKind === "requesting") setVoiceError(null);
+    if (grantSessionId === null) return;
+    if (voiceErrorGrantRef.current !== null && voiceErrorGrantRef.current !== grantSessionId) setVoiceError(null);
+    voiceErrorGrantRef.current = grantSessionId;
+  }, [phaseKind, grantSessionId]);
 
   // A redial is a new call: the label the previous one ended with must not become this one's.
   const innerReconnect = lifecycle.reconnect;

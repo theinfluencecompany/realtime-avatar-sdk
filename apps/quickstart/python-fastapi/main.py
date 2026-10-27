@@ -200,7 +200,8 @@ async def voice(request: Request):
     )
     if upstream.status_code != 200:
         await upstream.aclose()
-        # Any non-2xx skips this one sentence (a 5xx is retried once). Never 401/403 here.
+        # A 5xx is retried once as a new POST; if that fails too, the rest of this reply goes
+        # unspoken and the next reply tries again. Never 401/403 here: that ends the call.
         raise HTTPException(502)
 
     async def audio():

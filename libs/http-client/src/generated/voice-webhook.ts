@@ -5,7 +5,7 @@ import type { components } from "./openapi.ts";
 
 type Wire = components["schemas"];
 
-const schema0 = z.url().max(500);
+const schema0 = z.url().regex(new RegExp("^https:\\/\\/")).max(500);
 
 const schema1 = z.string().min(16).max(200);
 

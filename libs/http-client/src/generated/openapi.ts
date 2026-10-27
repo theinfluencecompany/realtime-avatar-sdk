@@ -489,7 +489,7 @@ export interface webhooks {
         put?: never;
         /**
          * Return speech audio for one sentence
-         * @description Sent only for a call minted with voice_webhook, once per sentence the character is about to say, to voice_webhook.url. Verify HMAC-SHA256 with voice_webhook.secret over the timestamp, a literal dot, and the raw request body before parsing; reject stale timestamps. Answer 200 with the audio streamed as soon as you have it: the first byte is what the caller waits for, and it must arrive within voice_webhook.timeout_ms. audio/pcm (aliases audio/l16, audio/raw) is raw signed 16-bit little-endian mono at output.sample_rate; a rate= content-type parameter overrides the rate. Redirects are never followed. A 401 or 403 ends the call. When the caller interrupts, the worker closes the connection mid-body; that is normal. Failures reach the client as a voice_error lifecycle frame whose code is a VoiceWebhookErrorCode.
+         * @description Sent only for a call minted with voice_webhook, once per sentence the character is about to say, to voice_webhook.url. Verify HMAC-SHA256 with voice_webhook.secret over the timestamp, a literal dot, and the raw request body before parsing; reject stale timestamps. Answer 200 with the audio streamed as soon as you have it: the first byte is what the caller waits for. voice_webhook.timeout_ms bounds the first audio byte of each attempt and every later gap between chunks. audio/pcm (alias audio/raw) is raw signed 16-bit little-endian mono at output.sample_rate; a rate= content-type parameter overrides the rate. A 2xx with no body (a 204, Content-Length: 0, or an empty first chunk) is voice_webhook_empty_audio whatever its content type. Redirects are never followed. A 401 or 403 ends the call. When the caller interrupts, the worker closes the connection mid-body; that is normal. One retry, only before any audio has arrived, follows voice_webhook_timeout, voice_webhook_unreachable, and HTTP 408, 429 and 5xx; the retry is a new POST with a new request_id. Any other failure, or a failed retry, drops the rest of that reply: its later sentences are not POSTed, and the next reply tries again. Repeated unrecoverable failures close the call: the client then gets a fatal voice_error with the last failure's code, followed by ended with reason failed. Failures reach the client as a voice_error lifecycle frame whose code is a VoiceWebhookErrorCode.
          */
         post: operations["synthesizeVoice"];
         delete?: never;
@@ -687,7 +687,7 @@ export interface components {
             voice_webhook?: {
                 /**
                  * Format: uri
-                 * @description https endpoint on your server that returns speech audio for one sentence. The worker also refuses a host that resolves to a non-public address and never follows redirects.
+                 * @description https:// endpoint on your server that returns speech audio for one sentence. The worker also refuses a host that resolves to a non-public address and never follows redirects.
                  */
                 url: string;
                 /** @description HMAC-SHA256 key for x-rta-signature, the same scheme as transcript_webhook. Never placed in room or participant metadata. */
@@ -701,7 +701,7 @@ export interface components {
                  * @enum {number}
                  */
                 sample_rate?: 8000 | 16000 | 22050 | 24000 | 44100 | 48000;
-                /** @description Deadline for the first audio byte of each reply, in milliseconds. Default 5000. */
+                /** @description In milliseconds, default 5000. Bounds the first audio byte of each attempt and every later gap between chunks; past it the reply fails with voice_webhook_timeout. */
                 timeout_ms?: number;
             };
             /** @description DEPRECATED, no-op. Accepted and ignored. The faster hesitation ceiling this requested is now the default for every session, so sending it changes nothing. Safe to stop sending; the field is retained only so existing callers do not break. */
@@ -3491,6 +3491,13 @@ export interface operations {
                     "audio/ogg": string;
                 };
             };
+            /** @description No audio: voice_webhook_empty_audio, as is any 2xx with no body. The rest of that reply is dropped. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Signature rejected. Ends the call with voice_webhook_unauthorized. */
             401: {
                 headers: {
@@ -3505,7 +3512,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Any other status: the sentence is not spoken (voice_webhook_http_error); a 5xx or 429 is retried once. */
+            /** @description Any other status, a 3xx included, is voice_webhook_http_error. Statuses 408, 429 and 5xx are retried once, as a new POST with a new request_id; any other status, or a failed retry, drops the rest of that reply. */
             default: {
                 headers: {
                     [name: string]: unknown;

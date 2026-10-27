@@ -628,18 +628,24 @@ return new Response(await myTts(text, voice_id), { headers: { "content-type": "a
 - **Verify over the RAW bytes**, exactly as for transcripts (rule 12). `verifyVoiceWebhook`
   returns the typed `VoiceWebhookRequest` or throws `RealtimeAvatarWebhookError` with a `code`:
   `missing_signature`, `bad_signature`, `stale_timestamp` or `invalid_body`.
-- **Stream the audio as soon as you have it.** The first byte must arrive within `timeoutMs`
-  (default 5000). Reply `audio/pcm`: raw signed 16-bit little-endian mono at `output.sample_rate`
-  (`sampleRate` on the mint, default 24000), or say the rate with `audio/pcm;rate=…`. OpenAI's
-  `response_format: "pcm"` is exactly 24 kHz `audio/pcm`. When the user interrupts, the worker
-  closes the connection mid-body; that is normal.
+- **Stream the audio as soon as you have it.** `timeoutMs` (default 5000) bounds the first audio
+  byte of each attempt and every later gap between chunks. Reply `audio/pcm` (alias `audio/raw`):
+  raw signed 16-bit little-endian mono at `output.sample_rate` (`sampleRate` on the mint, default
+  24000), or say the rate with `audio/pcm;rate=…`. No other raw type is accepted. OpenAI's
+  `response_format: "pcm"` is exactly 24 kHz `audio/pcm`. A 2xx with no body (a `204`,
+  `Content-Length: 0`, or an empty first chunk) is `voice_webhook_empty_audio`. When the user
+  interrupts, the worker closes the connection mid-body; that is normal.
 - **Your status codes steer the call.** A `401` or `403` ends it (`voice_webhook_unauthorized`),
-  so answer one only when the signature fails. Any other non-2xx skips that sentence, and a 5xx or
-  `429` is retried once.
+  so answer one only when the signature fails. A timeout, an unreachable endpoint, or a `408`,
+  `429` or 5xx is retried once, only before any audio has arrived, as a new POST with a new
+  `request_id`; a receiver cannot de-duplicate it. Any other failure, or a retry that fails too,
+  drops the rest of that reply: the sentences after it are not POSTed, and the next reply tries
+  again. Repeated failures make the call end with a fatal `voice_error` carrying the last
+  failure's code, whatever it is, so fatal is not only `401`, `403` or a refused URL.
 - **Failures reach the client.** `onVoiceError` on `useRealtimeSession` and `AvatarCall` fires with
-  `{ code, message, status?, fatal, requestId? }`, and `voiceError` holds the last one. `code` is a
-  `VoiceErrorCode`; a code newer than your SDK still arrives as a string. `fatal` means the call is
-  ending, and `onEnded` follows with `failed`.
+  `{ code, message, status?, fatal, requestId? }`, and `voiceError` holds the last one of this
+  call; the next call starts at null. `code` is a `VoiceErrorCode`; a code newer than your SDK
+  still arrives as a string. `fatal` means the call is ending, and `onEnded` follows with `failed`.
 
 The quickstarts carry a working endpoint: `apps/quickstart/nextjs-app-router/app/api/voice/route.ts`
 and `POST /api/voice` in `apps/quickstart/python-fastapi/main.py`.

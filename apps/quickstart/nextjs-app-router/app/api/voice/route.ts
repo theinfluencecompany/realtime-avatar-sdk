@@ -24,7 +24,8 @@ export async function POST(request: Request): Promise<Response> {
     // The worker closes the connection when the user interrupts her; stop synthesizing too.
     signal: request.signal,
   });
-  // Any non-2xx skips this one sentence (a 5xx is retried once). Never answer 401/403 for this.
+  // A 5xx is retried once as a new POST; if that fails too, the rest of this reply goes unspoken
+  // and the next reply tries again. Never answer 401/403 for this: that ends the call.
   if (!speech.ok || !speech.body) return new Response(null, { status: 502 });
 
   // Stream it through as it arrives: the first byte is what the caller waits for. `rate=` names

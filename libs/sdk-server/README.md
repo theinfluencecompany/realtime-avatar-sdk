@@ -223,16 +223,22 @@ return new Response(await myTts(text, voice_id), { headers: { "content-type": "a
 - `voiceWebhook` is `{ url, secret, voiceId?, language?, sampleRate?, timeoutMs? }`, derived from
   the platform's `voice_webhook`. It carries a secret, so only the server entries send it; it
   replaces `voice`, and a mint with both is refused with `422`. The URL must be https.
-- Reply `200` with audio, streamed as soon as you have it: the first byte must arrive within
-  `timeoutMs` (default 5000). `audio/pcm` is raw signed 16-bit little-endian mono at
-  `output.sample_rate` (default 24000), or name the rate with `audio/pcm;rate=…`. OpenAI's
-  `response_format: "pcm"` is exactly 24 kHz `audio/pcm`.
+- Reply `200` with audio, streamed as soon as you have it. `timeoutMs` (default 5000) bounds the
+  first audio byte of each attempt and every later gap between chunks. `audio/pcm` (alias
+  `audio/raw`) is raw signed 16-bit little-endian mono at `output.sample_rate` (default 24000), or
+  name the rate with `audio/pcm;rate=…`; no other raw type is accepted. OpenAI's
+  `response_format: "pcm"` is exactly 24 kHz `audio/pcm`. A 2xx with no body (a `204`,
+  `Content-Length: 0`, or an empty first chunk) is `voice_webhook_empty_audio`.
 - `verifyVoiceWebhook` throws `RealtimeAvatarWebhookError` with a `code` (`missing_signature`,
-  `bad_signature`, `stale_timestamp`, `invalid_body`). A `401` or `403` from your endpoint ends the
-  call; any other non-2xx skips that one sentence, and a 5xx or `429` is retried once.
+  `bad_signature`, `stale_timestamp`, `invalid_body`).
+- A `401` or `403` from your endpoint ends the call. A timeout, an unreachable endpoint, or a
+  `408`, `429` or 5xx is retried once, only before any audio has arrived, as a new POST with a new
+  `request_id`. Any other failure, or a retry that fails too, drops the rest of that reply: the
+  sentences after it are not POSTed, and the next reply tries again. Repeated failures end the
+  call with a fatal error carrying the last failure's code.
 - In the client, `onVoiceError` on `useRealtimeSession` and `AvatarCall` fires with
-  `{ code, message, status?, fatal, requestId? }`, and `voiceError` holds the last one. `fatal`
-  means the call is ending; `onEnded` follows with `failed`.
+  `{ code, message, status?, fatal, requestId? }`, and `voiceError` holds the last one of this
+  call. `fatal` means the call is ending; `onEnded` follows with `failed`.
 
 Working endpoints: `apps/quickstart/nextjs-app-router/app/api/voice/route.ts` and `POST /api/voice`
 in `apps/quickstart/python-fastapi/main.py`.

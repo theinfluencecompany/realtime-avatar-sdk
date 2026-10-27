@@ -11,7 +11,17 @@ A minor release: a call can speak in a voice your server provides.
   sends `voice_webhook`. Each sentence she is about to say is POSTed to `url`, signed with
   `secret`, and the audio you stream back is what she says, lip-synced, in both modes.
   - The option, its validation and its snake_case mapping are generated from the platform's
-    `voice_webhook` contract, and an invalid value is refused before any request is sent.
+    `voice_webhook` contract, and an invalid value, including a URL that is not https, is refused
+    before any request is sent.
+  - Reply with streamed `audio/pcm` (alias `audio/raw`): raw signed 16-bit little-endian mono.
+    No other raw type is accepted. `timeoutMs` bounds the first audio byte of each attempt and
+    every later gap between chunks. A 2xx with no body, including a `204`, is
+    `voice_webhook_empty_audio`.
+  - A `401` or `403` ends the call. A timeout, an unreachable endpoint, or a `408`, `429` or
+    5xx is retried once, only before any audio has arrived, as a new POST with a new
+    `request_id`. Any other failure, or a failed retry, drops the rest of that reply, and the
+    next reply tries again. Repeated failures end the call with a fatal error carrying the last
+    failure's code.
   - It replaces the built-in voice; the platform answers `422` to a mint that also sets `voice`.
   - `voice_webhook` is emitted only by the key-holding entries. The browser and native entries,
     and their declarations, do not name it.
@@ -25,7 +35,9 @@ A minor release: a call can speak in a voice your server provides.
   `useAvatarCall` (web), and on `useRealtimeSession` in `realtime-avatar/react-native`. They
   report the worker's new `voice_error` lifecycle frame as
   `{ code, message, status?, fatal, requestId? }`. A `code` newer than this SDK still surfaces as
-  a string. `fatal` means the call is ending, and `onEnded` follows with `failed`.
+  a string. `fatal` means the call is ending, and `onEnded` follows with `failed`. `voiceError`
+  belongs to one call: the next one starts at null, whether it starts by reactivating, a new
+  avatar or mode, a redial or `reset()`.
 - Types: `VoiceWebhook`, `VoiceWebhookRequest`, `VoiceWebhookErrorCode`,
   `WebhookVerificationErrorCode`, `VoiceError` and `VoiceErrorCode`.
 - The Next.js and FastAPI quickstarts include an endpoint that verifies the request and streams

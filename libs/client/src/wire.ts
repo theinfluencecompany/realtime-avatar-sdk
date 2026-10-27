@@ -478,7 +478,7 @@ const clipAckFrameSchema = z
 // must still surface, so `code` is widened to any non-empty string here and typed as VoiceErrorCode.
 const voiceErrorFrameSchema = contractVoiceErrorFrameSchema.extend({ code: z.string().min(1) });
 
-/** Why a sentence was not spoken in the caller's voice. Codes this SDK predates arrive as plain strings. */
+/** Why the caller's voice webhook failed. Codes this SDK predates arrive as plain strings. */
 // Derived from the generated schema rather than `components`: naming `components` here would put the
 // whole mint contract, credential fields included, into the client entries' declarations.
 export type VoiceErrorCode = z.infer<typeof contractVoiceErrorFrameSchema>["code"] | (string & {});

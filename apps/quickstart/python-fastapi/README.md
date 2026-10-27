@@ -79,7 +79,8 @@ signature over the raw bytes verified with the `_verify` in `main.py`.
   own voice is then replaced: each sentence she is about to say arrives at `/api/voice`, signed
   with the same scheme as the transcript, and the handler streams OpenAI's 24 kHz PCM straight
   back as `audio/pcm;rate=24000`. A `401` ends the call, so it answers one only when the
-  signature fails; an upstream failure is a `502`, which skips that sentence.
+  signature fails. An upstream failure is a `502`, which is retried once as a new POST; if that
+  fails too, the rest of that reply goes unspoken and the next reply tries again.
 - `save_tool_calls` — `tool_calls` rides the same payload and is absent when the session ran
   no tools. Store it beside the turns: a reply grounded in a lookup is only auditable if the
   lookup itself is in the history.

@@ -120,6 +120,103 @@ test("useRealtimeSession reports each voice error and keeps the last one", async
   await act(async () => renderer?.unmount());
 });
 
+// A voice error describes the call it arrived on. The next call starts clean however it starts;
+// the call that failed keeps its error after it ends, because that is when the app shows it.
+const FATAL = {
+  kind: "voice_error", code: "voice_webhook_unauthorized", message: "Your voice webhook answered 401.", status: 401, fatal: true,
+};
+
+function renderCall(holdMintFor?: string): {
+  current: () => RealtimeSessionApi | undefined;
+  render: (props: { avatarId: string; active: boolean }) => Promise<void>;
+  unmount: () => Promise<void>;
+} {
+  let session: RealtimeSessionApi | undefined;
+  let mints = 0;
+  const minting: AvatarSessionClient = {
+    ...client,
+    createLiveKitSessionOrBusy: async (request, options) => {
+      if (request.avatarId === holdMintFor) return new Promise<never>(() => {});
+      const minted = await client.createLiveKitSessionOrBusy(request, options);
+      mints += 1;
+      return minted.status === "ready" ? { ...minted, grant: { ...minted.grant, session_id: `sess_${mints}` } } : minted;
+    },
+  };
+  function Call({ avatarId, active }: { avatarId: string; active: boolean }): null {
+    session = sdk.useRealtimeSession({ client: minting, active, session: { avatarId, mode: "voice" } });
+    return null;
+  }
+  let renderer: ReturnType<typeof create> | undefined;
+  return {
+    current: () => session,
+    render: async (props) => {
+      await act(async () => {
+        if (renderer) renderer.update(createElement(Call, props));
+        else renderer = create(createElement(Call, props));
+      });
+    },
+    unmount: async () => { await act(async () => renderer?.unmount()); },
+  };
+}
+
+test("deactivating and reactivating starts a call without the previous call's voice error", async () => {
+  const call = renderCall();
+  await call.render({ avatarId: "ava_test", active: true });
+  await act(async () => call.current()?.onLifecycleData(FATAL));
+  assert.equal(call.current()?.voiceError?.fatal, true);
+
+  await call.render({ avatarId: "ava_test", active: false });
+  assert.equal(call.current()?.voiceError, null, "a deactivated hook still reports the old call's voice error");
+  await call.render({ avatarId: "ava_test", active: true });
+  assert.equal(call.current()?.voiceError, null, "the new call inherited the previous call's voice error");
+  await call.unmount();
+});
+
+test("switching the avatar starts a call without the previous call's voice error", async () => {
+  const call = renderCall();
+  await call.render({ avatarId: "ava_test", active: true });
+  await act(async () => call.current()?.onLifecycleData(FATAL));
+  assert.equal(call.current()?.voiceError?.fatal, true);
+
+  await call.render({ avatarId: "ava_other", active: true });
+  assert.equal(call.current()?.voiceError, null, "the new avatar's call inherited the previous call's voice error");
+  await call.unmount();
+});
+
+test("the next call's mint, still in flight, already shows no voice error", async () => {
+  const call = renderCall("ava_slow");
+  await call.render({ avatarId: "ava_test", active: true });
+  await act(async () => call.current()?.onLifecycleData(FATAL));
+
+  await call.render({ avatarId: "ava_slow", active: true });
+  assert.equal(call.current()?.phase.kind, "requesting");
+  assert.equal(call.current()?.voiceError, null, "the call being minted shows the previous call's voice error");
+  await call.unmount();
+});
+
+test("a redial that lands a new grant starts without the previous grant's voice error", async () => {
+  const call = renderCall();
+  await call.render({ avatarId: "ava_test", active: true });
+  assert.equal(call.current()?.grant?.session_id, "sess_1");
+  await act(async () => call.current()?.onLifecycleData(FRAME));
+  assert.equal(call.current()?.voiceError?.code, "voice_webhook_timeout");
+
+  await act(async () => call.current()?.reconnect());
+  assert.equal(call.current()?.grant?.session_id, "sess_2");
+  assert.equal(call.current()?.voiceError, null, "the new grant inherited the previous grant's voice error");
+  await call.unmount();
+});
+
+test("the call that failed keeps its voice error after it ends", async () => {
+  const call = renderCall();
+  await call.render({ avatarId: "ava_test", active: true });
+  await act(async () => call.current()?.onLifecycleData(FATAL));
+  await act(async () => call.current()?.end());
+  assert.equal(call.current()?.phase.kind, "ended");
+  assert.equal(call.current()?.voiceError?.code, "voice_webhook_unauthorized", "ending the call erased why it ended");
+  await call.unmount();
+});
+
 // ── AvatarCall: the real `useAvatarCall` against a controlled session ──
 const bundle = await build({
   stdin: {

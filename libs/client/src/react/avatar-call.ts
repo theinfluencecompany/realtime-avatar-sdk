@@ -137,8 +137,10 @@ export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectio
    */
   onMicrophoneProblem?: (problem: AvatarCallMicrophoneProblem) => void;
   /**
-   * Your voice webhook failed, so a sentence was not spoken. Fires once per error the worker reports
-   * (it rate-limits them). When `fatal`, the call is ending and `onEnded` follows with `failed`.
+   * Your voice webhook failed, so the rest of that reply is not spoken; the next reply tries again.
+   * Fires once per error the worker reports (it rate-limits them). When `fatal` (a 401 or 403, a
+   * refused URL, or repeated failures, carrying the last failure's code), the call is ending and
+   * `onEnded` follows with `failed`.
    */
   onVoiceError?: (error: VoiceError) => void;
   /**

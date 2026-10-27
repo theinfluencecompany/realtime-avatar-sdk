@@ -23,7 +23,8 @@ npm run dev
   `voiceWebhook`. Each sentence she is about to say arrives here signed; `verifyVoiceWebhook`
   checks the raw bytes and returns it typed, and the route streams OpenAI's 24 kHz PCM back as
   `audio/pcm`. A `401` from this route ends the call, so answer one only to a request that did
-  not verify.
+  not verify. An upstream failure is a `502`, which is retried once as a new POST; if that fails
+  too, the rest of that reply goes unspoken and the next reply tries again.
 
 ## Cost
 
