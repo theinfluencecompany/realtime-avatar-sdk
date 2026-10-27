@@ -112,6 +112,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/voices/{voiceId}/speech": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate speech with a voice
+         * @description Text in, an audio file out, in a voice this workspace can use: the shared presets, voices it designed, and voices it added from the public voice library. The voice is resolved strictly and never substituted. Billed per UTF-8 byte of the trimmed text: 1 credit per 90 bytes, rounded up, minimum 1 credit, taken from the workspace balance (plain English is one byte per character; accented letters and other scripts use 2 to 4). A request that fails is not charged. Nothing is stored: neither the text nor the audio. You may store and replay the audio in your own product. Retries are not replayed, because nothing is kept to replay: a retry after a timed-out success is billed again. Limited to 20 requests a minute and one request in progress at a time per workspace, and to 2,000 characters of text. Text in [square brackets] may be performed as a delivery cue rather than spoken.
+         *
+         *     Requires an API key with the `speech:write` scope.
+         */
+        post: operations["createSpeech"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/avatars": {
         parameters: {
             query?: never;
@@ -1231,7 +1253,7 @@ export interface components {
              *       "avatars:read"
              *     ]
              */
-            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write")[];
+            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write")[];
             spendLimitCreditMicros?: number | null;
             expiresAt?: string | null;
         };
@@ -1243,7 +1265,7 @@ export interface components {
             redactedKey: string;
             /** @default false */
             canReveal: boolean;
-            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write")[];
+            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write")[];
             /** @enum {string} */
             status: "active" | "revoked" | "expired";
             spendLimitCreditMicros: number | null;
@@ -1354,6 +1376,20 @@ export interface components {
                 write_ms?: number;
                 total_ms?: number;
             };
+        };
+        CreateSpeechRequest: {
+            /** @description What to say, at most 2,000 characters after trimming. Billed per UTF-8 byte: plain English is one byte per character, accented letters and other scripts use 2 to 4. Text in [square brackets] may be performed as a delivery cue rather than spoken. */
+            text: string;
+            /**
+             * @description mp3 (44.1 kHz, 128 kbps, mono) or wav.
+             * @default mp3
+             * @enum {string}
+             */
+            format: "mp3" | "wav";
+            /** @description Speaking rate, 0.5 to 2. Omit for the voice's natural pace. */
+            speed?: number;
+            /** @description BCP-47 tag such as en-AU. Shapes how numbers, dates and units are read; it does not change the voice. */
+            language?: string;
         };
         CreditBalance: {
             tenantId: string;
@@ -1857,9 +1893,9 @@ export interface components {
              * @description Present on `403 insufficient_scope` — the one scope this operation needed and the key did not carry. Repeated in the `WWW-Authenticate` challenge as `scope=`.
              * @enum {string}
              */
-            requiredScope?: "*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write";
+            requiredScope?: "*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write";
             /** @description Present alongside `requiredScope` — the scopes the presented key does carry. */
-            grantedScopes?: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write")[];
+            grantedScopes?: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write")[];
             /** @description Present on 402 — where to send the user to top up. */
             billingUrl?: string;
             /** @description On concurrency_limit_reached: the workspace's concurrent session limit. */
@@ -2150,6 +2186,102 @@ export interface operations {
             /** @description No scene with this id that this workspace prepared (code "scene_not_found") */
             404: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createSpeech: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voiceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSpeechRequest"];
+            };
+        };
+        responses: {
+            /** @description The audio file, in the requested format. */
+            200: {
+                headers: {
+                    /** @description Credits billed for this request. */
+                    "X-RTA-Billed-Credits"?: number;
+                    /** @description UTF-8 bytes of the trimmed text that were metered. */
+                    "X-RTA-Billed-Bytes"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/mpeg": string;
+                    "audio/wav": string;
+                };
+            };
+            /** @description Missing, malformed, revoked, or expired key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key lacks the scope for this operation, the tenant is not active, or the workspace is not a paying one (code "speech_requires_purchase"). Speech is open to workspaces on a paid plan or that have bought credits; buying a credit pack unlocks it. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No voice with this id is available to this workspace (code "voice_not_found"). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The voice is still being prepared (code "voice_not_ready"). Retry shortly. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A request field or the voice id prefix is invalid; the voice cannot be used to generate speech (code "voice_unavailable"; choose another voice); the voice provider refused this request (code "speech_rejected"; check the text, format, speed and language); or the audio for this text is longer than one response can carry (code "speech_too_long"; split the text, or ask for mp3). None of these is retryable unchanged. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Per-workspace rate limit (code "rate_limited"), or speech generation is busy (code "speech_busy"): this workspace already has a request in progress, or the platform-wide cap is reached. Both are retryable; honour Retry-After. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {
