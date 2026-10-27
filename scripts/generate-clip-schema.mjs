@@ -61,6 +61,7 @@ const supported = new Set([
   "$schema", "type", "properties", "required", "additionalProperties",
   "anyOf", "oneOf", "enum", "format", "pattern", "minLength", "maxLength", "minimum", "maximum",
   "items", "minItems", "maxItems", "const", "description", "readOnly", "default", "propertyNames", "exclusiveMinimum", "exclusiveMaximum",
+  "writeOnly", "maxProperties",
 ]);
 const definitions = [];
 const behavior = JSON.stringify(spec.components.schemas.ListAvatarClipsResponse.properties.behavior);
@@ -76,7 +77,10 @@ function finiteRecordKeys(schema) {
     || (Array.isArray(schema.anyOf) && schema.anyOf.length > 0 && schema.anyOf.every(finiteRecordKeys));
 }
 
-function expression(schema) {
+// `open` admits an object that declares no `additionalProperties` and emits it as a stripping
+// `z.object`. Only a payload this SDK RECEIVES from a newer platform may be open, so a field added
+// upstream is dropped instead of failing the receiver; every response root stays closed.
+function expression(schema, open = false) {
   const key = JSON.stringify(schema);
   if (names.has(key)) return names.get(key);
   for (const keyword of Object.keys(schema)) {
@@ -108,7 +112,7 @@ function expression(schema) {
     // definition of the same schema under a different key.
     const { type: _spelledAsArray, ...rest } = schema;
     const spelled = { type: nonNull[0], ...rest };
-    return expression(schema.type.length === 1 ? spelled : { anyOf: [spelled, { type: "null" }] });
+    return expression(schema.type.length === 1 ? spelled : { anyOf: [spelled, { type: "null" }] }, open);
   }
   let result;
   if (Object.keys(schema).length === 0) {
@@ -116,39 +120,53 @@ function expression(schema) {
   } else if (schema.const !== undefined) {
     result = `z.literal(${JSON.stringify(schema.const)})`;
   } else if (schema.anyOf || schema.oneOf) {
-    result = `z.union([${(schema.anyOf ?? schema.oneOf).map(expression).join(", ")}])`;
+    result = `z.union([${(schema.anyOf ?? schema.oneOf).map((member) => expression(member, open)).join(", ")}])`;
   } else if (schema.enum) {
-    if (schema.type !== "string") throw new Error("Only string enums are supported");
-    result = `z.enum(${JSON.stringify(schema.enum)})`;
+    if (schema.type === "number" && schema.enum.every((member) => typeof member === "number")) {
+      result = `z.literal(${JSON.stringify(schema.enum)})`;
+    } else {
+      if (schema.type !== "string") throw new Error("Only string and number enums are supported");
+      result = `z.enum(${JSON.stringify(schema.enum)})`;
+    }
   } else {
     switch (schema.type) {
       case "object": {
         const finiteKeys = schema.propertyNames && finiteRecordKeys(schema.propertyNames);
-        if (schema.propertyNames && !finiteKeys
+        const boundedKeys = schema.propertyNames && !finiteKeys && schema.propertyNames.type === "string"
+          && Object.keys(schema.propertyNames).every((keyword) => ["type", "minLength", "maxLength"].includes(keyword))
+          && JSON.stringify(schema.propertyNames) !== JSON.stringify({ type: "string" });
+        if (schema.propertyNames && !finiteKeys && !boundedKeys
           && JSON.stringify(schema.propertyNames) !== JSON.stringify({ type: "string" })) {
           throw new Error("Unsupported response record key schema");
+        }
+        if (schema.maxProperties !== undefined && (schema.properties || finiteKeys)) {
+          throw new Error("maxProperties is only supported on an open-keyed record");
         }
         if (!schema.properties) {
           if (!schema.additionalProperties || typeof schema.additionalProperties !== "object") {
             throw new Error("Expected an explicit response record value schema");
           }
           result = finiteKeys
-            ? `z.partialRecord(${expression(schema.propertyNames)}, ${expression(schema.additionalProperties)})`
+            ? `z.partialRecord(${expression(schema.propertyNames, open)}, ${expression(schema.additionalProperties, open)})`
             : Object.keys(schema.additionalProperties).length === 0
               ? `z.custom<Record<string, unknown>>((value): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value))`
-              : `z.record(z.string(), ${expression(schema.additionalProperties)})`;
+              : `z.record(${boundedKeys ? expression(schema.propertyNames, open) : "z.string()"}, ${expression(schema.additionalProperties, open)})`;
+          if (schema.maxProperties !== undefined) {
+            result += `.refine((value) => Object.keys(value).length <= ${schema.maxProperties}, { message: "Too many keys: at most ${schema.maxProperties}" })`;
+          }
           break;
         }
         if (finiteKeys) throw new Error("Finite record keys cannot accompany explicit properties");
-        if (schema.additionalProperties !== false) throw new Error("Expected a closed response object");
+        const stripping = open && schema.additionalProperties === undefined;
+        if (schema.additionalProperties !== false && !stripping) throw new Error("Expected a closed response object");
         const required = new Set(schema.required ?? []);
-        result = `z.strictObject({\n${Object.entries(schema.properties).map(([field, value]) =>
-          `  ${JSON.stringify(field)}: ${expression(value)}${required.has(field) ? "" : ".optional()"},`
+        result = `${stripping ? "z.object" : "z.strictObject"}({\n${Object.entries(schema.properties).map(([field, value]) =>
+          `  ${JSON.stringify(field)}: ${expression(value, open)}${required.has(field) ? "" : ".optional()"},`
         ).join("\n")}\n})`;
         break;
       }
       case "array":
-        result = `z.array(${expression(schema.items)})`;
+        result = `z.array(${expression(schema.items, open)})`;
         if (schema.minItems !== undefined) result += `.min(${schema.minItems})`;
         if (schema.maxItems !== undefined) result += `.max(${schema.maxItems})`;
         break;
@@ -282,11 +300,65 @@ export function toSessionsPage(page: z.infer<typeof listUsageSessionsResponseSch
   return { ...pagination, sessions: data };
 }
 `;
+definitions.length = 0;
+names.clear();
+// The mint option is closed like every request; the webhook POST a receiver verifies is generated
+// open. The in-call frame gets a file of its own below, so a client bundle never carries these.
+const { description: _voiceWebhookDescription, ...voiceWebhookSchema } = spec.components.schemas.LiveKitSessionRequest.properties.voice_webhook;
+const voiceWebhookRoot = expression(voiceWebhookSchema);
+const voiceWebhookRequestRoot = expression(spec.components.schemas.VoiceWebhookRequest, true);
+const camelCase = (field) => field.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+const voiceWebhookFields = Object.keys(voiceWebhookSchema.properties).map((field) => ({
+  field, option: camelCase(field), required: (voiceWebhookSchema.required ?? []).includes(field),
+}));
+const voiceWebhookTarget = new URL("../libs/http-client/src/generated/voice-webhook.ts", import.meta.url);
+const voiceWebhookOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
+// Do not edit; the platform owns the voice webhook contract.
+import { z } from "zod";
+import type { components } from "./openapi.ts";
+
+type Wire = components["schemas"];
+
+${definitions.join("\n\n")}
+
+export const voiceWebhookWireSchema = ${voiceWebhookRoot} satisfies z.ZodType<NonNullable<Wire["LiveKitSessionRequest"]["voice_webhook"]>>;
+export const voiceWebhookOptionsSchema = z.strictObject({
+${voiceWebhookFields.map(({ field, option }) => `  ${option}: voiceWebhookWireSchema.shape.${field},`).join("\n")}
+});
+
+export function voiceWebhookToWire(input: z.input<typeof voiceWebhookOptionsSchema>): NonNullable<Wire["LiveKitSessionRequest"]["voice_webhook"]> {
+  const options = voiceWebhookOptionsSchema.parse(input);
+  return {
+${voiceWebhookFields.map(({ field, option, required }) => required
+  ? `    ${field}: options.${option},`
+  : `    ...(options.${option} !== undefined ? { ${field}: options.${option} } : {}),`).join("\n")}
+  };
+}
+
+export const voiceWebhookRequestSchema = ${voiceWebhookRequestRoot} satisfies z.ZodType<Wire["VoiceWebhookRequest"], Wire["VoiceWebhookRequest"]>;
+`;
+definitions.length = 0;
+names.clear();
+const voiceErrorFrameRoot = expression(spec.components.schemas.VoiceErrorFrame, true);
+const voiceErrorFrameTarget = new URL("../libs/http-client/src/generated/voice-error-frame.ts", import.meta.url);
+const voiceErrorFrameOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
+// Do not edit; the platform owns the in-call voice error frame.
+import { z } from "zod";
+import type { components } from "./openapi.ts";
+
+type Wire = components["schemas"];
+
+${definitions.join("\n\n")}
+
+export const voiceErrorFrameSchema = ${voiceErrorFrameRoot} satisfies z.ZodType<Wire["VoiceErrorFrame"], Wire["VoiceErrorFrame"]>;
+`;
 if (check) {
   if (await readFile(usageSessionsTarget, "utf8") !== usageSessionsOutput) throw new Error("Usage sessions schema is stale; run npm run spec:types");
   if (await readFile(contentPolicyTarget, "utf8") !== contentPolicyOutput) throw new Error("Content policy schema is stale; run npm run spec:types");
   if (await readFile(target, "utf8") !== output) throw new Error("Clip schemas are stale; run npm run spec:types");
   if (await readFile(transcriptionTarget, "utf8") !== transcriptionOutput) throw new Error("Transcription schemas are stale; run npm run spec:types");
+  if (await readFile(voiceWebhookTarget, "utf8") !== voiceWebhookOutput) throw new Error("Voice webhook schemas are stale; run npm run spec:types");
+  if (await readFile(voiceErrorFrameTarget, "utf8") !== voiceErrorFrameOutput) throw new Error("Voice error frame schema is stale; run npm run spec:types");
 } else {
   // No files change until the executable digest and response generation have succeeded.
   if (pull || sync) {
@@ -298,5 +370,7 @@ if (check) {
   await writeFile(transcriptionTarget, transcriptionOutput);
   await writeFile(contentPolicyTarget, contentPolicyOutput);
   await writeFile(usageSessionsTarget, usageSessionsOutput);
+  await writeFile(voiceWebhookTarget, voiceWebhookOutput);
+  await writeFile(voiceErrorFrameTarget, voiceErrorFrameOutput);
 }
 console.log(`Clip contract SHA-256 ${hash}; response schemas ${check ? "verified" : "generated"}`);

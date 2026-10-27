@@ -1,6 +1,6 @@
 export { RealtimeAvatar, type RealtimeAvatarOptions, type StartCallOptions } from "./client.ts";
-export { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
-export { verifyTranscript } from "./webhook.ts";
+export { RealtimeAvatarError, RealtimeAvatarHttpError, RealtimeAvatarWebhookError, type WebhookVerificationErrorCode } from "./errors.ts";
+export { verifyTranscript, verifyVoiceWebhook } from "./webhook.ts";
 export { isQueued } from "./types.ts";
 export { clipLibraryDeclarationSchema } from "./generated/clip-library-schema.ts";
 export { recordingModeSchema, recordingArtifactSchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
@@ -39,4 +39,7 @@ export type {
   UsageSession,
   UsageSessionPage,
   VideoPolicy,
+  VoiceWebhook,
+  VoiceWebhookErrorCode,
+  VoiceWebhookRequest,
 } from "./types.ts";

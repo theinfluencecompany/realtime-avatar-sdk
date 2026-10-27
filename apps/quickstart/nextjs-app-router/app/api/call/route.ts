@@ -16,6 +16,11 @@ export async function POST(request: Request): Promise<Response> {
       // `user_id` is the key listSessions({ endUserId }) filters on. `userId` is accepted
       // by the wire and then matches nothing, so attribution fails silently.
       metadata: { user_id: user.id },
+      // Optional: speak in your own voice through ../voice/route.ts. It replaces the avatar's
+      // voice, so do not also pass `voice`. The secret never reaches the browser.
+      ...(process.env.VOICE_WEBHOOK_URL
+        ? { voiceWebhook: { url: process.env.VOICE_WEBHOOK_URL, secret: process.env.VOICE_WEBHOOK_SECRET!, voiceId: "alloy" } }
+        : {}),
     });
 
     // Every slot busy. Not an error — the caller shows a position and retries.

@@ -48,6 +48,7 @@ SessionEndReasonLabel
 TranscriptWebhook
 VoiceSpec
 VoiceSpecInput
+VoiceErrorCode
 capacityBusyResponseSchema
 knownBehaviorStates
 lifecycleServerFrameSchema

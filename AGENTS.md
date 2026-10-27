@@ -52,7 +52,7 @@ These are the ones that cost real time when broken. Each has been observed, not 
 
 ### 1. Never accept call policy from the client
 
-`instructions`, `context`, `transcription`, `maxSeconds`, `voice`, `video`, `contentPolicy` are **your server's decisions**.
+`instructions`, `context`, `transcription`, `maxSeconds`, `voice`, `voiceWebhook`, `video`, `contentPolicy` are **your server's decisions**.
 A request body that supplies them is a request body that owns your character and your bill.
 
 Set `contentPolicy: "minor-sexual-content-v1"` or `"safe-content-v1"` only in server `startCall` options or the proxy's
@@ -598,6 +598,52 @@ const call = await rta.startCall({
   session granted client tools takes that model and does not reach your endpoint. Run your tools
   inside your endpoint instead.
 
+### 15. Custom voice (webhook): your endpoint speaks every sentence, and it holds a secret
+
+`voiceWebhook` replaces her voice with yours. Each sentence she is about to say is POSTed to your
+URL, signed, and the audio you stream back is what she says, lip-synced, in `avatar` and `voice`
+mode alike:
+
+```ts
+await rta.startCall({
+  avatarId,
+  instructions,
+  voiceWebhook: { url: "https://api.you.example/voice", secret: process.env.VOICE_WEBHOOK_SECRET!, voiceId: "narrator" },
+});
+```
+
+```ts
+// POST https://api.you.example/voice
+const raw = Buffer.from(await request.arrayBuffer());
+const { text, voice_id, output } = await verifyVoiceWebhook(raw, request.headers, process.env.VOICE_WEBHOOK_SECRET!);
+return new Response(await myTts(text, voice_id), { headers: { "content-type": "audio/pcm;rate=24000" } });
+```
+
+- **The secret is a credential, so this is server-only.** It is sent as `voice_webhook`, which only
+  the key-holding entries of this package emit; the browser and native entries do not name it, and
+  the platform never puts the secret in room or participant metadata.
+- **It replaces the built-in voice.** A mint that also sets `voice` is refused with `422`. Any
+  API key may use it; there is no per-workspace switch. The URL must be https, and the worker
+  also refuses a host that resolves to a non-public address and never follows a redirect.
+- **Verify over the RAW bytes**, exactly as for transcripts (rule 12). `verifyVoiceWebhook`
+  returns the typed `VoiceWebhookRequest` or throws `RealtimeAvatarWebhookError` with a `code`:
+  `missing_signature`, `bad_signature`, `stale_timestamp` or `invalid_body`.
+- **Stream the audio as soon as you have it.** The first byte must arrive within `timeoutMs`
+  (default 5000). Reply `audio/pcm`: raw signed 16-bit little-endian mono at `output.sample_rate`
+  (`sampleRate` on the mint, default 24000), or say the rate with `audio/pcm;rate=…`. OpenAI's
+  `response_format: "pcm"` is exactly 24 kHz `audio/pcm`. When the user interrupts, the worker
+  closes the connection mid-body; that is normal.
+- **Your status codes steer the call.** A `401` or `403` ends it (`voice_webhook_unauthorized`),
+  so answer one only when the signature fails. Any other non-2xx skips that sentence, and a 5xx or
+  `429` is retried once.
+- **Failures reach the client.** `onVoiceError` on `useRealtimeSession` and `AvatarCall` fires with
+  `{ code, message, status?, fatal, requestId? }`, and `voiceError` holds the last one. `code` is a
+  `VoiceErrorCode`; a code newer than your SDK still arrives as a string. `fatal` means the call is
+  ending, and `onEnded` follows with `failed`.
+
+The quickstarts carry a working endpoint: `apps/quickstart/nextjs-app-router/app/api/voice/route.ts`
+and `POST /api/voice` in `apps/quickstart/python-fastapi/main.py`.
+
 ---
 
 ## Deciding how she looks
@@ -957,7 +1003,8 @@ the wire translator 6 → 0, and the bundles 124.4 KB → 94.3 KB (react) and 11
 > and are the public SDK proper — 1,798 lines against the carry's 8,796. The two are easy to
 > tell apart by size of surface: the upstream server entry hands out a dozen names, most of
 > them operational machinery an integrator has no use for, while `libs/http-client` exports
-> five: `RealtimeAvatar`, its two error classes, `isQueued` and `verifyTranscript`.
+> seven values an integrator calls: `RealtimeAvatar`, its three error classes, `isQueued`,
+> `verifyTranscript` and `verifyVoiceWebhook`.
 >
 > **The second HTTP client is gone.** It was here because the React bindings named its class in
 > a prop type; once that prop was widened to a five-method interface, a module-graph walk showed

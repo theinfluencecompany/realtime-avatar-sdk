@@ -104,6 +104,8 @@ export {
   type TranscriptSender,
   type TranscriptSenderOptions,
   type UseRealtimeSessionInput,
+  type VoiceError,
+  type VoiceErrorCode,
 } from "./use-realtime-session";
 export type { DeclaredInputSource } from "../input-source";
 // Tab-global mic single-flight — the CROSS-call ghost-mic guard (a rapid redial

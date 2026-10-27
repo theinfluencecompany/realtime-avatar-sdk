@@ -12,7 +12,7 @@ Python's half is plain HTTP and one dependency.
 
 | File | What it is |
 | --- | --- |
-| `main.py` | The backend: `POST /api/call` mints a call from **your** policy, `POST /api/call/release` frees the slot, `POST /api/transcript` receives the signed history, `GET /api/history` reads it back. Runs as-is; the stand-ins at the top are where your auth and storage go. |
+| `main.py` | The backend: `POST /api/call` mints a call from **your** policy, `POST /api/call/release` frees the slot, `POST /api/transcript` receives the signed history, `GET /api/history` reads it back, and `POST /api/voice` (optional) speaks the call in your own voice. Runs as-is; the stand-ins at the top are where your auth and storage go. |
 | `call.py` | A client, from a terminal: asks `main.py` for a call, joins the LiveKit room, types one turn, prints what she says, hangs up, and reads the delivered transcript back. |
 | `create_avatar.py` | The other half of the API from Python: upload a portrait, create an avatar, wait for it, read its clip library, re-direct its resting loop. |
 
@@ -74,6 +74,12 @@ signature over the raw bytes verified with the `_verify` in `main.py`.
   answer slower than 5 s earns one retry with the same body and signature, so answer fast and
   dedupe on `session_id`. `client_metadata` is `{}` when the mint sent none — never index into
   it blindly.
+- `voice` (optional) — set `VOICE_WEBHOOK_URL` to the public https URL of `/api/voice`, plus
+  `VOICE_WEBHOOK_SECRET` and `OPENAI_API_KEY`, and `start_call` mints with `voice_webhook`. Her
+  own voice is then replaced: each sentence she is about to say arrives at `/api/voice`, signed
+  with the same scheme as the transcript, and the handler streams OpenAI's 24 kHz PCM straight
+  back as `audio/pcm;rate=24000`. A `401` ends the call, so it answers one only when the
+  signature fails; an upstream failure is a `502`, which skips that sentence.
 - `save_tool_calls` — `tool_calls` rides the same payload and is absent when the session ran
   no tools. Store it beside the turns: a reply grounded in a lookup is only auditable if the
   lookup itself is in the history.

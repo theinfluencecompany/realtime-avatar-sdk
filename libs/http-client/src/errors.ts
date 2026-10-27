@@ -6,6 +6,24 @@ export class RealtimeAvatarError extends Error {
   }
 }
 
+/** Why `verifyTranscript` or `verifyVoiceWebhook` refused a request. Answer each with a 4xx. */
+export type WebhookVerificationErrorCode = "missing_signature" | "bad_signature" | "stale_timestamp" | "invalid_body";
+
+/**
+ * A webhook request that did not verify. `code` says why: the signature headers are absent, the
+ * signature does not match the raw body, the timestamp is outside the replay window, or a
+ * correctly signed body is not the contract.
+ */
+export class RealtimeAvatarWebhookError extends RealtimeAvatarError {
+  readonly code: WebhookVerificationErrorCode;
+
+  constructor(code: WebhookVerificationErrorCode, message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "RealtimeAvatarWebhookError";
+    this.code = code;
+  }
+}
+
 /** The platform's correlation ID, read from an error body's `requestId` or the `X-Request-ID` header. */
 export function isRequestId(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);

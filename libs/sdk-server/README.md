@@ -198,6 +198,45 @@ Two facts follow from that picture and drive everything else:
 
 ---
 
+## Custom voice (webhook)
+
+Speak a call in your own voice. Each sentence she is about to say is POSTed, signed, to an
+endpoint your server hosts, and the audio it streams back is what she says, lip-synced, in
+`avatar` and `voice` mode alike:
+
+```ts
+const call = await rta.startCall({
+  avatarId,
+  voiceWebhook: { url: "https://api.example.com/voice", secret: process.env.VOICE_WEBHOOK_SECRET!, voiceId: "narrator" },
+});
+```
+
+```ts
+// POST https://api.example.com/voice
+import { verifyVoiceWebhook } from "realtime-avatar";
+
+const raw = Buffer.from(await request.arrayBuffer());   // the RAW bytes, as for transcripts
+const { text, voice_id, output } = await verifyVoiceWebhook(raw, request.headers, process.env.VOICE_WEBHOOK_SECRET!);
+return new Response(await myTts(text, voice_id), { headers: { "content-type": "audio/pcm;rate=24000" } });
+```
+
+- `voiceWebhook` is `{ url, secret, voiceId?, language?, sampleRate?, timeoutMs? }`, derived from
+  the platform's `voice_webhook`. It carries a secret, so only the server entries send it; it
+  replaces `voice`, and a mint with both is refused with `422`. The URL must be https.
+- Reply `200` with audio, streamed as soon as you have it: the first byte must arrive within
+  `timeoutMs` (default 5000). `audio/pcm` is raw signed 16-bit little-endian mono at
+  `output.sample_rate` (default 24000), or name the rate with `audio/pcm;rate=…`. OpenAI's
+  `response_format: "pcm"` is exactly 24 kHz `audio/pcm`.
+- `verifyVoiceWebhook` throws `RealtimeAvatarWebhookError` with a `code` (`missing_signature`,
+  `bad_signature`, `stale_timestamp`, `invalid_body`). A `401` or `403` from your endpoint ends the
+  call; any other non-2xx skips that one sentence, and a 5xx or `429` is retried once.
+- In the client, `onVoiceError` on `useRealtimeSession` and `AvatarCall` fires with
+  `{ code, message, status?, fatal, requestId? }`, and `voiceError` holds the last one. `fatal`
+  means the call is ending; `onEnded` follows with `failed`.
+
+Working endpoints: `apps/quickstart/nextjs-app-router/app/api/voice/route.ts` and `POST /api/voice`
+in `apps/quickstart/python-fastapi/main.py`.
+
 ## Input source on room messages
 
 On React and React Native, `session.sendTurn(text)` automatically observes text.
@@ -249,7 +288,7 @@ against its deployed OpenAPI, then run `npm run check`.** Do not hand-edit the g
 
 ```ts
 // calls
-rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, connectionHistory?, contentPolicy?, transcript?, metadata?, llm? })
+rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, video?, recording?, connectionHistory?, contentPolicy?, transcript?, metadata?, llm?, voiceWebhook? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 rta.leaveQueue(queueTicketId, { reason? }) // give up a queued call's place in line; idempotent, never throws
 
@@ -287,6 +326,7 @@ rta.iterateSessions({ from, to })                   // the same, paging handled
 
 // webhooks
 verifyTranscript(rawBytes, headers, secret)
+verifyVoiceWebhook(rawBytes, headers, secret)   // one sentence to speak, typed; see "Custom voice (webhook)"
 ```
 
 ### Session page validation
@@ -342,7 +382,7 @@ Server — these hold your API key:
 
 | Import | What it is |
 | --- | --- |
-| `realtime-avatar` | `RealtimeAvatar`, `isQueued`, `verifyTranscript`, the two error classes |
+| `realtime-avatar` | `RealtimeAvatar`, `isQueued`, `verifyTranscript`, `verifyVoiceWebhook`, the three error classes |
 | `realtime-avatar/server` | The same client with no route adapters — 18.8 KB |
 | `realtime-avatar/nextjs` | `createRealtimeAvatarRoute` — App Router `{ GET, POST }` |
 | `realtime-avatar/hono` | `realtimeAvatarHono` — Hono, Workers, Bun, Deno |
