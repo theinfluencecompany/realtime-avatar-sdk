@@ -13,6 +13,7 @@ import {
   RTA_INPUT_SOURCE_DECLARATION_SCOPE_ATTR,
   type LLMProvider,
   type SessionEndReasonLabel,
+  type VoiceErrorCode,
 } from "../wire";
 import {
   useSessionLifecycle,
@@ -110,6 +111,24 @@ export type { BehaviorSnapshot };
 /** The worker's verdict on a gesture request (every request is answered or times out). */
 export type ClipResult = { requestId: string; accepted: boolean; reason: string };
 
+export type { VoiceErrorCode };
+
+/**
+ * Your voice webhook failed (a call minted with `voiceWebhook`), so the rest of that reply is not
+ * spoken: the sentences after the failed one are not POSTed, and the next reply tries again.
+ * `message` is one developer-facing sentence, never your URL, secret or response body. `status` is
+ * the HTTP status when your endpoint answered. `fatal` means the call is ending: a 401 or 403, a
+ * URL the worker refuses to call, or repeated failures, which end it with the last failure's code,
+ * whatever that code is. `onEnded` follows with reason `failed`.
+ */
+export type VoiceError = {
+  code: VoiceErrorCode;
+  message: string;
+  status?: number;
+  fatal: boolean;
+  requestId?: string;
+};
+
 /**
  * The `useRealtimeSession` input. ADDITIVE over {@link UseSessionLifecycleInput}
  * (whose `client`/`session`/`active`/`idleSeconds`/`idleWarnLeadSeconds`/reconnect
@@ -168,6 +187,8 @@ export type UseRealtimeSessionInput<T extends LLMProvider = LLMProvider> = UseSe
   onBehaviorChange?: (b: BehaviorSnapshot) => void;
   /** A clip request was answered (also resolved on the performAction promise). */
   onClipResult?: (r: ClipResult) => void;
+  /** Your voice webhook failed for a sentence; see {@link VoiceError}. Fires once per frame the worker sends. */
+  onVoiceError?: (error: VoiceError) => void;
 };
 
 /**
@@ -244,6 +265,12 @@ export type RealtimeSessionApi = SessionLifecycleApi & {
   end: (reason?: EndReason) => void;
   /** The avatar's live nonverbal behavior, or null pre-choreo (see {@link BehaviorSnapshot}). */
   behavior: BehaviorSnapshot | null;
+  /**
+   * The last {@link VoiceError} of this call, or null. It outlives the call it ended; the next call
+   * starts at null, whether it starts by deactivating and reactivating, a new avatar or mode, a
+   * redial, or `reset()`.
+   */
+  voiceError: VoiceError | null;
   /** Request a declared semantic action; acceptance schedules it and does not prove playback. */
   performAction: (actionId: string, opts?: { timeoutMs?: number }) => Promise<ClipResult>;
 
@@ -300,6 +327,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     onEnded,
     onBehaviorChange,
     onClipResult,
+    onVoiceError,
     // everything else (client/active/idleSeconds/idleWarnLeadSeconds/reconnect/requestOptions…)
     // flows straight into the inner SSOT hook.
     ...inner
@@ -325,6 +353,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
   const [turn, setTurn] = useState<TurnState>("quiet");
   const [media, setMediaState] = useState<RealtimeSessionMedia>({ video: "connecting", audio: "silent" });
   const [behavior, setBehavior] = useState<BehaviorSnapshot | null>(null);
+  const [voiceError, setVoiceError] = useState<VoiceError | null>(null);
   const [microphoneFacts, setMicrophoneFactsState] = useState<CallMicrophoneFacts>({
     wanted: false, connected: false, enabling: false, publication: null, deviceError: null,
   });
@@ -338,8 +367,8 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
 
   // Latch the latest callbacks/knobs in refs so the 1s effect fires them without
   // re-subscribing (which would reset the interval every render).
-  const cbRef = useRef({ onApproachingEnd, onGraceWindowOpen, onGraceWindowClosed, onIdleWarning, onCreditsLow, onTurnTimeout, onReconnecting, onReconnected, onEnded, onBehaviorChange, onClipResult });
-  cbRef.current = { onApproachingEnd, onGraceWindowOpen, onGraceWindowClosed, onIdleWarning, onCreditsLow, onTurnTimeout, onReconnecting, onReconnected, onEnded, onBehaviorChange, onClipResult };
+  const cbRef = useRef({ onApproachingEnd, onGraceWindowOpen, onGraceWindowClosed, onIdleWarning, onCreditsLow, onTurnTimeout, onReconnecting, onReconnected, onEnded, onBehaviorChange, onClipResult, onVoiceError });
+  cbRef.current = { onApproachingEnd, onGraceWindowOpen, onGraceWindowClosed, onIdleWarning, onCreditsLow, onTurnTimeout, onReconnecting, onReconnected, onEnded, onBehaviorChange, onClipResult, onVoiceError };
 
   const approachingEndLeadMs = positive(approachingEndLeadSeconds, DEFAULT_APPROACHING_END_LEAD_SECONDS) * 1000;
   const graceWindowLeadMs = positive(graceWindowLeadSeconds, DEFAULT_GRACE_WINDOW_LEAD_SECONDS) * 1000;
@@ -439,6 +468,18 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
           pending.resolve(result);
         }
         cbRef.current.onClipResult?.(result);
+        break;
+      }
+      case "voice_error": {
+        const error: VoiceError = {
+          code: f.code,
+          message: f.message,
+          ...(f.status === undefined ? {} : { status: f.status }),
+          fatal: f.fatal,
+          ...(f.request_id === undefined ? {} : { requestId: f.request_id }),
+        };
+        setVoiceError(error);
+        cbRef.current.onVoiceError?.(error);
         break;
       }
     }
@@ -680,12 +721,28 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     if (active) return;
     lastLabeledEndReasonRef.current = null;
     setMicrophoneMuted(false);
+    setVoiceError(null);
   }, [active]);
+
+  // A voice error describes the call it arrived on, so a fresh mint (an avatar or mode switch, a
+  // redial) or a different grant starts clean. A grant going away is not a new call: the call that
+  // failed keeps its error after it ends, which is when an app shows it.
+  const grantSessionId = lifecycle.grant?.session_id ?? null;
+  const voiceErrorGrantRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (phaseKind === "requesting") setVoiceError(null);
+    if (grantSessionId === null) return;
+    if (voiceErrorGrantRef.current !== null && voiceErrorGrantRef.current !== grantSessionId) setVoiceError(null);
+    voiceErrorGrantRef.current = grantSessionId;
+  }, [phaseKind, grantSessionId]);
 
   // A redial is a new call: the label the previous one ended with must not become this one's.
   const innerReconnect = lifecycle.reconnect;
   const reconnect = useCallback(() => {
-    if (phaseKind === "ended") lastLabeledEndReasonRef.current = null;
+    if (phaseKind === "ended") {
+      lastLabeledEndReasonRef.current = null;
+      setVoiceError(null);
+    }
     innerReconnect();
   }, [innerReconnect, phaseKind]);
 
@@ -742,6 +799,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     creditsLowFiredRef.current = false;
     lastTurnRef.current = null;
     setMicrophoneMuted(false);
+    setVoiceError(null);
     lifecycle.reset();
   }, [lifecycle]);
 
@@ -771,6 +829,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
       retryTurn,
       end,
       behavior,
+      voiceError,
       performAction,
       onLifecycleData,
       registerDataPublisher,
@@ -785,7 +844,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     [
       lifecycle, turn, clocks, endsAt, graceWindow, media, microphone, callAudioPlayback, startAudio,
       setMicrophoneEnabled, microphoneMuted, reconnect, sendClosingTurn, requestGracefulClose,
-      extend, sendTurn, createTranscriptSender, retryTurn, end, behavior, performAction, onLifecycleData, registerDataPublisher,
+      extend, sendTurn, createTranscriptSender, retryTurn, end, behavior, voiceError, performAction, onLifecycleData, registerDataPublisher,
       registerTurnSender, setTurnState, setMedia, setMicrophoneFacts, setAudioPlayback, registerMediaControls, reset,
     ],
   );

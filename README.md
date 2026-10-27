@@ -195,7 +195,7 @@ One class, one types file. The full surface is
 
 ```ts
 // calls
-rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, transcription?, video?, recording?, connectionHistory?, transcript?, metadata?, llm? })
+rta.startCall({ avatarId, mode?, instructions?, context?, maxSeconds?, transcription?, video?, recording?, connectionHistory?, transcript?, metadata?, llm?, voiceWebhook? })
 rta.endCall(sessionId, { reason? })     // free an abandoned call's slot; idempotent, never throws
 rta.leaveQueue(queueTicketId, { reason? }) // give up a queued call's place in line; idempotent, never throws
 
@@ -233,6 +233,7 @@ rta.iterateSessions({ from, to })                   // the same, paging handled
 
 // webhooks
 verifyTranscript(rawBytes, headers, secret)
+verifyVoiceWebhook(rawBytes, headers, secret)   // one sentence to speak, typed; see "Custom voice (webhook)"
 ```
 
 `listSessions` validates the entire response against the generated platform contract before
@@ -347,6 +348,51 @@ at most 100 relevant vocabulary terms; the limit is 1,000 terms, 160 characters
 each. Hints bias recognition rather than guaranteeing a spelling or faster
 response. They do not change character instructions. This configuration is set
 when the call starts; changing the object does not update an active call.
+
+## Custom voice (webhook)
+
+Speak a call in your own voice. Each sentence she is about to say is POSTed, signed, to an
+endpoint your server hosts, and the audio it streams back is what she says, lip-synced, in
+`avatar` and `voice` mode alike:
+
+```ts
+const call = await rta.startCall({
+  avatarId,
+  voiceWebhook: { url: "https://api.example.com/voice", secret: process.env.VOICE_WEBHOOK_SECRET!, voiceId: "narrator" },
+});
+```
+
+```ts
+// POST https://api.example.com/voice
+import { verifyVoiceWebhook } from "realtime-avatar";
+
+const raw = Buffer.from(await request.arrayBuffer());   // the RAW bytes, as for transcripts
+const { text, voice_id, output } = await verifyVoiceWebhook(raw, request.headers, process.env.VOICE_WEBHOOK_SECRET!);
+return new Response(await myTts(text, voice_id), { headers: { "content-type": "audio/pcm;rate=24000" } });
+```
+
+- `voiceWebhook` is `{ url, secret, voiceId?, language?, sampleRate?, timeoutMs? }`, derived from
+  the platform's `voice_webhook`. It carries a secret, so only the server entries send it; it
+  replaces `voice`, and a mint with both is refused with `422`. The URL must be https.
+- Reply `200` with audio, streamed as soon as you have it. `timeoutMs` (default 5000) bounds the
+  first audio byte of each attempt and every later gap between chunks. `audio/pcm` (alias
+  `audio/raw`) is raw signed 16-bit little-endian mono at `output.sample_rate` (default 24000), or
+  name the rate with `audio/pcm;rate=…`; no other raw type is accepted. OpenAI's
+  `response_format: "pcm"` is exactly 24 kHz `audio/pcm`. A 2xx with no body (a `204`,
+  `Content-Length: 0`, or an empty first chunk) is `voice_webhook_empty_audio`.
+- `verifyVoiceWebhook` throws `RealtimeAvatarWebhookError` with a `code` (`missing_signature`,
+  `bad_signature`, `stale_timestamp`, `invalid_body`).
+- A `401` or `403` from your endpoint ends the call. A timeout, an unreachable endpoint, or a
+  `408`, `429` or 5xx is retried once, only before any audio has arrived, as a new POST with a new
+  `request_id`. Any other failure, or a retry that fails too, drops the rest of that reply: the
+  sentences after it are not POSTed, and the next reply tries again. Repeated failures end the
+  call with a fatal error carrying the last failure's code.
+- In the client, `onVoiceError` on `useRealtimeSession` and `AvatarCall` fires with
+  `{ code, message, status?, fatal, requestId? }`, and `voiceError` holds the last one of this
+  call. `fatal` means the call is ending; `onEnded` follows with `failed`.
+
+Working endpoints: `apps/quickstart/nextjs-app-router/app/api/voice/route.ts` and `POST /api/voice`
+in `apps/quickstart/python-fastapi/main.py`.
 
 ## Input source on room messages
 

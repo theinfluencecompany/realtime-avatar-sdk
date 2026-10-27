@@ -149,6 +149,8 @@ export {
   type TranscriptSender,
   type TranscriptSenderOptions,
   type UseRealtimeSessionInput,
+  type VoiceError,
+  type VoiceErrorCode,
 } from "../react/use-realtime-session";
 export type { DeclaredInputSource } from "../input-source";
 export {

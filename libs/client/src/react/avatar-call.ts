@@ -19,7 +19,7 @@ import { createElement, Fragment, useEffect, useRef, type CSSProperties, type Re
 import { AvatarVideoSurface, type AvatarVideoFit } from "./avatar-video-surface";
 import { RealtimeAvatarLiveKitRoom } from "./livekit";
 import { SessionLifecycleRoomBridge, type SessionLifecycleRoomBridgeProps } from "./session-lifecycle";
-import { useRealtimeSession, type RealtimeSessionApi } from "./use-realtime-session";
+import { useRealtimeSession, type RealtimeSessionApi, type VoiceError } from "./use-realtime-session";
 import type { CallAudioPlayback, CallMicrophone, CallMicrophoneProblem } from "./call-media";
 import type { AvatarSessionClient } from "../session-client";
 
@@ -90,6 +90,8 @@ export type AvatarCallHandle = {
   keepAlive: () => void;
   /** End now. */
   end: () => void;
+  /** The last voice webhook failure of this call, or null. Only a call minted with `voiceWebhook` has one. */
+  voiceError: VoiceError | null;
 };
 
 export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectionDetailsChange"> & {
@@ -134,6 +136,13 @@ export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectio
    * is live. Fires once per distinct problem. Show `hint`, then offer `retryMicrophone()`.
    */
   onMicrophoneProblem?: (problem: AvatarCallMicrophoneProblem) => void;
+  /**
+   * Your voice webhook failed, so the rest of that reply is not spoken; the next reply tries again.
+   * Fires once per error the worker reports (it rate-limits them). When `fatal` (a 401 or 403, a
+   * refused URL, or repeated failures, carrying the last failure's code), the call is ending and
+   * `onEnded` follows with `failed`.
+   */
+  onVoiceError?: (error: VoiceError) => void;
   /**
    * What to show while `audio` is `blocked` (the browser is muting her until a gesture):
    * - `true` (default): a "Tap to turn on sound" button, top-centre over the video.
@@ -185,6 +194,7 @@ function handleFor(session: RealtimeSessionApi): AvatarCallHandle {
     startAudio: session.startAudio,
     setMicrophoneEnabled: session.setMicrophoneEnabled,
     retryMicrophone: () => session.setMicrophoneEnabled(true),
+    voiceError: session.voiceError,
   };
 }
 
@@ -231,6 +241,7 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
     onIdleWarning: props.onQuiet ? ({ secondsLeft }) => props.onQuiet?.({ secondsLeft }) : undefined,
     onCreditsLow: props.onLowBalance ? ({ secondsLeft }) => props.onLowBalance?.({ secondsLeft }) : undefined,
     onEnded: props.onEnded ? ({ reason }) => props.onEnded?.({ reason }) : undefined,
+    onVoiceError: props.onVoiceError ? (error) => props.onVoiceError?.(error) : undefined,
   });
   sessionRef.current = session;
 

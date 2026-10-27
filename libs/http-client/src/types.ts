@@ -31,6 +31,7 @@
 import type { components, operations } from "./generated/openapi.ts";
 import type { toSessionsPage } from "./generated/usage-sessions.ts";
 import type { RecordingMode, RecordingArtifact } from "./generated/recording.ts";
+import type { voiceWebhookToWire } from "./generated/voice-webhook.ts";
 export type { RecordingMode, RecordingArtifactStatus, RecordingArtifact, ListRecordingsQuery, ListRecordingsResponse, RecordingAccessResponse } from "./generated/recording.ts";
 
 /**
@@ -169,6 +170,27 @@ export interface ExternalLlm {
   model?: NonNullable<WireLlm["model"]>;
 }
 
+/**
+ * Speak this call with your own voice. Each sentence she is about to say is POSTed to `url`,
+ * signed with `secret` (verify it with `verifyVoiceWebhook`), and the audio you stream back is what
+ * she says, lip-synced in both modes.
+ *
+ * `url` must be https and resolve to a public address; redirects are never followed. `secret` is
+ * 16–200 characters and never reaches room or participant metadata. `voiceId` and `language` are
+ * echoed in every request. `sampleRate` (default 24000) is the rate of raw `audio/pcm` replies.
+ * `timeoutMs` (1000–15000, default 5000) bounds the first audio byte of each attempt and every
+ * later gap between chunks.
+ *
+ * It replaces the built-in voice: a mint carrying `voice` as well is refused with 422.
+ */
+export type VoiceWebhook = Parameters<typeof voiceWebhookToWire>[0];
+
+/** The signed `voice.synthesize` request your `VoiceWebhook.url` receives, as `verifyVoiceWebhook` returns it. */
+export type VoiceWebhookRequest = Wire["VoiceWebhookRequest"];
+
+/** Why your voice webhook failed: the `code` of an in-call voice error. */
+export type VoiceWebhookErrorCode = Wire["VoiceWebhookErrorCode"];
+
 /** What YOUR SERVER decides about a call. Never accept any of this from a browser. */
 export interface CallPolicy {
   /** Optional server-owned content safety policy. Never accept a selection or disable from the browser. */
@@ -196,6 +218,11 @@ export interface CallPolicy {
   video?: VideoPolicy;
   /** Voice override for this call; omit to use the avatar's default. */
   voice?: unknown;
+  /**
+   * Speak with your own voice: your endpoint answers each sentence with audio. Carries a secret,
+   * so like `llm` the browser entries of this package cannot send it. See {@link VoiceWebhook}.
+   */
+  voiceWebhook?: VoiceWebhook;
   /**
    * Let the browser register tools the model may call.
    *

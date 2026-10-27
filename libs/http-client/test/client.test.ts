@@ -402,6 +402,60 @@ test("llm routes the call's turns to your endpoint, and only when asked for", as
   assert.ok(!("external_llm" in (off.seen.body ?? {})));
 });
 
+test("voiceWebhook rides the mint as voice_webhook in the wire's spelling, and only when asked for", async () => {
+  const on = stub({ body: GRANT });
+  await new RealtimeAvatar({ apiKey: "k", fetch: on.fetchImpl }).startCall({
+    avatarId: "ava_1",
+    mode: "voice",
+    voiceWebhook: {
+      url: "https://voice.example.test/speak", secret: "voice-secret-0123456789",
+      voiceId: "narrator", language: "en-GB", sampleRate: 16000, timeoutMs: 3000,
+    },
+  });
+  assert.deepEqual(on.seen.body?.voice_webhook, {
+    url: "https://voice.example.test/speak", secret: "voice-secret-0123456789",
+    voice_id: "narrator", language: "en-GB", sample_rate: 16000, timeout_ms: 3000,
+  });
+
+  // Unset options are left for the platform's defaults, never sent as null.
+  const bare = stub({ body: GRANT });
+  await new RealtimeAvatar({ apiKey: "k", fetch: bare.fetchImpl }).startCall({
+    avatarId: "ava_1", voiceWebhook: { url: "https://voice.example.test/speak", secret: "voice-secret-0123456789" },
+  });
+  assert.deepEqual(bare.seen.body?.voice_webhook, { url: "https://voice.example.test/speak", secret: "voice-secret-0123456789" });
+
+  const off = stub({ body: GRANT });
+  await new RealtimeAvatar({ apiKey: "k", fetch: off.fetchImpl }).startCall({ avatarId: "ava_1" });
+  assert.ok(!("voice_webhook" in (off.seen.body ?? {})));
+});
+
+test("a voiceWebhook the contract refuses never leaves the server", async () => {
+  const { seen, fetchImpl } = stub({ body: GRANT });
+  const rta = new RealtimeAvatar({ apiKey: "k", fetch: fetchImpl });
+  for (const voiceWebhook of [
+    { url: "https://voice.example.test/speak", secret: "short" },
+    { url: "not a url", secret: "voice-secret-0123456789" },
+    { url: "http://voice.example.test/speak", secret: "voice-secret-0123456789" },
+    { url: "javascript:alert(1)", secret: "voice-secret-0123456789" },
+    { url: "https://voice.example.test/speak", secret: "voice-secret-0123456789", timeoutMs: 100 },
+  ]) {
+    await assert.rejects(() => rta.startCall({ avatarId: "ava_1", voiceWebhook }), Error, voiceWebhook.url);
+  }
+  assert.equal(seen.url, undefined, "an invalid voice webhook was sent to the platform");
+});
+
+test("voiceWebhook is the contract's voice_webhook, camelCased", () => {
+  type WireVoiceWebhook = NonNullable<components["schemas"]["LiveKitSessionRequest"]["voice_webhook"]>;
+  type Option = NonNullable<import("../src/types.ts").CallPolicy["voiceWebhook"]>;
+  const derived: [
+    Equal<Option["url"], WireVoiceWebhook["url"]>,
+    Equal<Option["sampleRate"], WireVoiceWebhook["sample_rate"]>,
+    Equal<Option["timeoutMs"], WireVoiceWebhook["timeout_ms"]>,
+    Equal<keyof Option, "url" | "secret" | "voiceId" | "language" | "sampleRate" | "timeoutMs">,
+  ] = [true, true, true, true];
+  assert.deepEqual(derived, [true, true, true, true]);
+});
+
 test("the external backend is the contract's own value, not a copy of it", () => {
   type Wire = components["schemas"];
   type WireBackend = NonNullable<NonNullable<Wire["LiveKitSessionRequest"]["llm"]>["backend"]>;

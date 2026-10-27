@@ -15,6 +15,7 @@ import type { components, operations } from "./generated/openapi.ts";
 import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 import { transcriptionToWire } from "./generated/transcription.ts";
 import { contentPolicySchema } from "./generated/content-policy.ts";
+import { voiceWebhookToWire } from "./generated/voice-webhook.ts";
 import { listUsageSessionsResponseSchema, toSessionsPage } from "./generated/usage-sessions.ts";
 import type {
   Asset,
@@ -44,7 +45,7 @@ import type {
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.27.5";
+export const SDK_VERSION = "0.28.0";
 
 
 
@@ -155,6 +156,7 @@ export class RealtimeAvatar {
     }
     if (options.maxSeconds !== undefined) body.max_session_seconds = Math.floor(options.maxSeconds);
     if (options.voice !== undefined) body.voice = options.voice;
+    if (options.voiceWebhook !== undefined) body.voice_webhook = voiceWebhookToWire(options.voiceWebhook);
     if (options.metadata !== undefined) body.client_metadata = options.metadata;
     if (options.recording !== undefined) body.recording = recordingModeSchema.parse(options.recording);
     if (options.connectionHistory !== undefined) body.connection_history = options.connectionHistory;

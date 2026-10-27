@@ -80,3 +80,68 @@ for (const [label, path] of READMES) {
     );
   });
 }
+
+/**
+ * The voice webhook's reply contract is the worker's, and every page that teaches it must say the
+ * same thing. The first draft told receivers a failure "skips that one sentence" and that only a
+ * 401/403 is fatal; the worker drops the rest of the reply and ends the call after repeated
+ * failures of any kind, and a receiver built on the draft would budget for neither.
+ */
+const VOICE_WEBHOOK_PAGES = [
+  ["README.md (repo root)", new URL("../../../README.md", import.meta.url)],
+  ["libs/sdk-server/README.md", new URL("../README.md", import.meta.url)],
+  ["AGENTS.md", new URL("../../../AGENTS.md", import.meta.url)],
+  ["CHANGELOG.md", new URL("../../../CHANGELOG.md", import.meta.url)],
+] as const;
+
+function voiceWebhookText(label: string, path: URL): string {
+  const md = readFileSync(path, "utf8");
+  const start = md.search(/^#{2,3} .*(Custom voice \(webhook\)|0\.28\.0)/m);
+  assert.ok(start >= 0, `${label}: no voice webhook section found`);
+  const rest = md.slice(start);
+  const body = rest.indexOf("\n");
+  const end = rest.slice(body).search(/^#{2,3} (?!Added|Changed)/m);
+  return (end < 0 ? rest : rest.slice(0, body + end)).replace(/\s+/g, " ");
+}
+
+for (const [label, path] of VOICE_WEBHOOK_PAGES) {
+  test(`${label} states the worker's voice webhook reply contract`, () => {
+    const text = voiceWebhookText(label, path);
+    assert.match(text, /rest of that reply/, `${label}: a failure drops the rest of that reply`);
+    assert.match(text, /next reply tries again/, `${label}: the next reply tries again`);
+    assert.match(text, /408`?, `?429`? or 5xx is retried once, only before any audio has arrived, as a new POST with a new `?request_id/,
+      `${label}: the retry set and what a retry is`);
+    assert.match(text, /every later gap between chunks/, `${label}: timeoutMs bounds every gap, not only the first byte`);
+    assert.match(text, /`?204`?/, `${label}: an empty 2xx, a 204 included, is voice_webhook_empty_audio`);
+    assert.match(text, /last failure's code/, `${label}: repeated failures end the call with the last failure's code`);
+    assert.doesNotMatch(text, /skips (that|this) (one )?sentence|l16/i, `${label}: still teaches the draft contract`);
+  });
+}
+
+test("the quickstarts never promise a skipped sentence or a big-endian PCM type", () => {
+  for (const rel of [
+    "../../../apps/quickstart/nextjs-app-router/README.md",
+    "../../../apps/quickstart/nextjs-app-router/app/api/voice/route.ts",
+    "../../../apps/quickstart/python-fastapi/README.md",
+    "../../../apps/quickstart/python-fastapi/main.py",
+  ]) {
+    const text = readFileSync(new URL(rel, import.meta.url), "utf8").replace(/\s+/g, " ");
+    assert.doesNotMatch(text, /skips (that|this) (one )?sentence|l16/i, rel);
+    assert.match(text, /rest of (that|this) reply/, `${rel}: a failed 502 drops the rest of the reply`);
+  }
+});
+
+test("the VoiceError and onVoiceError docs say what fatal and a failure really mean", () => {
+  for (const [rel, anchor] of [
+    ["../../client/src/react/use-realtime-session.ts", "export type VoiceError = {"],
+    ["../../client/src/react/avatar-call.ts", "onVoiceError?: (error: VoiceError) => void;"],
+  ] as const) {
+    const source = readFileSync(new URL(rel, import.meta.url), "utf8");
+    const at = source.indexOf(anchor);
+    assert.ok(at > 0, `${rel}: ${anchor} not found`);
+    const doc = source.slice(source.lastIndexOf("/**", at), at).replace(/\s*\*\s*/g, " ");
+    assert.match(doc, /rest of that reply/, `${rel}: a failure drops the rest of that reply`);
+    assert.match(doc, /repeated failures/, `${rel}: fatal is not only a 401/403 or a refused URL`);
+    assert.match(doc, /last failure's code/, `${rel}: a fatal close carries the last failure's code`);
+  }
+});

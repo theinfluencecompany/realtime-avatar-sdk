@@ -1,4 +1,5 @@
-"""Realtime Avatar from a Python backend: start a call, receive the session history.
+"""Realtime Avatar from a Python backend: start a call, receive the session history, and
+(optionally) speak the call in your own voice.
 
     cp .env.example .env && set -a && . ./.env && set +a
     uvicorn main:app --reload
@@ -16,7 +17,7 @@ from typing import Optional
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 BASE = "https://realtimeavatar.ai/api/v1"
@@ -28,6 +29,8 @@ client = httpx.Client(
     timeout=60.0,
     headers={"Authorization": f"Bearer {os.environ['REALTIME_AVATAR_API_KEY']}"},
 )
+# Only `/api/voice` uses this: it streams speech from OpenAI back to the worker.
+speech = httpx.AsyncClient(base_url="https://api.openai.com/v1", timeout=30.0)
 
 
 # ── Your side of the seam ─────────────────────────────────────────────────────
@@ -89,6 +92,16 @@ def start_call(req: Optional[StartCallRequest] = None, user=Depends(current_user
             "secret": os.environ["TRANSCRIPT_SECRET"],
         },
     }
+    if os.environ.get("VOICE_WEBHOOK_URL"):
+        # Speak the call in your own voice: the worker POSTs each sentence to `/api/voice`
+        # below and plays the audio it streams back. It replaces the avatar's voice, so the
+        # mint must not also carry `voice` or `voice_id`. `voice_id` here is yours, echoed in
+        # every request.
+        body["voice_webhook"] = {
+            "url": os.environ["VOICE_WEBHOOK_URL"],
+            "secret": os.environ["VOICE_WEBHOOK_SECRET"],
+            "voice_id": "alloy",
+        }
     if req and req.queue_ticket_id:
         body["queue_ticket_id"] = req.queue_ticket_id  # keep our place in line
 
@@ -131,6 +144,7 @@ async def transcript(request: Request):
         raw,
         request.headers.get("x-rta-signature", ""),
         request.headers.get("x-rta-timestamp", ""),
+        os.environ["TRANSCRIPT_SECRET"],
     ):
         raise HTTPException(401)
 
@@ -155,6 +169,54 @@ async def transcript(request: Request):
     return {"ok": True}
 
 
+@app.post("/api/voice")
+async def voice(request: Request):
+    """Speak one sentence of a call minted with `voice_webhook`, in your own voice."""
+    raw = await request.body()  # RAW bytes — do not parse before verifying
+    if not _verify(
+        raw,
+        request.headers.get("x-rta-signature", ""),
+        request.headers.get("x-rta-timestamp", ""),
+        os.environ["VOICE_WEBHOOK_SECRET"],
+    ):
+        # A 401 ends the call: a secret that does not match now will not match later.
+        raise HTTPException(401)
+    job = json.loads(raw)  # {type, request_id, text, voice_id, language, output, …}
+
+    # OpenAI's `pcm` is raw signed 16-bit little-endian mono at 24 kHz: exactly `audio/pcm`.
+    upstream = await speech.send(
+        speech.build_request(
+            "POST",
+            "/audio/speech",
+            headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"},
+            json={
+                "model": "gpt-4o-mini-tts",
+                "voice": job["voice_id"] or "alloy",
+                "input": job["text"],
+                "response_format": "pcm",
+            },
+        ),
+        stream=True,
+    )
+    if upstream.status_code != 200:
+        await upstream.aclose()
+        # A 5xx is retried once as a new POST; if that fails too, the rest of this reply goes
+        # unspoken and the next reply tries again. Never 401/403 here: that ends the call.
+        raise HTTPException(502)
+
+    async def audio():
+        # Relay each chunk as it arrives: the first byte is what the caller waits for. When
+        # the user interrupts, the worker closes the connection mid-body; that is normal.
+        try:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+        finally:
+            await upstream.aclose()
+
+    # `rate=` names the rate outright, whatever `output.sample_rate` the mint asked for.
+    return StreamingResponse(audio(), media_type="audio/pcm;rate=24000")
+
+
 @app.get("/api/history")
 def history(user=Depends(current_user)):
     """What this app now knows about the caller — read it back after the call ends."""
@@ -164,14 +226,12 @@ def history(user=Depends(current_user)):
     }
 
 
-def _verify(body: bytes, signature: str, timestamp: str) -> bool:
+def _verify(body: bytes, signature: str, timestamp: str, secret: str) -> bool:
     try:
         if abs(time.time() - int(timestamp)) > MAX_SKEW_SECONDS:
             return False  # replay-bound
     except ValueError:
         return False
     signed = f"{timestamp}.{body.decode()}".encode()
-    expected = hmac.new(
-        os.environ["TRANSCRIPT_SECRET"].encode(), signed, hashlib.sha256
-    ).hexdigest()
+    expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
     return hmac.compare_digest(f"v1={expected}", signature)

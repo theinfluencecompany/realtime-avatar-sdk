@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.28.0
+
+A minor release: a call can speak in a voice your server provides.
+
+### Added
+
+- **`CallPolicy.voiceWebhook`: speak the call in your own voice.**
+  `startCall({ …, voiceWebhook: { url, secret, voiceId?, language?, sampleRate?, timeoutMs? } })`
+  sends `voice_webhook`. Each sentence she is about to say is POSTed to `url`, signed with
+  `secret`, and the audio you stream back is what she says, lip-synced, in both modes.
+  - The option, its validation and its snake_case mapping are generated from the platform's
+    `voice_webhook` contract, and an invalid value, including a URL that is not https, is refused
+    before any request is sent.
+  - Reply with streamed `audio/pcm` (alias `audio/raw`): raw signed 16-bit little-endian mono.
+    No other raw type is accepted. `timeoutMs` bounds the first audio byte of each attempt and
+    every later gap between chunks. A 2xx with no body, including a `204`, is
+    `voice_webhook_empty_audio`.
+  - A `401` or `403` ends the call. A timeout, an unreachable endpoint, or a `408`, `429` or
+    5xx is retried once, only before any audio has arrived, as a new POST with a new
+    `request_id`. Any other failure, or a failed retry, drops the rest of that reply, and the
+    next reply tries again. Repeated failures end the call with a fatal error carrying the last
+    failure's code.
+  - It replaces the built-in voice; the platform answers `422` to a mint that also sets `voice`.
+  - `voice_webhook` is emitted only by the key-holding entries. The browser and native entries,
+    and their declarations, do not name it.
+  - See AGENTS.md rule 15 and "Custom voice (webhook)" in the README.
+- **`verifyVoiceWebhook(rawBody, headers, secret)`** verifies a `voice.synthesize` request with
+  the transcript webhook's signature scheme and returns it as the generated, typed
+  `VoiceWebhookRequest`. A field added by a newer worker is dropped rather than refused.
+- **`RealtimeAvatarWebhookError`**, with `code`: `missing_signature`, `bad_signature`,
+  `stale_timestamp` or `invalid_body`.
+- **`onVoiceError` and `voiceError`** on `useRealtimeSession` and on `AvatarCall` /
+  `useAvatarCall` (web), and on `useRealtimeSession` in `realtime-avatar/react-native`. They
+  report the worker's new `voice_error` lifecycle frame as
+  `{ code, message, status?, fatal, requestId? }`. A `code` newer than this SDK still surfaces as
+  a string. `fatal` means the call is ending, and `onEnded` follows with `failed`. `voiceError`
+  belongs to one call: the next one starts at null, whether it starts by reactivating, a new
+  avatar or mode, a redial or `reset()`.
+- Types: `VoiceWebhook`, `VoiceWebhookRequest`, `VoiceWebhookErrorCode`,
+  `WebhookVerificationErrorCode`, `VoiceError` and `VoiceErrorCode`.
+- The Next.js and FastAPI quickstarts include an endpoint that verifies the request and streams
+  OpenAI's 24 kHz PCM back as `audio/pcm`.
+
+### Changed
+
+- `verifyTranscript` now throws `RealtimeAvatarWebhookError` with the same messages as before. It
+  is still an `Error`, so existing `catch` blocks behave the same.
+- The vendored contract is re-synced. Besides the voice webhook, it brings the already deployed
+  `speech:write` key scope and the `avatar_not_callable` error message.
+
+### Release order
+
+Publish only after the platform accepts `voice_webhook`. The mint request is strict, so an older
+platform refuses it with `422`.
+
 ## 0.27.4
 
 - Add the server-owned `safe-content-v1` call policy from the platform contract. It selects no-sexual-content enforcement for voice and video while preserving the existing minor protections. Browser policy overrides remain stripped. Deploy worker enforcement and platform support before selecting this policy.

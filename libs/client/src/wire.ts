@@ -15,6 +15,7 @@ import { recordingArtifactSchema, recordingModeSchema } from "../../http-client/
 import { connectionHistoryGrantSchema } from "../../http-client/src/generated/connection-history.ts";
 import { transcriptionOptionsSchema, transcriptionWireSchema, transcriptionToWire } from "../../http-client/src/generated/transcription.ts";
 import { contentPolicySchema } from "../../http-client/src/generated/content-policy.ts";
+import { voiceErrorFrameSchema as contractVoiceErrorFrameSchema } from "../../http-client/src/generated/voice-error-frame.ts";
 
 const DEFAULT_AVATAR_ID = "maria";
 const DEFAULT_BACKGROUND_ID = "plain_white";
@@ -473,6 +474,15 @@ const clipAckFrameSchema = z
   })
   .strip();
 
+// A worker newer than this SDK may name a cause the generated enum does not list yet. The frame
+// must still surface, so `code` is widened to any non-empty string here and typed as VoiceErrorCode.
+const voiceErrorFrameSchema = contractVoiceErrorFrameSchema.extend({ code: z.string().min(1) });
+
+/** Why the caller's voice webhook failed. Codes this SDK predates arrive as plain strings. */
+// Derived from the generated schema rather than `components`: naming `components` here would put the
+// whole mint contract, credential fields included, into the client entries' declarations.
+export type VoiceErrorCode = z.infer<typeof contractVoiceErrorFrameSchema>["code"] | (string & {});
+
 export const lifecycleServerFrameSchema = z.discriminatedUnion("kind", [
   sessionClockFrameSchema,
   endingFrameSchema,
@@ -480,6 +490,7 @@ export const lifecycleServerFrameSchema = z.discriminatedUnion("kind", [
   endedFrameSchema,
   behaviorStateFrameSchema,
   clipAckFrameSchema,
+  voiceErrorFrameSchema,
 ]);
 
 export const liveKitCapacitySnapshotSchema = z
