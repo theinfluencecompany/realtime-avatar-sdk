@@ -40,6 +40,7 @@ export const ERROR_SEMANTICS = {
   "service_warming": { statuses: [503], message: "Realtime Avatar is warming up. Try again in a moment.", retryable: true },
   "avatar_not_ready": { statuses: [409], message: "This avatar is still being built — it is usually ready within a minute. Try again then.", retryable: true },
   "clip_library_not_ready": { statuses: [409], message: "This avatar's motion clips are still rendering. Try again in a minute.", retryable: true },
+  "avatar_not_callable": { statuses: [409], message: "This avatar only hosts a live stream and cannot take calls. Choose another avatar.", retryable: false },
   "recording_unsupported": { statuses: [501], message: "Session recording is not enabled for this deployment.", retryable: false },
   "recording_requires_new_room": { statuses: [422], message: "Recording requires a new session room. Start a fresh session to record it.", retryable: false },
   "recording_unavailable": { statuses: [503], message: "Session recording is temporarily unavailable. Try again in a moment.", retryable: true },
