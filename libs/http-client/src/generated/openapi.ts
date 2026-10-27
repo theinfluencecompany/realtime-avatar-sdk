@@ -478,6 +478,26 @@ export interface webhooks {
         patch?: never;
         trace?: never;
     };
+    "voice.synthesize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Return speech audio for one sentence
+         * @description Sent only for a call minted with voice_webhook, once per sentence the character is about to say, to voice_webhook.url. Verify HMAC-SHA256 with voice_webhook.secret over the timestamp, a literal dot, and the raw request body before parsing; reject stale timestamps. Answer 200 with the audio streamed as soon as you have it: the first byte is what the caller waits for, and it must arrive within voice_webhook.timeout_ms. audio/pcm (aliases audio/l16, audio/raw) is raw signed 16-bit little-endian mono at output.sample_rate; a rate= content-type parameter overrides the rate. Redirects are never followed. A 401 or 403 ends the call. When the caller interrupts, the worker closes the connection mid-body; that is normal. Failures reach the client as a voice_error lifecycle frame whose code is a VoiceWebhookErrorCode.
+         */
+        post: operations["synthesizeVoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export interface components {
     schemas: {
@@ -662,6 +682,27 @@ export interface components {
             connection_history?: boolean;
             client_metadata?: {
                 [key: string]: string;
+            };
+            /** @description Speak this call with your own voice: the worker POSTs each sentence to url and plays the audio you return. Replaces voice and voice_id. */
+            voice_webhook?: {
+                /**
+                 * Format: uri
+                 * @description https endpoint on your server that returns speech audio for one sentence. The worker also refuses a host that resolves to a non-public address and never follows redirects.
+                 */
+                url: string;
+                /** @description HMAC-SHA256 key for x-rta-signature, the same scheme as transcript_webhook. Never placed in room or participant metadata. */
+                secret: string;
+                /** @description Your own voice identifier, echoed in every request as voice_id. */
+                voice_id?: string;
+                /** @description BCP-47 language hint, echoed in every request as language. */
+                language?: string;
+                /**
+                 * @description Sample rate of raw audio/pcm replies, in Hz. Default 24000.
+                 * @enum {number}
+                 */
+                sample_rate?: 8000 | 16000 | 22050 | 24000 | 44100 | 48000;
+                /** @description Deadline for the first audio byte of each reply, in milliseconds. Default 5000. */
+                timeout_ms?: number;
             };
             /** @description DEPRECATED, no-op. Accepted and ignored. The faster hesitation ceiling this requested is now the default for every session, so sending it changes nothing. Safe to stop sending; the field is retained only so existing callers do not break. */
             fast_endpointing?: boolean;
@@ -1133,6 +1174,48 @@ export interface components {
             };
         } & {
             [key: string]: unknown;
+        };
+        /** @description One sentence to synthesize, signed with voice_webhook.secret. Reply 200 with streamed audio. */
+        VoiceWebhookRequest: {
+            /** @constant */
+            type: "voice.synthesize";
+            /** @constant */
+            version: 1;
+            /** @description Unique per POST; also sent as the x-rta-request-id header. */
+            request_id: string;
+            /** @description The same session id the transcript webhook payload carries. */
+            session_id: string;
+            /** @description The plain words to speak: no markup and no stage directions. */
+            text: string;
+            /** @description voice_webhook.voice_id from the mint, or null. */
+            voice_id: string | null;
+            /** @description voice_webhook.language from the mint, or null. */
+            language: string | null;
+            /** @description The raw audio/pcm format expected when the reply does not name another. */
+            output: {
+                /** @constant */
+                encoding: "pcm_s16le";
+                /** @enum {number} */
+                sample_rate: 8000 | 16000 | 22050 | 24000 | 44100 | 48000;
+                /** @constant */
+                channels: 1;
+            };
+            /** @description Mint-time client_metadata echoed verbatim; an empty object when none was provided. */
+            client_metadata: {
+                [key: string]: string;
+            };
+        };
+        /** @enum {string} */
+        VoiceWebhookErrorCode: "voice_webhook_url_not_allowed" | "voice_webhook_unauthorized" | "voice_webhook_unreachable" | "voice_webhook_timeout" | "voice_webhook_http_error" | "voice_webhook_unsupported_audio" | "voice_webhook_empty_audio";
+        VoiceErrorFrame: {
+            /** @constant */
+            kind: "voice_error";
+            /** @enum {string} */
+            code: "voice_webhook_url_not_allowed" | "voice_webhook_unauthorized" | "voice_webhook_unreachable" | "voice_webhook_timeout" | "voice_webhook_http_error" | "voice_webhook_unsupported_audio" | "voice_webhook_empty_audio";
+            message: string;
+            status?: number;
+            fatal: boolean;
+            request_id?: string;
         };
         Avatar: {
             id: string;
@@ -3368,6 +3451,61 @@ export interface operations {
                 content?: never;
             };
             /** @description Application response; delivery and retries are best-effort. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    synthesizeVoice: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description v1= followed by the hex HMAC-SHA256 of <timestamp>.<raw body>, keyed by voice_webhook.secret. Compare in constant time. */
+                "x-rta-signature": string;
+                /** @description Unix seconds, used verbatim in the signed message. Verify freshness to bound replay. */
+                "x-rta-timestamp": string;
+                /** @description Equal to request_id in the body. Unique per POST. */
+                "x-rta-request-id": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceWebhookRequest"];
+            };
+        };
+        responses: {
+            /** @description Speech audio for request.text, streamed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/pcm": string;
+                    "audio/wav": string;
+                    "audio/mpeg": string;
+                    "audio/ogg": string;
+                };
+            };
+            /** @description Signature rejected. Ends the call with voice_webhook_unauthorized. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refused. Ends the call with voice_webhook_unauthorized. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Any other status: the sentence is not spoken (voice_webhook_http_error); a 5xx or 429 is retried once. */
             default: {
                 headers: {
                     [name: string]: unknown;

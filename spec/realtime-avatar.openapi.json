@@ -810,6 +810,60 @@
             },
             "maxProperties": 16
           },
+          "voice_webhook": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "maxLength": 500,
+                "format": "uri",
+                "description": "https endpoint on your server that returns speech audio for one sentence. The worker also refuses a host that resolves to a non-public address and never follows redirects."
+              },
+              "secret": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 200,
+                "writeOnly": true,
+                "description": "HMAC-SHA256 key for x-rta-signature, the same scheme as transcript_webhook. Never placed in room or participant metadata."
+              },
+              "voice_id": {
+                "description": "Your own voice identifier, echoed in every request as voice_id.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "language": {
+                "description": "BCP-47 language hint, echoed in every request as language.",
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 35
+              },
+              "sample_rate": {
+                "description": "Sample rate of raw audio/pcm replies, in Hz. Default 24000.",
+                "type": "number",
+                "enum": [
+                  8000,
+                  16000,
+                  22050,
+                  24000,
+                  44100,
+                  48000
+                ]
+              },
+              "timeout_ms": {
+                "description": "Deadline for the first audio byte of each reply, in milliseconds. Default 5000.",
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 15000
+              }
+            },
+            "required": [
+              "url",
+              "secret"
+            ],
+            "additionalProperties": false,
+            "description": "Speak this call with your own voice: the worker POSTs each sentence to url and plays the audio you return. Replaces voice and voice_id."
+          },
           "fast_endpointing": {
             "description": "DEPRECATED, no-op. Accepted and ignored. The faster hesitation ceiling this requested is now the default for every session, so sending it changes nothing. Safe to stop sending; the field is retained only so existing callers do not break.",
             "type": "boolean"
@@ -2554,6 +2608,161 @@
         ],
         "additionalProperties": {},
         "description": "Signed end-of-call transcript sent directly by the worker to transcript_webhook.url after capacity release. Optional provenance is additive; legacy payloads remain valid."
+      },
+      "VoiceWebhookRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "voice.synthesize"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Unique per POST; also sent as the x-rta-request-id header."
+          },
+          "session_id": {
+            "type": "string",
+            "description": "The same session id the transcript webhook payload carries."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "description": "The plain words to speak: no markup and no stage directions."
+          },
+          "voice_id": {
+            "description": "voice_webhook.voice_id from the mint, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "language": {
+            "description": "voice_webhook.language from the mint, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "output": {
+            "type": "object",
+            "properties": {
+              "encoding": {
+                "type": "string",
+                "const": "pcm_s16le"
+              },
+              "sample_rate": {
+                "type": "number",
+                "enum": [
+                  8000,
+                  16000,
+                  22050,
+                  24000,
+                  44100,
+                  48000
+                ]
+              },
+              "channels": {
+                "type": "number",
+                "const": 1
+              }
+            },
+            "required": [
+              "encoding",
+              "sample_rate",
+              "channels"
+            ],
+            "description": "The raw audio/pcm format expected when the reply does not name another."
+          },
+          "client_metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxProperties": 16,
+            "description": "Mint-time client_metadata echoed verbatim; an empty object when none was provided."
+          }
+        },
+        "required": [
+          "type",
+          "version",
+          "request_id",
+          "session_id",
+          "text",
+          "voice_id",
+          "language",
+          "output",
+          "client_metadata"
+        ],
+        "description": "One sentence to synthesize, signed with voice_webhook.secret. Reply 200 with streamed audio."
+      },
+      "VoiceWebhookErrorCode": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "enum": [
+          "voice_webhook_url_not_allowed",
+          "voice_webhook_unauthorized",
+          "voice_webhook_unreachable",
+          "voice_webhook_timeout",
+          "voice_webhook_http_error",
+          "voice_webhook_unsupported_audio",
+          "voice_webhook_empty_audio"
+        ]
+      },
+      "VoiceErrorFrame": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "voice_error"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "voice_webhook_url_not_allowed",
+              "voice_webhook_unauthorized",
+              "voice_webhook_unreachable",
+              "voice_webhook_timeout",
+              "voice_webhook_http_error",
+              "voice_webhook_unsupported_audio",
+              "voice_webhook_empty_audio"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "fatal": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "code",
+          "message",
+          "fatal"
+        ]
       },
       "Avatar": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6257,6 +6466,95 @@
           },
           "default": {
             "description": "Application response; delivery and retries are best-effort."
+          }
+        }
+      }
+    },
+    "voice.synthesize": {
+      "post": {
+        "operationId": "synthesizeVoice",
+        "summary": "Return speech audio for one sentence",
+        "description": "Sent only for a call minted with voice_webhook, once per sentence the character is about to say, to voice_webhook.url. Verify HMAC-SHA256 with voice_webhook.secret over the timestamp, a literal dot, and the raw request body before parsing; reject stale timestamps. Answer 200 with the audio streamed as soon as you have it: the first byte is what the caller waits for, and it must arrive within voice_webhook.timeout_ms. audio/pcm (aliases audio/l16, audio/raw) is raw signed 16-bit little-endian mono at output.sample_rate; a rate= content-type parameter overrides the rate. Redirects are never followed. A 401 or 403 ends the call. When the caller interrupts, the worker closes the connection mid-body; that is normal. Failures reach the client as a voice_error lifecycle frame whose code is a VoiceWebhookErrorCode.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "x-rta-signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^v1=[0-9a-f]{64}$"
+            },
+            "description": "v1= followed by the hex HMAC-SHA256 of <timestamp>.<raw body>, keyed by voice_webhook.secret. Compare in constant time."
+          },
+          {
+            "name": "x-rta-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "Unix seconds, used verbatim in the signed message. Verify freshness to bound replay."
+          },
+          {
+            "name": "x-rta-request-id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Equal to request_id in the body. Unique per POST."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceWebhookRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Speech audio for request.text, streamed.",
+            "content": {
+              "audio/pcm": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/wav": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "audio/ogg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Signature rejected. Ends the call with voice_webhook_unauthorized."
+          },
+          "403": {
+            "description": "Refused. Ends the call with voice_webhook_unauthorized."
+          },
+          "default": {
+            "description": "Any other status: the sentence is not spoken (voice_webhook_http_error); a 5xx or 429 is retried once."
           }
         }
       }
