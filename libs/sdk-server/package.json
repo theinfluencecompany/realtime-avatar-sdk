@@ -1,6 +1,6 @@
 {
   "name": "realtime-avatar",
-  "version": "0.28.0",
+  "version": "0.28.1",
   "description": "Realtime Avatar SDK. `realtime-avatar` and the route adapters hold your API key and are server-only; `realtime-avatar/react`, `/browser` and `/tools` never can — importing a server entry into a browser build throws at bundle time.",
   "license": "MIT",
   "author": "The Influence Company",
@@ -129,7 +129,7 @@
   },
   "peerDependencies": {
     "@livekit/components-react": "^2.9.0",
-    "@livekit/react-native": "^3.0.0",
+    "@livekit/react-native": "~3.0.0",
     "@livekit/react-native-webrtc": "^144.2.0",
     "react": ">=18",
     "react-dom": ">=18",

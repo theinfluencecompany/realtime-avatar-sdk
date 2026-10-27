@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.28.1
+
+A patch release: a plain `npm install realtime-avatar` resolves again.
+
+### Fixed
+
+- **The optional React Native peers no longer contradict each other.** The
+  `@livekit/react-native` peer was `^3.0.0`, which admits 3.1.0, and 3.1.0 requires
+  `@livekit/react-native-webrtc@^150.1.0` while this package's webrtc peer is `^144.2.0`.
+  npm resolved 3.1.0 and every install, web or native, failed with `ERESOLVE` unless run
+  with `--legacy-peer-deps`. The range is now `~3.0.0`, the tested pair
+  (`@livekit/react-native` 3.0.0 with `@livekit/react-native-webrtc` 144.2.0); the test that
+  pins the peers now derives both from that tested release. Present since at least 0.27.5.
+
 ## 0.28.0
 
 A minor release: a call can speak in a voice your server provides.

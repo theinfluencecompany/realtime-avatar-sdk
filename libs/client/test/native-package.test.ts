@@ -98,8 +98,14 @@ test("native dependency contract pins one compatible context and transport group
       "livekit-client": "2.22.3", "@livekit/components-react": "2.9.21",
     })) assert.equal(pkg.devDependencies[name], version, `${workspace}: ${name}`);
     if (pkg.peerDependencies) {
-      assert.equal(pkg.peerDependencies["@livekit/react-native"], "^3.0.0");
-      assert.equal(pkg.peerDependencies["@livekit/react-native-webrtc"], "^144.2.0");
+      // A new @livekit/react-native minor may move its own webrtc peer (3.1.0 moved it to
+      // ^150.1.0), so the range stops at the tested minor and the webrtc peer is the one that
+      // tested release declares. With ^3.0.0, a plain install resolved 3.1.0 and failed ERESOLVE.
+      const tested = manifest.parse(JSON.parse(await readFile(
+        new URL("node_modules/@livekit/react-native/package.json", root), "utf8")));
+      assert.equal(pkg.peerDependencies["@livekit/react-native"], `~${pkg.devDependencies["@livekit/react-native"]}`);
+      assert.equal(pkg.peerDependencies["@livekit/react-native-webrtc"],
+        tested.peerDependencies?.["@livekit/react-native-webrtc"]);
       assert.equal(pkg.peerDependencies["livekit-client"], "^2.22.3");
     }
   }
