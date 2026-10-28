@@ -18,7 +18,7 @@ void contractParity;
 
 const renderId = "rnd_0123456789abcdef0123456789abcdef";
 const queued: Render = {
-  id: renderId, object: "render", status: "queued", avatarId: "ava_6b80f113f07346c0ba6eedb32ec76aee",
+  id: renderId, object: "render", status: "queued", avatarId: "ava_0123456789abcdef0123456789abcdef",
   voiceId: "voice_test", durationMs: null, width: null, height: null, timeline: null, error: null,
   createdAt: "2026-10-28T12:00:00.000Z", completedAt: null,
 };
@@ -49,7 +49,7 @@ const failed: Render = {
   completedAt: "2026-10-28T12:01:00.000Z",
 };
 const script: CreateRenderInput = {
-  avatarId: "ava_6b80f113f07346c0ba6eedb32ec76aee",
+  avatarId: "ava_0123456789abcdef0123456789abcdef",
   shots: [
     { clipId: "gesture_send_flower", say: "你终于来了。今天……我有话想对你说。" },
     { clipId: "idle_touch_collar", say: "别笑，我是认真的。", pauseAfterMs: 800 },

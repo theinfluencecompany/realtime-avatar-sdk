@@ -135,15 +135,16 @@ connection payload back; your client joins and renders her.
   of the avatar performing a script, offline, with no call. Everything in one shot happens at the
   same time; shots play one after another. A shot is `{ clipId?, say?, pauseAfterMs? }`: what she
   does (a READY clip or `"primary"`), what she says, and the silence after it. Example:
-  `{ avatarId: "ava_6b80f113f07346c0ba6eedb32ec76aee", shots: [{ clipId: "gesture_send_flower", say: "你终于来了。今天……我有话想对你说。" }, { clipId: "idle_touch_collar", say: "别笑，我是认真的。", pauseAfterMs: 800 }, { say: "所以，今晚留下来。" }] }`.
-  The ids belong to one example avatar: use your own `avatarId` and clip ids from `listClips(avatarId)`.
+  `{ avatarId: "ava_0123456789abcdef0123456789abcdef", shots: [{ clipId: "gesture_send_flower", say: "你终于来了。今天……我有话想对你说。" }, { clipId: "idle_touch_collar", say: "别笑，我是认真的。", pauseAfterMs: 800 }, { say: "所以，今晚留下来。" }] }`.
+  The avatar id is a placeholder: use your own `avatarId` and clip ids from `listClips(avatarId)`.
   The body is camelCase on the wire too. Then `waitForRender(id)` and `getRenderAccess(id)` for a
   signed URL that lasts an hour; keep the render id, not the URL. A plain `<video src>` plays it.
 - `say` is 1 to 1,000 characters after trimming whitespace and starts when the shot starts.
   `pauseAfterMs` (0 to 10,000) is silence after the speech. Omitting `clipId` keeps the current
   loop clip, which is `"primary"` until a shot names another loop clip.
-- A clip loops if it is `"primary"` or is listed in `listClips(avatarId).behavior.idle.clips` or
-  `behavior.on.userSpeechStarted.clips`; every other clip plays once.
+- A clip loops if it is `"primary"` or in the avatar's idle pool
+  (`listClips(avatarId).behavior.idle.clips`); every other clip plays once, including a listening
+  clip or an action that is not also in the idle pool. `listClips` reports each clip's `playback`.
 - A shot lasts its speech plus `pauseAfterMs`, or a once clip's action if longer, rounded up to
   200 ms. A loop clip does not set the length: a shot with only a loop clip lasts 200 ms, so add
   `pauseAfterMs` to hold it.
@@ -159,11 +160,12 @@ connection payload back; your client joins and renders her.
 - Every `clipId` must be a READY clip of the avatar or `"primary"` (`422 render_clip_unavailable` otherwise,
   nothing charged). A `voiceId` is never silently replaced (`404 voice_not_found`,
   `422 voice_unavailable`).
-- Billed per second of output at the live per-second rate, at most 180 s per video; a failed
-  render is not charged. `503 render_export_unavailable` with `retryable: false` means the
-  deployment has not switched the feature on; with `retryable: true` the render could not be
-  started, so retry (the SDK already retries a 503), and that attempt stays in `listRenders` as a
-  `failed` render, not charged.
+- Billed per second of output at the live per-second rate, at most 180 s per video (longer is
+  `400 render_too_long`, nothing held); a failed render is not charged.
+  `503 render_export_unavailable` (`retryable: false`) means the deployment has not switched the
+  feature on. `503 render_start_failed` (`retryable: true`) means the render was created but could
+  not be started, so retry (the SDK already retries a 503); that attempt stays in `listRenders` as
+  a `failed` render, not charged.
 
 ## Not provided
 - Hosted tool execution — the platform never runs your tools. They run in YOUR page (the

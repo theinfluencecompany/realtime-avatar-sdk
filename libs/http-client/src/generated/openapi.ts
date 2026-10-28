@@ -451,7 +451,7 @@ export interface paths {
         put?: never;
         /**
          * Render a video of an avatar speaking a script
-         * @description Everything in one shot happens at the same time; shots play one after another. Example: {"avatarId":"ava_6b80f113f07346c0ba6eedb32ec76aee","shots":[{"clipId":"gesture_send_flower","say":"你终于来了。今天……我有话想对你说。"},{"clipId":"idle_touch_collar","say":"别笑，我是认真的。","pauseAfterMs":800},{"say":"所以，今晚留下来。"}]}. Each shot has three optional fields: clipId is what she does (a ready clip from the avatar's clip library, or "primary" for the avatar's own video; omit it to keep the current loop clip), say is what she says (speech starts when the shot starts), and pauseAfterMs is how long she stays silent after speaking (0 to 10,000 ms). A shot lasts as long as its speech plus pauseAfterMs, or as long as a once clip's action if that is longer, rounded up to 200 ms. A once clip plays its action exactly once from its first frame, never cut; if the shot is longer, she continues on the loop clip from before the shot. A loop clip fills the shot, and the same loop clip in consecutive shots continues without restarting. Renders an MP4 (H.264 and AAC, 25 fps) offline, with no live call, and every frame is lip-synced. The voice is voiceId or the avatar's own. The finished render's timeline reports where each shot landed in the video. Billed per second of the rendered video at the live-call rate (1 credit per second). The request holds an upper-bound estimate, settles to the rendered length, and releases everything if the render fails. A video may be at most 180 seconds. Answers 202 with status queued: poll GET /v1/renders/{renderId} until ready or failed, then request a download URL. Send an Idempotency-Key so a retried request returns the same render instead of starting another. 422 render_clip_unavailable names a clip that is not a ready clip of this avatar; 404 voice_not_found names a voice this workspace cannot see and 422 voice_unavailable one that cannot be used for video (a named voice is never replaced); 429 concurrency_limit_reached means this workspace already has 4 renders queued or rendering (retry when one finishes); 503 render_export_unavailable means rendering is not available on this deployment.
+         * @description Everything in one shot happens at the same time; shots play one after another. Example: {"avatarId":"ava_0123456789abcdef0123456789abcdef","shots":[{"clipId":"gesture_send_flower","say":"你终于来了。今天……我有话想对你说。"},{"clipId":"idle_touch_collar","say":"别笑，我是认真的。","pauseAfterMs":800},{"say":"所以，今晚留下来。"}]}. Each shot has three optional fields: clipId is what she does (a ready clip from the avatar's clip library, or "primary" for the avatar's own video; omit it to keep the current loop clip), say is what she says (speech starts when the shot starts), and pauseAfterMs is how long she stays silent after speaking (0 to 10,000 ms). A shot lasts as long as its speech plus pauseAfterMs, or as long as a once clip's action if that is longer, rounded up to 200 ms. A once clip plays its action exactly once from its first frame, never cut; if the shot is longer, she continues on the loop clip from before the shot. A loop clip fills the shot, and the same loop clip in consecutive shots continues without restarting. Renders an MP4 (H.264 and AAC, 25 fps) offline, with no live call, and every frame is lip-synced. The voice is voiceId or the avatar's own. The finished render's timeline reports where each shot landed in the video. Billed per second of the rendered video at the live-call rate (1 credit per second). The request holds an upper-bound estimate, settles to the rendered length, and releases everything if the render fails. A video may be at most 180 seconds. Answers 202 with status queued: poll GET /v1/renders/{renderId} until ready or failed, then request a download URL. Send an Idempotency-Key so a retried request returns the same render instead of starting another. 400 render_too_long means the shots are estimated to make a video longer than 180 seconds (nothing is held); 422 render_clip_unavailable names a clip that is not a ready clip of this avatar; 404 voice_not_found names a voice this workspace cannot see and 422 voice_unavailable one that cannot be used for video (a named voice is never replaced); 429 concurrency_limit_reached means this workspace already has 4 renders queued or rendering (retry when one finishes); 503 render_export_unavailable means rendering is not available on this deployment (not retryable), and 503 render_start_failed means this render was created but could not be started (retryable: it is listed as failed and uncharged, and a retry is a new render).
          *
          *     Requires an API key with the `renders:write` scope.
          */
@@ -655,11 +655,8 @@ export interface components {
             } | {
                 /** @constant */
                 provider: "fish";
-                /**
-                 * @default speech-1.6
-                 * @enum {string}
-                 */
-                model: "speech-1.6" | "s1" | "s2-pro" | "s2.1-pro" | "drama-3" | "speech-1.5" | "s1-mini";
+                /** @default s2.1-pro */
+                model: ("s1" | "s2-pro" | "s2.1-pro" | "drama-3") | ("speech-1.6" | "speech-1.5" | "s1-mini");
                 voice_id: string;
                 speed?: number | null;
                 emotion?: string | null;
@@ -1812,7 +1809,7 @@ export interface components {
             lipGain?: number;
             /** @description The script: 1 to 50 shots, played one after another. At least one shot says something; at most 4,000 characters of say in total and 16 different clips besides "primary". */
             shots: {
-                /** @description What she does: a ready clip from the avatar's clip library, or "primary" for the avatar's own video. Omit it to keep the current loop clip. */
+                /** @description What she does: a ready clip from the avatar's clip library, or "primary" for the avatar's own video. Omit it to keep the current loop clip. A clip loops if it is "primary" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once. */
                 clipId?: string;
                 /** @description What she says, 1 to 1,000 characters. Speech starts when the shot starts. */
                 say?: string;
@@ -1974,6 +1971,11 @@ export interface components {
                 uploadAssetId: string | null;
                 motionPrompt: string | null;
                 durationSeconds: number | null;
+                /**
+                 * @description How the clip plays in a render's shot. once: its action plays one time. loop: it fills the shot. A clip loops if it is "primary" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once.
+                 * @enum {string}
+                 */
+                playback: "once" | "loop";
                 anchorVersion: number;
                 poseCheck: {
                     verdict: {
@@ -2076,6 +2078,11 @@ export interface components {
                 uploadAssetId: string | null;
                 motionPrompt: string | null;
                 durationSeconds: number | null;
+                /**
+                 * @description How the clip plays in a render's shot. once: its action plays one time. loop: it fills the shot. A clip loops if it is "primary" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once.
+                 * @enum {string}
+                 */
+                playback: "once" | "loop";
                 anchorVersion: number;
                 poseCheck: {
                     verdict: {
@@ -3630,7 +3637,7 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "avatarId": "ava_6b80f113f07346c0ba6eedb32ec76aee",
+                 *       "avatarId": "ava_0123456789abcdef0123456789abcdef",
                  *       "shots": [
                  *         {
                  *           "clipId": "gesture_send_flower",
@@ -3660,7 +3667,7 @@ export interface operations {
                     "application/json": components["schemas"]["Render"];
                 };
             };
-            /** @description The body is not JSON, or the script's estimated video is longer than 180 seconds (refused before any credits are held) */
+            /** @description The body is not JSON, or the shots' estimated video is longer than 180 seconds (render_too_long, refused before any credits are held) */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3723,7 +3730,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Rendering is not available on this deployment (render_export_unavailable) */
+            /** @description Rendering is not available on this deployment (render_export_unavailable, not retryable), or this render could not be started (render_start_failed, retryable) */
             503: {
                 headers: {
                     [name: string]: unknown;

@@ -429,7 +429,7 @@ in `apps/quickstart/python-fastapi/main.py`.
 
 ```ts
 const render = await rta.createRender({
-  avatarId: "ava_6b80f113f07346c0ba6eedb32ec76aee",
+  avatarId: "ava_0123456789abcdef0123456789abcdef",
   shots: [
     { clipId: "gesture_send_flower", say: "你终于来了。今天……我有话想对你说。" },
     { clipId: "idle_touch_collar", say: "别笑，我是认真的。", pauseAfterMs: 800 },
@@ -444,7 +444,7 @@ const { url, expiresAt } = await rta.getRenderAccess(done.id);   // <video src={
 She sends the flower while she says the first line, touches her collar while she says the
 second and then stays quiet for 800 ms, and says the last line without a new clip. The result is
 an MP4 (H.264 + AAC, 25 fps) with the same face, clips, voice and lip-sync as a call, made
-offline with no call and no LiveKit room. The ids belong to one example avatar: use your own
+offline with no call and no LiveKit room. The avatar id is a placeholder: use your own
 `avatarId`, and clip ids from `listClips(avatarId)`.
 
 | Field | What it is |
@@ -461,9 +461,10 @@ offline with no call and no LiveKit room. The ids belong to one example avatar: 
 longer, rounded up to 200 ms. A loop clip does not set a shot's length: a shot with only a loop
 clip lasts 200 ms, so add `pauseAfterMs` to hold it.
 
-**Which clips loop.** A clip loops if it is `"primary"` or is listed in
-`listClips(avatarId).behavior.idle.clips` or `behavior.on.userSpeechStarted.clips`. Every other
-clip plays once.
+**Which clips loop.** A clip loops if it is `"primary"` or in the avatar's idle pool
+(`listClips(avatarId).behavior.idle.clips`); every other clip plays once, so a listening clip
+or an action that is not also in the idle pool plays once. `listClips` reports each clip's
+`playback`.
 
 - **once**, an action: it plays exactly once from its first frame and is never cut. If the shot
   runs longer, she continues on the loop clip from before the shot. The same clip in two shots
@@ -502,8 +503,8 @@ Every time is milliseconds from the start of the video.
   again for a fresh one. The file itself is kept until you delete the account.
 - **Limits.** Every shot sets at least one field (`pauseAfterMs: 0` alone does not count), at
   least one shot has `say`, at most 4,000 characters of `say` in total and 16 different clips
-  besides `"primary"`. A script whose video would run past 180 seconds is refused with a `400`
-  before any credits are held. A workspace may have 4 renders queued or rendering at once; the
+  besides `"primary"`. A script whose video would run past 180 seconds is refused with
+  `400 render_too_long` before any credits are held. A workspace may have 4 renders queued or rendering at once; the
   next is `429 concurrency_limit_reached`, which clears when one settles.
 - **Billing.** Per second of rendered video at the live per-second rate. A failed render is not
   charged.

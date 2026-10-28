@@ -6,7 +6,7 @@ import { z } from "zod";
 // Everything in one shot happens at the same time; shots play one after another.
 //
 //   {
-//     "avatarId": "ava_6b80f113f07346c0ba6eedb32ec76aee",
+//     "avatarId": "ava_0123456789abcdef0123456789abcdef",
 //     "shots": [
 //       { "clipId": "gesture_send_flower", "say": "你终于来了。今天……我有话想对你说。" },
 //       { "clipId": "idle_touch_collar", "say": "别笑，我是认真的。", "pauseAfterMs": 800 },
@@ -51,7 +51,12 @@ export const RENDER_FAILURE_MESSAGES = {
 /** The clip id that means the avatar's own video. It always loops. */
 export const RENDER_PRIMARY_CLIP_ID = "primary";
 
-/** How a clip plays in a shot: `once` plays the action one time, `loop` fills the shot. */
+/**
+ * How a clip plays in a shot: `once` plays the action one time, `loop` fills the shot. Which one a
+ * clip gets is this one rule, word for word in every doc that states it.
+ */
+export const RENDER_PLAYBACK_RULE =
+  "A clip loops if it is \"primary\" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once.";
 export const RENDER_PLAYBACKS = ["once", "loop"] as const;
 export const renderPlaybackSchema = z.enum(RENDER_PLAYBACKS);
 export type RenderPlayback = z.infer<typeof renderPlaybackSchema>;
@@ -65,7 +70,10 @@ export const RENDER_MAX_PAUSE_AFTER_MS = 10_000;
 export const RENDER_MAX_CLIPS = 16;
 /** The longest video one render may produce. */
 export const RENDER_MAX_OUTPUT_SECONDS = 180;
-/** Every shot's length is rounded up to a whole multiple of this. */
+/**
+ * Every shot's length is rounded up to a whole multiple of this, and no shot is shorter: a shot
+ * that only names a loop clip lasts exactly this long.
+ */
 export const RENDER_SHOT_ROUNDING_MS = 200;
 /**
  * Renders one workspace may have queued or rendering at once; the next create is a retryable 429

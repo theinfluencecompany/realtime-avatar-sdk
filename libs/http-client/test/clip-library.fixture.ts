@@ -23,18 +23,18 @@ export const CLIP_LIBRARY = {
   data: [{
     clipId: "rest", status: "ready", url: "https://cdn.example/rest.mp4",
     source: "uploaded", uploadAssetId: "ast_rest",
-    motionPrompt: null, durationSeconds: null, anchorVersion: 1, poseCheck: null, error: null,
+    motionPrompt: null, durationSeconds: null, playback: "loop", anchorVersion: 1, poseCheck: null, error: null,
     createdAt: "2026-09-08T00:00:00Z", updatedAt: "2026-09-08T00:00:00Z",
   }, {
     clipId: "nod", status: "ready", url: "https://cdn.example/nod.mp4",
     source: "generated", uploadAssetId: null,
-    motionPrompt: "nods attentively", durationSeconds: 5, anchorVersion: 1,
+    motionPrompt: "nods attentively", durationSeconds: 5, playback: "loop", anchorVersion: 1,
     poseCheck: null, error: null,
     createdAt: "2026-09-08T00:00:00Z", updatedAt: "2026-09-08T00:00:00Z",
   }, {
     clipId: "wave", status: "queued", url: null,
     source: "generated", uploadAssetId: null,
-    motionPrompt: "waves hello", durationSeconds: 6, anchorVersion: 1,
+    motionPrompt: "waves hello", durationSeconds: 6, playback: "once", anchorVersion: 1,
     poseCheck: null, error: null,
     createdAt: "2026-09-08T00:00:00Z", updatedAt: "2026-09-08T00:00:00Z",
   }],

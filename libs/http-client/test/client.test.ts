@@ -733,6 +733,9 @@ test("listClips retains rows, behavior, default source, revision and anchor", as
   assert.equal(seen.method, "GET");
   assert.ok(seen.url?.endsWith("/avatars/ava_1/clips"));
   assert.deepEqual(library, body);
+  // The platform fills playback by one rule: "primary" or the idle pool loops, all else once.
+  // nod is in both the idle pool and userSpeechStarted; the idle pool decides it.
+  assert.deepEqual(library.data.map((c) => [c.clipId, c.playback]), [["rest", "loop"], ["nod", "loop"], ["wave", "once"]]);
 });
 
 test("a clip envelope without a revision throws instead of disarming CAS", async () => {

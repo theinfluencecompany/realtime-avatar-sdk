@@ -864,7 +864,7 @@ off on a new key.
 
 ```ts
 const render = await rta.createRender({
-  avatarId: "ava_6b80f113f07346c0ba6eedb32ec76aee",
+  avatarId: "ava_0123456789abcdef0123456789abcdef",
   shots: [
     { clipId: "gesture_send_flower", say: "你终于来了。今天……我有话想对你说。" },
     { clipId: "idle_touch_collar", say: "别笑，我是认真的。", pauseAfterMs: 800 },
@@ -876,15 +876,17 @@ if (done.status === "failed") throw new Error(done.error?.message);
 return (await rta.getRenderAccess(done.id)).url;   // signed for an hour
 ```
 
-The ids belong to one example avatar: use your own `avatarId`, and clip ids from
+The avatar id is a placeholder: use your own `avatarId`, and clip ids from
 `listClips(avatarId)`.
 
 - A shot has three optional fields, and needs at least one: `clipId` (what she does: a READY
   library clip, or `"primary"` for her own video; omit it to keep the current loop clip), `say`
   (what she says, 1 to 1,000 characters after trimming whitespace, starting when the shot
   starts), `pauseAfterMs` (silence after speaking, 0 to 10,000 ms).
-- A clip loops if it is `"primary"` or is listed in `listClips(avatarId).behavior.idle.clips` or
-  `behavior.on.userSpeechStarted.clips`. Every other clip plays once.
+- A clip loops if it is `"primary"` or in the avatar's idle pool
+  (`listClips(avatarId).behavior.idle.clips`); every other clip plays once. A listening clip or
+  an action plays once unless it is also in the idle pool. `listClips` reports each clip's
+  `playback`.
 - A shot lasts its speech plus `pauseAfterMs`, or a once clip's action if longer, rounded up to
   200 ms. A loop clip does not set the length: a shot with only a loop clip lasts 200 ms, so add
   `pauseAfterMs` to hold it.

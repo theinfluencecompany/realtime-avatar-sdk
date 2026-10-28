@@ -31,6 +31,10 @@ A minor release: pre-rendered video. An avatar can perform a script into an MP4 
   vendored byte for byte and SHA-256 checked like the recording contract. The request types are
   the generated `CreateRenderRequest` and its `shots` entry.
 - The key scopes `renders:read` and `renders:write`. Both are off on a new key.
+- **`playback` (`once` | `loop`) on every clip `listClips` returns.** A clip loops if it is
+  `"primary"` or in the avatar's idle pool (`behavior.idle.clips`); every other clip plays once,
+  including a listening clip or an action that is not also in the idle pool. It is the same rule
+  that sets `playback` on a render's timeline.
 
 ### Changed
 
@@ -39,16 +43,21 @@ A minor release: pre-rendered video. An avatar can perform a script into an MP4 
   already did; the two now share that code path.
 - The vendored contract is re-synced from the platform with the renders routes.
 - `concurrency_limit_reached` (429) also comes from `createRender` when a workspace already has 4
-  renders queued or rendering; `RealtimeAvatarHttpError`'s table says so.
+  renders queued or rendering; `RealtimeAvatarHttpError`'s table says so, and it names
+  `400 render_too_long` (the shots would make a video over 180 seconds; nothing held) and
+  `503 render_start_failed`.
 
 ### Release order
 
 Publish only after the platform serves the renders routes. Until it does, `npm run spec:check`
 reports the drift, and every call answers 404. A platform that serves the routes but has not
 been configured answers `503 render_export_unavailable` to `createRender` with `retryable: false`
-and nothing charged. The same code with `retryable: true` means the render was accepted but could
-not be started: the SDK retries it, and the attempt stays in `listRenders` as a `failed` render,
-not charged.
+and nothing charged. `503 render_start_failed` with `retryable: true` means the render was created
+but could not be started: the SDK retries it, and the attempt stays in `listRenders` as a `failed`
+render, not charged.
+
+`listClips` now requires `playback` on every clip, so this release must also wait until the
+platform's clip listing serves it; before then `listClips` and `waitForClips` throw.
 
 ## 0.30.0
 

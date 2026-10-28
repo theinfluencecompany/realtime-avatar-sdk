@@ -46,37 +46,39 @@ const schema7 = z.int().min(-9007199254740991).max(9007199254740991);
 
 const schema8 = z.union([schema7, schema3]);
 
-const schema9 = z.boolean();
+const schema9 = z.enum(["once","loop"]);
 
-const schema10 = z.number().min(0).max(1);
+const schema10 = z.boolean();
 
-const schema11 = z.strictObject({
-  "sameSubject": schema9,
-  "firstFrameMatchesAnchor": schema9,
-  "lastFrameMatchesAnchor": schema9,
-  "framingComparable": schema9,
-  "confidence": schema10,
+const schema11 = z.number().min(0).max(1);
+
+const schema12 = z.strictObject({
+  "sameSubject": schema10,
+  "firstFrameMatchesAnchor": schema10,
+  "lastFrameMatchesAnchor": schema10,
+  "framingComparable": schema10,
+  "confidence": schema11,
 });
 
-const schema12 = z.array(schema0);
+const schema13 = z.array(schema0);
 
-const schema13 = z.strictObject({
-  "verdict": schema11,
-  "issues": schema12,
+const schema14 = z.strictObject({
+  "verdict": schema12,
+  "issues": schema13,
   "firstFrameUrl": schema4,
   "lastFrameUrl": schema4,
 });
 
-const schema14 = z.union([schema13, schema3]);
+const schema15 = z.union([schema14, schema3]);
 
-const schema15 = z.strictObject({
+const schema16 = z.strictObject({
   "code": schema0,
   "message": schema0,
 });
 
-const schema16 = z.union([schema15, schema3]);
+const schema17 = z.union([schema16, schema3]);
 
-const schema17 = z.strictObject({
+const schema18 = z.strictObject({
   "clipId": schema0,
   "status": schema1,
   "url": schema4,
@@ -84,60 +86,61 @@ const schema17 = z.strictObject({
   "uploadAssetId": schema6,
   "motionPrompt": schema6,
   "durationSeconds": schema8,
+  "playback": schema9,
   "anchorVersion": schema7,
-  "poseCheck": schema14,
-  "error": schema16,
+  "poseCheck": schema15,
+  "error": schema17,
   "createdAt": schema0,
   "updatedAt": schema0,
 });
 
-const schema18 = z.array(schema17);
+const schema19 = z.array(schema18);
 
-const schema19 = z.int().min(0).max(9007199254740991);
+const schema20 = z.int().min(0).max(9007199254740991);
 
-const schema20 = z.int().min(1).max(9007199254740991);
+const schema21 = z.int().min(1).max(9007199254740991);
 
-const schema21 = z.enum(["portrait","source_frame"]);
+const schema22 = z.enum(["portrait","source_frame"]);
 
-const schema22 = z.strictObject({
+const schema23 = z.strictObject({
   "url": schema2,
-  "source": schema21,
+  "source": schema22,
   "timeMs": schema8,
 });
 
-const schema23 = z.union([schema22, schema3]);
-
-const schema24 = z.strictObject({
-  "data": schema18,
-  "avatarId": schema0,
-  "revision": schema19,
-  "anchorVersion": schema20,
-  "anchor": schema23,
-  "clipLibraryEligible": schema9,
-  "defaultSourceAssetId": schema6,
-  "behavior": clipBehaviorSchema,
-});
+const schema24 = z.union([schema23, schema3]);
 
 const schema25 = z.strictObject({
-  "kept": schema12,
-  "queued": schema12,
-  "retired": schema12,
+  "data": schema19,
+  "avatarId": schema0,
+  "revision": schema20,
+  "anchorVersion": schema21,
+  "anchor": schema24,
+  "clipLibraryEligible": schema10,
+  "defaultSourceAssetId": schema6,
+  "behavior": clipBehaviorSchema,
 });
 
 const schema26 = z.strictObject({
-  "data": schema18,
-  "avatarId": schema0,
-  "revision": schema19,
-  "anchorVersion": schema20,
-  "anchor": schema23,
-  "clipLibraryEligible": schema9,
-  "defaultSourceAssetId": schema6,
-  "behavior": clipBehaviorSchema,
-  "plan": schema25,
+  "kept": schema13,
+  "queued": schema13,
+  "retired": schema13,
 });
 
-export const clipLibraryResponseSchema = schema24 satisfies z.ZodType<Wire["ListAvatarClipsResponse"]>;
+const schema27 = z.strictObject({
+  "data": schema19,
+  "avatarId": schema0,
+  "revision": schema20,
+  "anchorVersion": schema21,
+  "anchor": schema24,
+  "clipLibraryEligible": schema10,
+  "defaultSourceAssetId": schema6,
+  "behavior": clipBehaviorSchema,
+  "plan": schema26,
+});
+
+export const clipLibraryResponseSchema = schema25 satisfies z.ZodType<Wire["ListAvatarClipsResponse"]>;
 type _clipLibraryResponseSchemaAcceptsWire = AssertTrue<Accepts<typeof clipLibraryResponseSchema, Wire["ListAvatarClipsResponse"]>>;
 
-export const clipLibraryUpdateSchema = schema26 satisfies z.ZodType<Wire["PutAvatarClipsResponse"]>;
+export const clipLibraryUpdateSchema = schema27 satisfies z.ZodType<Wire["PutAvatarClipsResponse"]>;
 type _clipLibraryUpdateSchemaAcceptsWire = AssertTrue<Accepts<typeof clipLibraryUpdateSchema, Wire["PutAvatarClipsResponse"]>>;
