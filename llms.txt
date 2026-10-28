@@ -131,7 +131,7 @@ connection payload back; your client joins and renders her.
   calls `rta.endCall(sessionId)` — and only ever end ids your own server minted.
 
 ## Pre-rendered video (render export)
-- `createRender({ avatarId, voiceId?, lipGain?, shots })` renders an MP4 (H.264 + AAC, 25 fps)
+- `createRender({ avatarId, voiceId? | voice?, lipGain?, shots })` renders an MP4 (H.264 + AAC, 25 fps)
   of the avatar performing a script, offline, with no call. Everything in one shot happens at the
   same time; shots play one after another. A shot is `{ clipId?, say?, pauseAfterMs? }`: what she
   does (a READY clip or `"primary"`), what she says, and the silence after it. Example:
@@ -159,8 +159,14 @@ connection payload back; your client joins and renders her.
 - `createRender` returns on acceptance (202, `queued`); it settles `ready` or `failed`. `waitForRender` RETURNS a `failed`
   render with a typed `error.code` instead of throwing, and throws only on timeout.
 - Every `clipId` must be a READY clip of the avatar or `"primary"` (`422 render_clip_unavailable` otherwise,
-  nothing charged). A `voiceId` is never silently replaced (`404 voice_not_found`,
-  `422 voice_unavailable`).
+  nothing charged).
+- The voice is `voiceId` (a voice from your workspace's voice library), or `voice` (an inline
+  Fish voice, the same snake_case object a call takes: `{ provider: "fish", voice_id, model?,
+  speed?, emotion?, language? }`), or neither for the avatar's own. Both together does not
+  compile (`422` on the wire). Only Fish renders: a non-Fish inline voice or `voiceId`, or an
+  avatar whose own voice is not Fish when neither was sent, is `422 voice_unavailable`, nothing
+  charged; a voice is never silently replaced. An unknown `voiceId` is `404 voice_not_found`.
+  `render.voiceId` is the library voice used, `null` for an inline `voice`.
 - Billed per second of output at the live per-second rate, at most 180 s per video (longer is
   `400 render_too_long`, nothing held); a failed render is not charged.
   `503 render_export_unavailable` (`retryable: false`) means the deployment has not switched the

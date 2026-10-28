@@ -6,15 +6,26 @@ import type { components } from "../src/generated/openapi.ts";
 import type { CreateRenderInput, ListRendersResponse, Render, RenderAccessResponse, RenderShot, ShotTiming } from "../src/types.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+type WireCreateRender = components["schemas"]["CreateRenderRequest"];
+type WireRenderVoice = NonNullable<WireCreateRender["voice"]>;
+type InputRenderVoice = NonNullable<CreateRenderInput["voice"]>;
 const contractParity: [
   Equal<Render, components["schemas"]["Render"]>,
   Equal<ShotTiming, NonNullable<components["schemas"]["Render"]["timeline"]>[number]>,
-  Equal<CreateRenderInput, components["schemas"]["CreateRenderRequest"]>,
-  Equal<RenderShot, components["schemas"]["CreateRenderRequest"]["shots"][number]>,
+  Equal<Omit<CreateRenderInput, "voice" | "voiceId">, Omit<WireCreateRender, "voice" | "voiceId">>,
+  Equal<NonNullable<CreateRenderInput["voiceId"]>, NonNullable<WireCreateRender["voiceId"]>>,
+  Equal<Required<InputRenderVoice>, Required<WireRenderVoice>>,
+  Equal<WireRenderVoice, NonNullable<components["schemas"]["LiveKitSessionRequest"]["voice"]>>,
+  Equal<RenderShot, WireCreateRender["shots"][number]>,
   Equal<RenderAccessResponse, components["schemas"]["RenderAccessResponse"]>,
   Equal<ListRendersResponse, components["schemas"]["ListRendersResponse"]>,
-] = [true, true, true, true, true, true];
+] = [true, true, true, true, true, true, true, true, true];
 void contractParity;
+
+const fishVoice = { provider: "fish", voice_id: "fish_voice_test", speed: 1.1 } satisfies InputRenderVoice;
+// @ts-expect-error The platform refuses voice with voiceId (422 "send voice or voiceId, not both").
+const bothVoices: CreateRenderInput = { avatarId: "ava_0123456789abcdef0123456789abcdef", shots: [{ say: "hi" }], voiceId: "voice_test", voice: fishVoice };
+void bothVoices;
 
 const renderId = "rnd_0123456789abcdef0123456789abcdef";
 const queued: Render = {
@@ -97,6 +108,41 @@ test("createRender refusals stay typed HTTP errors carrying the platform code", 
     assert.equal(error.requestId, "0b8a1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d");
     return true;
   });
+});
+
+test("createRender sends an inline voice as the live call's snake_case object, and the render reports voiceId null", async () => {
+  const bodies: unknown[] = [];
+  const inline: Render = { ...queued, voiceId: null };
+  const rta = client(async (request) => {
+    bodies.push(await request.json());
+    return Response.json(inline, { status: 202 });
+  });
+  const input: CreateRenderInput = { avatarId: script.avatarId, shots: script.shots, voice: fishVoice };
+  const render = await rta.createRender(input);
+  assert.equal(render.voiceId, null);
+  assert.deepEqual(bodies, [{
+    avatarId: script.avatarId,
+    shots: script.shots,
+    voice: { provider: "fish", voice_id: "fish_voice_test", speed: 1.1 },
+  }]);
+});
+
+test("createRender surfaces a voice the platform cannot render as a typed 422 voice_unavailable, not retried", async () => {
+  let requests = 0;
+  const rta = client(() => {
+    requests++;
+    return Response.json(
+      { code: "voice_unavailable", message: "This avatar's own voice cannot render a video. Pass voice or voiceId." },
+      { status: 422 },
+    );
+  });
+  await assert.rejects(rta.createRender(script), (error: unknown) => {
+    assert.ok(error instanceof RealtimeAvatarHttpError);
+    assert.equal(error.status, 422);
+    assert.equal(error.code, "voice_unavailable");
+    return true;
+  });
+  assert.equal(requests, 1);
 });
 
 test("getRender and getRenderAccess read the encoded render paths", async () => {

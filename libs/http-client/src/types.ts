@@ -422,12 +422,29 @@ export type ListSessionsOptions = NonNullable<operations["listUsageSessions"]["p
   speechDiagnostics?: NonNullable<operations["listUsageSessions"]["parameters"]["header"]>["X-RTA-Speech-Diagnostics"] extends "1" | undefined ? boolean : never;
 };
 
+type CreateRenderWire = Wire["CreateRenderRequest"];
+type OptionalModel<V> = V extends { model: unknown } ? Omit<V, "model"> & Partial<Pick<V, "model">> : V;
+
 /**
  * A pre-rendered video request: the avatar, an optional voice, and the script as `shots`.
  * Everything in one shot happens at the same time; shots play one after another. The body is
- * camelCase on the wire too, so it is sent exactly as given.
+ * camelCase on the wire too, so it is sent exactly as given, except the inline `voice`, which is
+ * the live call's snake_case voice object (`voice_id`).
+ *
+ * The voice is `voiceId` (a voice from the workspace's voice library), or `voice` (an inline Fish
+ * voice), or neither (the avatar's own). Only a Fish voice renders: an inline voice of another
+ * provider, and an avatar whose own voice is not Fish when neither was sent, are
+ * `422 voice_unavailable`.
+ *
+ * DERIVATION: every field indexes `CreateRenderRequest`; two rules the generator drops are
+ * restated. The published `not: { required: ["voice", "voiceId"] }` (the platform refuses both
+ * with 422) is the either/or union, so sending both fails to compile. And `voice.model` has a
+ * published default that openapi-typescript renders as required; the wire accepts it omitted.
  */
-export type CreateRenderInput = Wire["CreateRenderRequest"];
+export type CreateRenderInput = Omit<CreateRenderWire, "voice" | "voiceId"> & (
+  | { voice?: OptionalModel<NonNullable<CreateRenderWire["voice"]>>; voiceId?: never }
+  | { voice?: never; voiceId?: CreateRenderWire["voiceId"] }
+);
 
 /** One shot: `clipId` is what she does, `say` what she says, `pauseAfterMs` the silence after it. */
 export type RenderShot = Wire["CreateRenderRequest"]["shots"][number];

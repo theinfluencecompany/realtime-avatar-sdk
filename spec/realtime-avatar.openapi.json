@@ -916,6 +916,10 @@
               "attach_continuation": {
                 "description": "Preview. Set when this scene is a first clip alone: the joined scene (the same first clip plus its continuation) that this workspace prepares after the mint may then be attached to the live call. Linking needs the first clip's md5 and bytes declared on both prepares. Absent or false plays this scene for the whole call.",
                 "type": "boolean"
+              },
+              "replaceable": {
+                "description": "Preview, opt-in. Lets the minting server switch this scene session to another ready scene it owns mid-call, without a new session. Requires extend_secret to sign replace_scene commands. Absent or false plays this scene for the whole call.",
+                "type": "boolean"
               }
             },
             "required": [
@@ -5061,10 +5065,222 @@
             "maxLength": 160
           },
           "voiceId": {
-            "description": "A voice this workspace can use. Omit it for the avatar's own voice.",
+            "description": "A voice from your workspace's voice library. Omit voice and voiceId to use the avatar's own voice.",
             "type": "string",
             "minLength": 1,
             "maxLength": 240
+          },
+          "voice": {
+            "description": "An inline Fish voice, the same object a live call takes as voice. Only a Fish voice can render; any other provider is refused with 422 voice_unavailable. Send voice or voiceId, not both.",
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "const": "cartesia"
+                  },
+                  "model": {
+                    "default": "cartesia/sonic-3",
+                    "type": "string",
+                    "enum": [
+                      "cartesia/sonic-2",
+                      "cartesia/sonic-2-latest",
+                      "cartesia/sonic-3",
+                      "cartesia/sonic-3-latest",
+                      "cartesia/sonic-turbo",
+                      "cartesia/sonic-turbo-latest"
+                    ]
+                  },
+                  "voice_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "speed": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0.5,
+                        "maximum": 2
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "emotion": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "language": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 16
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "voice_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "const": "breezeblue"
+                  },
+                  "model": {
+                    "default": "bluebell-v1-en",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "voice_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "guidance_scale": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 1,
+                        "maximum": 10
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "instructions": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "language": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 16
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "voice_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "const": "fish"
+                  },
+                  "model": {
+                    "default": "s2.1-pro",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "s1",
+                          "s2-pro",
+                          "s2.1-pro",
+                          "drama-3"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "speech-1.6",
+                          "speech-1.5",
+                          "s1-mini"
+                        ],
+                        "deprecated": true,
+                        "description": "Retired by Fish Audio. Accepted and served as s2.1-pro."
+                      }
+                    ]
+                  },
+                  "voice_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "speed": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0.5,
+                        "maximum": 2
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "emotion": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "language": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 16
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "voice_id"
+                ],
+                "additionalProperties": false
+              }
+            ]
           },
           "lipGain": {
             "description": "Mouth-motion amplitude, as on a live call (lip_gain). Omit it for the platform default.",
@@ -5106,7 +5322,13 @@
           "avatarId",
           "shots"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "not": {
+          "required": [
+            "voice",
+            "voiceId"
+          ]
+        }
       },
       "Render": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5143,7 +5365,7 @@
                 "type": "null"
               }
             ],
-            "description": "The voice the render speaks with: the voiceId you sent, else the avatar's own voice. Null when the avatar has no usable voice and the platform's default voice was used."
+            "description": "The library voice the render speaks with: the voiceId you sent, else the avatar's own voice. Null when it speaks with the inline voice you sent."
           },
           "durationMs": {
             "anyOf": [
@@ -5397,7 +5619,7 @@
                       "type": "null"
                     }
                   ],
-                  "description": "The voice the render speaks with: the voiceId you sent, else the avatar's own voice. Null when the avatar has no usable voice and the platform's default voice was used."
+                  "description": "The library voice the render speaks with: the voiceId you sent, else the avatar's own voice. Null when it speaks with the inline voice you sent."
                 },
                 "durationMs": {
                   "anyOf": [
@@ -9296,7 +9518,7 @@
     "/v1/renders": {
       "post": {
         "operationId": "createRender",
-        "description": "Everything in one shot happens at the same time; shots play one after another. Example: {\"avatarId\":\"ava_0123456789abcdef0123456789abcdef\",\"shots\":[{\"clipId\":\"gesture_send_flower\",\"say\":\"你终于来了。今天……我有话想对你说。\"},{\"clipId\":\"idle_touch_collar\",\"say\":\"别笑，我是认真的。\",\"pauseAfterMs\":800},{\"say\":\"所以，今晚留下来。\"}]}. Each shot has three optional fields: clipId is what she does (a ready clip from the avatar's clip library, or \"primary\" for the avatar's own video; omit it to keep the current loop clip), say is what she says (speech starts when the shot starts), and pauseAfterMs is how long she stays silent after speaking (0 to 10,000 ms). A shot lasts as long as its speech plus pauseAfterMs, or as long as a once clip's action if that is longer, rounded up to 200 ms. A once clip plays its action exactly once from its first frame, never cut; if the shot is longer, she continues on the loop clip from before the shot. A loop clip fills the shot, and the same loop clip in consecutive shots continues without restarting. Renders an MP4 (H.264 and AAC, 25 fps) offline, with no live call, and every frame is lip-synced. The voice is voiceId or the avatar's own. The finished render's timeline reports where each shot landed in the video. Billed per second of the rendered video at the live-call rate (1 credit per second). The request holds an upper-bound estimate, settles to the rendered length, and releases everything if the render fails. A video may be at most 180 seconds. Answers 202 with status queued: poll GET /v1/renders/{renderId} until ready or failed, then request a download URL. Send an Idempotency-Key so a retried request returns the same render instead of starting another. 400 render_too_long means the shots are estimated to make a video longer than 180 seconds (nothing is held); 422 render_clip_unavailable names a clip that is not a ready clip of this avatar; 404 voice_not_found names a voice this workspace cannot see and 422 voice_unavailable one that cannot be used for video (a named voice is never replaced); 429 concurrency_limit_reached means this workspace already has 4 renders queued or rendering (retry when one finishes); 503 render_export_unavailable means rendering is not available on this deployment (not retryable), and 503 render_start_failed means this render was created but could not be started (retryable: it is listed as failed and uncharged, and a retry is a new render).\n\nRequires an API key with the `renders:write` scope.",
+        "description": "Everything in one shot happens at the same time; shots play one after another. Example: {\"avatarId\":\"ava_0123456789abcdef0123456789abcdef\",\"shots\":[{\"clipId\":\"gesture_send_flower\",\"say\":\"你终于来了。今天……我有话想对你说。\"},{\"clipId\":\"idle_touch_collar\",\"say\":\"别笑，我是认真的。\",\"pauseAfterMs\":800},{\"say\":\"所以，今晚留下来。\"}]}. Each shot has three optional fields: clipId is what she does (a ready clip from the avatar's clip library, or \"primary\" for the avatar's own video; omit it to keep the current loop clip), say is what she says (speech starts when the shot starts), and pauseAfterMs is how long she stays silent after speaking (0 to 10,000 ms). A shot lasts as long as its speech plus pauseAfterMs, or as long as a once clip's action if that is longer, rounded up to 200 ms. A once clip plays its action exactly once from its first frame, never cut; if the shot is longer, she continues on the loop clip from before the shot. A loop clip fills the shot, and the same loop clip in consecutive shots continues without restarting. Renders an MP4 (H.264 and AAC, 25 fps) offline, with no live call, and every frame is lip-synced. voiceId is a voice from your workspace's voice library; voice is an inline Fish voice, the same object a live call takes; omit both to use the avatar's own voice (sending both is refused). Only a Fish voice can render: when the avatar's own voice is not a Fish voice and neither was sent, the create is refused with 422 voice_unavailable instead of being spoken in another voice, so pass voice or voiceId. The finished render's timeline reports where each shot landed in the video. Billed per second of the rendered video at the live-call rate (1 credit per second). The request holds an upper-bound estimate, settles to the rendered length, and releases everything if the render fails. A video may be at most 180 seconds. Answers 202 with status queued: poll GET /v1/renders/{renderId} until ready or failed, then request a download URL. Send an Idempotency-Key so a retried request returns the same render instead of starting another. 400 render_too_long means the shots are estimated to make a video longer than 180 seconds (nothing is held); 422 render_clip_unavailable names a clip that is not a ready clip of this avatar; 404 voice_not_found names a voiceId this workspace cannot see and 422 voice_unavailable a voice that cannot be used for video, whether inline, named or the avatar's own (a voice is never replaced); 429 concurrency_limit_reached means this workspace already has 4 renders queued or rendering (retry when one finishes); 503 render_export_unavailable means rendering is not available on this deployment (not retryable), and 503 render_start_failed means this render was created but could not be started (retryable: it is listed as failed and uncharged, and a retry is a new render).\n\nRequires an API key with the `renders:write` scope.",
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -9397,7 +9619,7 @@
             }
           },
           "422": {
-            "description": "Invalid script, an unknown or unready clip (render_clip_unavailable), a voice that cannot be used for video (voice_unavailable), or an avatar with no source video",
+            "description": "Invalid script (including voice and voiceId together), an unknown or unready clip (render_clip_unavailable), a voice that cannot be used for video, whether inline, named or the avatar's own (voice_unavailable), or an avatar with no source video",
             "content": {
               "application/json": {
                 "schema": {
@@ -9856,7 +10078,7 @@
   },
   "x-render-contract": {
     "source": "/render.contract.ts",
-    "sha256": "2cc032a0f7c84b49b0a23468aa64b00f5d0970ecfe80f24bfecc76b497ff0627"
+    "sha256": "adfaea1701b679dc412b07f8826fef13bfb00eff00ffebd48d10d58283c76be3"
   },
   "tags": [
     {

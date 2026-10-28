@@ -883,6 +883,18 @@ The avatar id is a placeholder: use your own `avatarId`, and clip ids from
   library clip, or `"primary"` for her own video; omit it to keep the current loop clip), `say`
   (what she says, 1 to 1,000 characters after trimming whitespace, starting when the shot
   starts), `pauseAfterMs` (silence after speaking, 0 to 10,000 ms).
+- The voice is one of:
+  - `voiceId`: a voice from your workspace's voice library.
+  - `voice`: an inline Fish voice, the same object a call takes (`{ provider: "fish", voice_id,
+    model?, speed?, emotion?, language? }`; snake_case inside, like a call).
+  - Neither: the avatar's own voice.
+
+  Sending both does not compile (the platform refuses it with `422`). Only a Fish voice renders:
+  an inline voice of another provider, a `voiceId` that is not Fish, or, when neither was sent, an
+  avatar whose own voice is not Fish (none, or a retired Cartesia voice) is `422 voice_unavailable`
+  before anything is charged. It is never quietly spoken in the house voice, so pass `voice` or
+  `voiceId` for an avatar like that. `render.voiceId` is the library voice used, `null` for an
+  inline `voice`.
 - A clip loops if it is `"primary"` or in the avatar's idle pool
   (`listClips(avatarId).behavior.idle.clips`); every other clip plays once. A listening clip or
   an action plays once unless it is also in the idle pool. The clip list has no per-clip

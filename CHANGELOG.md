@@ -6,16 +6,24 @@ A minor release: pre-rendered video. An avatar can perform a script into an MP4 
 
 ### Added
 
-- **`createRender({ avatarId, voiceId?, lipGain?, shots })`** renders the avatar performing a
+- **`createRender({ avatarId, voiceId? | voice?, lipGain?, shots })`** renders the avatar performing a
   script of shots into an MP4 offline. Everything in one shot happens at the same time; shots
   play one after another. A shot is `{ clipId?, say?, pauseAfterMs? }`: what she does (a ready
   clip from the avatar's library, or `"primary"` for her own video), what she says, and how long
   she stays silent afterwards. It returns the `queued` render (202). A retry carries the same
-  `Idempotency-Key`, so a lost response never starts or bills a second render.
+  `Idempotency-Key`, so a lost response never starts or bills a second render. The voice is one of:
+  - `voiceId`: a voice from your workspace's voice library.
+  - `voice`: an inline Fish voice, the same object a live call takes (`{ provider: "fish",
+    voice_id, model?, speed?, emotion?, language? }`).
+  - Neither: the avatar's own voice.
+
+  Sending both does not compile (the platform refuses it with `422`). Only a Fish voice renders:
+  any other is `422 voice_unavailable`, including an avatar's own voice that is not Fish when
+  neither was sent, so a render is never quietly spoken in another voice.
 - **`Render.timeline`**: once a render is `ready`, one entry per shot with `startMs`, `endMs`,
   the `clipId` it played, `playback` (`once` | `loop`), `speechStartMs`, `speechEndMs`,
-  `clipEndMs` and `afterClipId`, all in video time. `Render.voiceId` names the voice used,
-  or is `null` when the avatar has no usable voice and the platform's default voice was used.
+  `clipEndMs` and `afterClipId`, all in video time. `Render.voiceId` is the library voice used
+  (the `voiceId` sent, else the avatar's own), or `null` for an inline `voice`.
 - **`waitForRender(renderId, { timeoutMs?, pollMs? })`** polls until the render is `ready` or
   `failed` and returns it. A failure is returned with its typed `error.code`, not thrown; only
   a timeout throws (default 30 minutes, the platform's own budget), and its message says it is a
@@ -29,7 +37,8 @@ A minor release: pre-rendered video. An avatar can perform a script into an MP4 
   `renderSchema`, `listRendersResponseSchema` and `renderAccessResponseSchema`. The resource
   types and schemas are the platform's published `/render.contract.ts` (`x-render-contract`),
   vendored byte for byte and SHA-256 checked like the recording contract. The request types are
-  the generated `CreateRenderRequest` and its `shots` entry.
+  the generated `CreateRenderRequest` and its `shots` entry; `CreateRenderInput` restates the two
+  rules the generator drops: `voice` and `voiceId` are either/or, and `voice.model` is optional.
 - The key scopes `renders:read` and `renders:write`. Both are off on a new key.
 
 ### Changed
@@ -45,8 +54,9 @@ A minor release: pre-rendered video. An avatar can perform a script into an MP4 
 
 ### Release order
 
-Publish only after the platform serves the renders routes. Until it does, `npm run spec:check`
-reports the drift, and every call answers 404. A platform that serves the routes but has not
+Publish only after the platform serves the renders routes, inline `voice` included. Until it
+does, `npm run spec:check` reports the drift, and every call answers 404; a platform that serves
+the routes without inline `voice` refuses a request that sends one with `422`. A platform that serves the routes but has not
 been configured answers `503 render_export_unavailable` to `createRender` with `retryable: false`
 and nothing charged. `503 render_start_failed` with `retryable: true` means the render was created
 but could not be started: the SDK retries it, and the attempt stays in `listRenders` as a `failed`

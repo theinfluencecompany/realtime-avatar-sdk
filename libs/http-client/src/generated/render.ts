@@ -109,7 +109,7 @@ export const renderSchema = z.object({
   status: renderStatusSchema,
   avatarId: z.string().min(1),
   voiceId: z.string().min(1).nullable()
-    .describe("The voice the render speaks with: the voiceId you sent, else the avatar's own voice. Null when the avatar has no usable voice and the platform's default voice was used."),
+    .describe("The library voice the render speaks with: the voiceId you sent, else the avatar's own voice. Null when it speaks with the inline voice you sent."),
   durationMs: z.number().int().positive().nullable().describe("Length of the rendered video. Set once status is ready."),
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),

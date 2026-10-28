@@ -270,7 +270,8 @@ offline with no call and no LiveKit room. The avatar id is a placeholder: use yo
 | Field | What it is |
 | --- | --- |
 | `avatarId` | The avatar. |
-| `voiceId` | A voice this workspace can use. Omit it for the avatar's own voice. |
+| `voiceId` | A voice from your workspace's voice library. |
+| `voice` | An inline Fish voice, the same object a call takes: `{ provider: "fish", voice_id, model?, speed?, emotion?, language? }`. |
 | `lipGain` | Mouth-motion amplitude, as on a call. Omit it for the default. |
 | `shots` | The script: 1 to 50 shots, played one after another. |
 | `shots[].clipId` | What she does: a ready clip from the avatar's clip library, or `"primary"` for the avatar's own video. Omit it to keep the current loop clip. |
@@ -317,8 +318,13 @@ Every time is milliseconds from the start of the video.
 - **A `clipId` must be a READY clip of the avatar, or `"primary"`.** Otherwise the create is
   refused with `422 render_clip_unavailable` before anything is charged. Run `waitForClips`
   after changing the library.
-- **`voiceId` is strict.** A voice the workspace cannot see is `404 voice_not_found`, and one
-  that cannot speak a render is `422 voice_unavailable`. A render is never quietly re-voiced.
+- **The voice is `voiceId`, or `voice`, or neither for the avatar's own.** Sending both does not
+  compile, and the platform refuses it with `422`. Only a Fish voice renders: a `voiceId` the
+  workspace cannot see is `404 voice_not_found`, and an inline voice of another provider, a
+  `voiceId` that is not Fish, or, when neither was sent, an avatar whose own voice is not Fish
+  is `422 voice_unavailable`, refused before anything is charged. A render is never quietly
+  spoken in another voice. `render.voiceId` is the library voice it spoke with, `null` for an
+  inline `voice`.
 - **Keep the render id, not the URL.** The URL is signed for an hour; ask `getRenderAccess`
   again for a fresh one. The file itself is kept until you delete the account.
 - **Limits.** Every shot sets at least one field (`pauseAfterMs: 0` alone does not count), at
@@ -391,7 +397,7 @@ rta.getRecordingAccess(recordingId)
 rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires usage:read
 
 // pre-rendered video (MP4, no live call); server only, requires renders:write / renders:read
-rta.createRender({ avatarId, voiceId?, lipGain?, shots })  // 202 queued; one Idempotency-Key across retries
+rta.createRender({ avatarId, voiceId? | voice?, lipGain?, shots })  // 202 queued; one Idempotency-Key across retries
 rta.waitForRender(renderId)            // block until ready | failed; RETURNS a failed render, throws only on timeout
 rta.getRender(renderId)
 rta.listRenders({ limit?, cursor? })
