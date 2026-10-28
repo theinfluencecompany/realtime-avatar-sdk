@@ -14,7 +14,8 @@ A minor release: pre-rendered video. An avatar can perform a script into an MP4 
   `Idempotency-Key`, so a lost response never starts or bills a second render.
 - **`Render.timeline`**: once a render is `ready`, one entry per shot with `startMs`, `endMs`,
   the `clipId` it played, `playback` (`once` | `loop`), `speechStartMs`, `speechEndMs`,
-  `clipEndMs` and `afterClipId`, all in video time. `Render.voiceId` names the voice used.
+  `clipEndMs` and `afterClipId`, all in video time. `Render.voiceId` names the voice used,
+  or is `null` when the avatar has no usable voice and the platform's default voice was used.
 - **`waitForRender(renderId, { timeoutMs?, pollMs? })`** polls until the render is `ready` or
   `failed` and returns it. A failure is returned with its typed `error.code`, not thrown; only
   a timeout throws (default 30 minutes, the platform's own budget), and its message says it is a

@@ -51,7 +51,7 @@ export function isRequestId(value: unknown): value is string {
  * | `clip_render_limit` | 429 | a true rate limit; nothing was applied. Retry later |
  * | `concurrency_limit_reached` | 429 | active and starting sessions occupy the limit; release one or wait for pending starts before retrying. From `createRender`: the workspace already has 4 renders queued or rendering; retry when one settles |
  * | `clip_screen_unavailable` | 503 | the prose screen could not run. Retry |
- * | `render_clip_unavailable` | 422 | a shot's `clipId` is not a ready clip of that avatar (or `"primary"`). `waitForClips`, then render |
+ * | `render_clip_unavailable` | 422 | a shot's `clipId` is neither a ready clip of that avatar nor `"primary"`. `waitForClips`, then render |
  * | `render_not_ready` | 409 | `getRenderAccess` before the render is `ready`. `waitForRender` first |
  * | `render_export_unavailable` | 503 | read `retryable`. `false`: pre-rendered video is not switched on for this deployment; nothing was charged, and retrying will not help. `true`: the render was accepted but could not be started; retry (the SDK already has). That attempt stays in `listRenders` as a `failed` render, not charged |
  *

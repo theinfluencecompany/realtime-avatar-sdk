@@ -444,7 +444,8 @@ const { url, expiresAt } = await rta.getRenderAccess(done.id);   // <video src={
 She sends the flower while she says the first line, touches her collar while she says the
 second and then stays quiet for 800 ms, and says the last line without a new clip. The result is
 an MP4 (H.264 + AAC, 25 fps) with the same face, clips, voice and lip-sync as a call, made
-offline with no call and no LiveKit room.
+offline with no call and no LiveKit room. The ids belong to one example avatar: use your own
+`avatarId`, and clip ids from `listClips(avatarId)`.
 
 | Field | What it is |
 | --- | --- |
@@ -453,17 +454,22 @@ offline with no call and no LiveKit room.
 | `lipGain` | Mouth-motion amplitude, as on a call. Omit it for the default. |
 | `shots` | The script: 1 to 50 shots, played one after another. |
 | `shots[].clipId` | What she does: a ready clip from the avatar's clip library, or `"primary"` for the avatar's own video. Omit it to keep the current loop clip. |
-| `shots[].say` | What she says, 1 to 1,000 characters. Speech starts when the shot starts. |
+| `shots[].say` | What she says, 1 to 1,000 characters after trimming whitespace; a blank `say` is refused. Speech starts when the shot starts. |
 | `shots[].pauseAfterMs` | How long she stays silent after speaking, 0 to 10,000 ms. Default 0. |
 
 **How long a shot lasts.** Its speech plus `pauseAfterMs`, or its clip's action if that is
-longer, rounded up to 200 ms. A clip plays one of two ways:
+longer, rounded up to 200 ms. A loop clip does not set a shot's length: a shot with only a loop
+clip lasts 200 ms, so add `pauseAfterMs` to hold it.
+
+**Which clips loop.** A clip loops if it is `"primary"` or is listed in
+`listClips(avatarId).behavior.idle.clips` or `behavior.on.userSpeechStarted.clips`. Every other
+clip plays once.
 
 - **once**, an action: it plays exactly once from its first frame and is never cut. If the shot
   runs longer, she continues on the loop clip from before the shot. The same clip in two shots
   in a row plays twice.
-- **loop**: `"primary"` and the clips she rests or listens on. It fills the shot, and the same
-  loop clip in shots in a row continues without restarting.
+- **loop**: it fills the shot, and the same loop clip in shots in a row continues without
+  restarting.
 
 The video opens with about 400 ms and closes with about 600 ms on the current loop clip.
 

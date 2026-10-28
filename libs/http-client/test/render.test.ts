@@ -22,8 +22,9 @@ const queued: Render = {
   voiceId: "voice_test", durationMs: null, width: null, height: null, timeline: null, error: null,
   createdAt: "2026-10-28T12:00:00.000Z", completedAt: null,
 };
-// The founder's script as it lands: a once clip that outlasts its speech, a once clip that the
-// speech plus pause outlasts (the body continues on the loop from before), and a shot that keeps it.
+// An assumed timeline for the founder's script, not one observed from a render. It assumes both
+// clips play once: a once clip that outlasts its speech, a once clip that the speech plus pause
+// outlasts (the body continues on the loop from before), and a shot that keeps that loop.
 const timeline: ShotTiming[] = [
   {
     index: 0, startMs: 400, endMs: 5_000, clipId: "gesture_send_flower", playback: "once",

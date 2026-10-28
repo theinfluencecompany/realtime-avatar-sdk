@@ -872,15 +872,26 @@ const render = await rta.createRender({
   ],
 });
 const done = await rta.waitForRender(render.id);
-if (done.status === "ready") return (await rta.getRenderAccess(done.id)).url;   // an hour
+if (done.status === "failed") throw new Error(done.error?.message);
+return (await rta.getRenderAccess(done.id)).url;   // signed for an hour
 ```
+
+The ids belong to one example avatar: use your own `avatarId`, and clip ids from
+`listClips(avatarId)`.
 
 - A shot has three optional fields, and needs at least one: `clipId` (what she does: a READY
   library clip, or `"primary"` for her own video; omit it to keep the current loop clip), `say`
-  (what she says, 1 to 1,000 characters, starting when the shot starts), `pauseAfterMs` (silence
-  after speaking, 0 to 10,000 ms).
-- A shot lasts its speech plus `pauseAfterMs`, or a once clip's action if longer. A once clip is
-  never cut; a loop clip fills the shot and carries on into the next shot that keeps it.
+  (what she says, 1 to 1,000 characters after trimming whitespace, starting when the shot
+  starts), `pauseAfterMs` (silence after speaking, 0 to 10,000 ms).
+- A clip loops if it is `"primary"` or is listed in `listClips(avatarId).behavior.idle.clips` or
+  `behavior.on.userSpeechStarted.clips`. Every other clip plays once.
+- A shot lasts its speech plus `pauseAfterMs`, or a once clip's action if longer, rounded up to
+  200 ms. A loop clip does not set the length: a shot with only a loop clip lasts 200 ms, so add
+  `pauseAfterMs` to hold it.
+- A once clip plays exactly once from its first frame and is never cut; if the shot runs longer,
+  she continues on the loop clip from before the shot. The same once clip in two shots in a row
+  plays twice. A loop clip fills the shot and carries on, without restarting, into the next shot
+  that keeps it.
 - A `ready` render's `timeline` has one entry per shot (`startMs`, `endMs`, `clipId`,
   `playback`, `speechStartMs`, `speechEndMs`, `clipEndMs`, `afterClipId`), in video time.
   Align captions or cuts to it instead of estimating.
