@@ -876,6 +876,9 @@ if (done.status === "succeeded") return (await rta.getRenderAccess(done.id)).url
   call `waitForClips` first. Nothing is charged for a refused create.
 - **Store the render id, never the URL.** Ask `getRenderAccess` again when the hour is up.
 
+---
+
+## Errors worth branching on
 
 ```ts
 import { RealtimeAvatarHttpError } from "realtime-avatar";
