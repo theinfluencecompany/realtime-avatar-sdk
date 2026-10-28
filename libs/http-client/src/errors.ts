@@ -51,6 +51,9 @@ export function isRequestId(value: unknown): value is string {
  * | `clip_render_limit` | 429 | a true rate limit; nothing was applied. Retry later |
  * | `concurrency_limit_reached` | 429 | active and starting sessions occupy the limit; release one or wait for pending starts before retrying |
  * | `clip_screen_unavailable` | 503 | the prose screen could not run. Retry |
+ * | `render_clip_unavailable` | 422 | a `clipId` is not a ready clip of that avatar. `waitForClips`, then render |
+ * | `render_not_ready` | 409 | `getRenderAccess` before the render succeeded. `waitForRender` first |
+ * | `render_export_unavailable` | 503 | pre-rendered video is not switched on for this deployment; nothing was charged |
  *
  * Pose validation does NOT appear here: a rejected upload is not an error response at all.
  * The declaration is accepted, and that clip settles `status: "failed"` with the verdict in

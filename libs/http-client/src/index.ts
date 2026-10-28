@@ -5,6 +5,7 @@ export { isQueued } from "./types.ts";
 export { clipLibraryDeclarationSchema } from "./generated/clip-library-schema.ts";
 export { fishTtsModelSchema, DEFAULT_FISH_TTS_MODEL, type FishTtsModel } from "./generated/fish-tts-model.ts";
 export { recordingModeSchema, recordingArtifactSchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
+export { renderSchema, listRendersResponseSchema, renderAccessResponseSchema } from "./generated/render.ts";
 export type {
   RecordingMode,
   RecordingArtifactStatus,
@@ -12,6 +13,14 @@ export type {
   ListRecordingsQuery,
   ListRecordingsResponse,
   RecordingAccessResponse,
+  RenderStatus,
+  RenderFailureCode,
+  Render,
+  ListRendersQuery,
+  ListRendersResponse,
+  RenderAccessResponse,
+  CreateRenderInput,
+  RenderSegment,
   Asset,
   AssetKind,
   Avatar,

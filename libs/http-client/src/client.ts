@@ -11,6 +11,7 @@ import type { z } from "zod";
 import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
 import { clipLibraryResponseSchema, clipLibraryUpdateSchema } from "./generated/clip-library-schema.ts";
 import { recordingModeSchema, recordingArtifactSchema, listRecordingsQuerySchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
+import { renderSchema, listRendersQuerySchema, listRendersResponseSchema, renderAccessResponseSchema } from "./generated/render.ts";
 import type { ConnectionHistoryResponse } from "./generated/connection-history.ts";
 import type { components, operations } from "./generated/openapi.ts";
 import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
@@ -41,9 +42,15 @@ import type {
   ListRecordingsResponse,
   RecordingArtifact,
   RecordingAccessResponse,
+  CreateRenderInput,
+  ListRendersQuery,
+  ListRendersResponse,
+  Render,
+  RenderAccessResponse,
 } from "./types.ts";
 
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
+const RENDER_MISMATCH = "Render response did not match the SDK contract";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
 export const SDK_VERSION = "0.30.0";
@@ -643,6 +650,87 @@ export class RealtimeAvatar {
   /** Renewable playback access. Keep recordingId in storage; URLs expire at expiresAt. */
   async getRecordingAccess(recordingId: string): Promise<RecordingAccessResponse> {
     return recordingAccessResponseSchema.parse(await this.#json(await this.#request("GET", `/recordings/${encodeURIComponent(recordingId)}/access`)));
+  }
+
+  // ── renders (pre-rendered video) ─────────────────────────────────────────
+
+  /**
+   * Render an MP4 of the avatar speaking a script, offline, with no live call. Requires
+   * `renders:write`, which a new key does not carry unless you tick it.
+   *
+   * `202` is acceptance: the render is `queued`, and `waitForRender` follows it to the end.
+   * Every `clipId` must be a READY clip of this avatar, or the request is refused with
+   * `422 render_clip_unavailable` before anything is charged. The retry carries the same
+   * `Idempotency-Key`, so a lost response never starts, or bills, a second render.
+   */
+  async createRender(input: CreateRenderInput): Promise<Render> {
+    return this.#contract(await this.#request("POST", "/renders", { json: input }), renderSchema, RENDER_MISMATCH);
+  }
+
+  /** One render's status. Requires `renders:read`. */
+  async getRender(renderId: string): Promise<Render> {
+    return this.#contract(await this.#request("GET", `/renders/${encodeURIComponent(renderId)}`), renderSchema, RENDER_MISMATCH);
+  }
+
+  /** This workspace's renders, newest first, one page. Requires `renders:read`. */
+  async listRenders(options: ListRendersQuery = {}): Promise<ListRendersResponse> {
+    const parsed = listRendersQuerySchema.parse(options);
+    const query = new URLSearchParams();
+    if (options.limit !== undefined) query.set("limit", String(parsed.limit));
+    if (parsed.cursor !== undefined) query.set("cursor", parsed.cursor);
+    const suffix = query.size ? `?${query}` : "";
+    return this.#contract(await this.#request("GET", `/renders${suffix}`), listRendersResponseSchema, RENDER_MISMATCH);
+  }
+
+  /** Every render, following `nextCursor` for you. */
+  async *iterateRenders(options: ListRendersQuery = {}): AsyncGenerator<Render> {
+    let cursor = options.cursor;
+    do {
+      const page = await this.listRenders({ ...options, cursor });
+      yield* page.data;
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+  }
+
+  /**
+   * A signed download URL for a succeeded render. It expires at `expiresAt` (an hour); keep the
+   * render id and ask again rather than storing the URL. `409 render_not_ready` before the
+   * render succeeds, `410 render_gone` if the file is no longer stored.
+   */
+  async getRenderAccess(renderId: string): Promise<RenderAccessResponse> {
+    return this.#contract(
+      await this.#request("GET", `/renders/${encodeURIComponent(renderId)}/access`),
+      renderAccessResponseSchema,
+      RENDER_MISMATCH,
+    );
+  }
+
+  /**
+   * Block until a render settles, and return it: `succeeded`, or `failed` with `error.code`.
+   *
+   * A failed render is returned, not thrown, so its code stays a typed value you can branch on
+   * (`too_long` means shorten the script; `tts_failed` and `render_failed` are worth one retry).
+   * Throws only on timeout, which is not a failure: the render may still land, so poll again.
+   * The default timeout is 30 minutes, the platform's own budget for one render.
+   */
+  async waitForRender(
+    renderId: string,
+    options: { timeoutMs?: number; pollMs?: number } = {},
+  ): Promise<Render> {
+    const timeoutMs = options.timeoutMs ?? 30 * 60_000;
+    const pollMs = Math.max(1_000, options.pollMs ?? 5_000);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const render = await this.getRender(renderId);
+      if (render.status === "succeeded" || render.status === "failed") return render;
+      if (Date.now() >= deadline) {
+        throw new RealtimeAvatarError(
+          `Render ${renderId} was still ${render.status} after ${Math.round(timeoutMs / 1000)}s. ` +
+            "This is a timeout, not a failure — the render may still land.",
+        );
+      }
+      await sleep(pollMs);
+    }
   }
 
   /** Read one session's bounded LiveKit connection history. Requires `usage:read`. */

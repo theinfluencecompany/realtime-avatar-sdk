@@ -130,6 +130,22 @@ connection payload back; your client joins and renders her.
 - A slot is held from the grant, BEFORE the room exists. On `pagehide`, beacon a route that
   calls `rta.endCall(sessionId)` — and only ever end ids your own server minted.
 
+## Pre-rendered video (render export)
+- `createRender({ avatarId, voiceId?, segments, lipGain? })` renders an MP4 (H.264 + AAC, 25 fps)
+  of the avatar speaking a script, offline, with no call. Segments are
+  `{ type: "speech", text, clipId? }` or `{ type: "pause", durationMs, clipId? }`; the body is
+  camelCase on the wire too. Then `waitForRender(id)` and `getRenderAccess(id)` for a signed URL
+  that lasts an hour; keep the render id, not the URL. A plain `<video src>` plays it.
+- The key needs `renders:write` (create) and `renders:read` (read); both are OFF on a new key.
+- `createRender` returns on acceptance (202, `queued`). `waitForRender` RETURNS a `failed`
+  render with a typed `error.code` instead of throwing, and throws only on timeout.
+- Every `clipId` must be a READY clip of the avatar (`422 render_clip_unavailable` otherwise,
+  nothing charged). A `voiceId` is never silently replaced (`404 voice_not_found`,
+  `422 voice_unavailable`).
+- Billed per second of output at the live per-second rate, at most 180 s per video; a failed
+  render is not charged. `503 render_export_unavailable` means the deployment has not switched
+  the feature on.
+
 ## Not provided
 - Hosted tool execution — the platform never runs your tools. They run in YOUR page (the
   client tool plane, `clientTools: true` + `attachAvatarTools`) against a 2.5s deadline.

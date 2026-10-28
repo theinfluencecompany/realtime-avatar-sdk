@@ -855,7 +855,27 @@ from request or creation timestamps when media timestamps are missing.
 
 ---
 
-## Errors worth branching on
+## Pre-rendered video
+
+`createRender` turns a script into an MP4 of the avatar, offline, with no call: the same face,
+clips, voice and lip-sync. It needs `renders:write`, and the reads need `renders:read`; both are
+off on a new key.
+
+```ts
+const render = await rta.createRender({
+  avatarId,
+  segments: [{ type: "speech", text: "Hi, I'm Rin.", clipId: "wave_hi" }, { type: "pause", durationMs: 600 }],
+});
+const done = await rta.waitForRender(render.id);
+if (done.status === "succeeded") return (await rta.getRenderAccess(done.id)).url;   // an hour
+```
+
+- **`waitForRender` returns a failed render; it does not throw one.** Branch on `status` and
+  `error.code`. It throws only on timeout, and a timeout is not a failure.
+- **A `clipId` must already be READY.** A clip still rendering is `422 render_clip_unavailable`;
+  call `waitForClips` first. Nothing is charged for a refused create.
+- **Store the render id, never the URL.** Ask `getRenderAccess` again when the hour is up.
+
 
 ```ts
 import { RealtimeAvatarHttpError } from "realtime-avatar";

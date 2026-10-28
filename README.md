@@ -205,6 +205,14 @@ rta.getRecording(recordingId)          // durable metadata and processing state
 rta.getRecordingAccess(recordingId)    // { recordingId, url, expiresAt }; renew when needed
 rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires usage:read
 
+// pre-rendered video (MP4, no live call); server only, requires renders:write / renders:read
+rta.createRender({ avatarId, voiceId?, segments, lipGain? })  // 202 queued; one Idempotency-Key across retries
+rta.waitForRender(renderId)            // block until succeeded | failed; RETURNS a failed render, throws only on timeout
+rta.getRender(renderId)
+rta.listRenders({ limit?, cursor? })
+rta.iterateRenders({ limit? })         // every render, paging handled
+rta.getRenderAccess(renderId)          // { id, url, expiresAt }; signed for an hour, renew when needed
+
 // avatars
 rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // the only lane
 rta.createAvatarFromVideo({ displayName, videoUrl, voice? })                 // DEPRECATED — closed, 422
@@ -414,6 +422,45 @@ return new Response(await myTts(text, voice_id), { headers: { "content-type": "a
 
 Working endpoints: `apps/quickstart/nextjs-app-router/app/api/voice/route.ts` and `POST /api/voice`
 in `apps/quickstart/python-fastapi/main.py`.
+
+## Pre-rendered video
+
+The same face, clips, voice and lip-sync as a call, rendered offline to an MP4 (H.264 + AAC,
+25 fps) from a script, with no call and no LiveKit room. Use it for a clip to post or embed; it
+is billed per second of rendered video at the live per-second rate, up to 180 seconds per
+video, and a render that fails is not charged.
+
+```ts
+const render = await rta.createRender({
+  avatarId: "ava_…",
+  segments: [
+    { type: "speech", text: "Hi, I'm Rin.", clipId: "wave_hi" },
+    { type: "pause", durationMs: 600 },
+    { type: "speech", text: "Here's what changed this week." },
+  ],
+});
+const done = await rta.waitForRender(render.id);
+if (done.status === "failed") throw new Error(done.error?.message);
+const { url, expiresAt } = await rta.getRenderAccess(done.id);   // <video src={url}> plays it
+```
+
+- **The key needs `renders:write` to create and `renders:read` to read.** Both are off on a new
+  key until you tick them; a key without the scope answers `403 insufficient_scope`.
+- **`createRender` returns on acceptance.** A render is `queued`, then `rendering`, then
+  `succeeded` or `failed`. `waitForRender` returns a failed render rather than throwing, so
+  `error.code` (`invalid_request`, `asset_unavailable`, `tts_failed`, `too_long`,
+  `render_failed`) stays a value you can branch on. It throws only when its timeout (30 minutes
+  by default) runs out, and that is not a failure.
+- **A `clipId` must be a READY clip of the avatar.** Otherwise the create is refused with
+  `422 render_clip_unavailable` before anything is charged. Run `waitForClips` after changing
+  the library.
+- **`voiceId` is strict.** A voice the workspace cannot see is `404 voice_not_found`, and one
+  that cannot speak a render is `422 voice_unavailable`. A render is never quietly re-voiced.
+  Omit `voiceId` for the avatar's own voice.
+- **Keep the render id, not the URL.** The URL is signed for an hour; ask `getRenderAccess`
+  again for a fresh one. The file itself is kept until you delete the account.
+- **Limits:** 1 to 50 segments, at most 1,000 characters per speech segment and 4,000 in total,
+  pauses of 100 to 10,000 ms, at most 16 different clips.
 
 ## Input source on room messages
 
