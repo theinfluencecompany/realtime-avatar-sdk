@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.29.0
+
+A minor release: Fish voices follow the platform's model list and default.
+
+### Changed
+
+- **A Fish voice with no `model` now asks for `s2.1-pro`, not `speech-1.6`.** Fish retired
+  `speech-1.6` and `speech-1.5` and serves them, and `s1-mini`, as `s2.1-pro`; the platform made
+  `s2.1-pro` its default. The SDK's default is generated from the published contract
+  (`DEFAULT_FISH_TTS_MODEL`), so it moves when the platform's does. The retired ids are still
+  accepted and the platform serves them as `s2.1-pro`.
 
 ### Fixed
 
