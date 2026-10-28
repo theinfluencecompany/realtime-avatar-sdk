@@ -205,6 +205,14 @@ rta.getRecording(recordingId)          // durable metadata and processing state
 rta.getRecordingAccess(recordingId)    // { recordingId, url, expiresAt }; renew when needed
 rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires usage:read
 
+// pre-rendered video (MP4, no live call); server only, requires renders:write / renders:read
+rta.createRender({ avatarId, voiceId? | voice?, lipGain?, shots })  // 202 queued; one Idempotency-Key across retries
+rta.waitForRender(renderId)            // block until ready | failed; RETURNS a failed render, throws only on timeout
+rta.getRender(renderId)
+rta.listRenders({ limit?, cursor? })
+rta.iterateRenders({ limit? })         // every render, paging handled
+rta.getRenderAccess(renderId)          // { id, url, expiresAt }; signed for an hour, renew when needed
+
 // avatars
 rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // the only lane
 rta.createAvatarFromVideo({ displayName, videoUrl, voice? })                 // DEPRECATED — closed, 422
@@ -414,6 +422,98 @@ return new Response(await myTts(text, voice_id), { headers: { "content-type": "a
 
 Working endpoints: `apps/quickstart/nextjs-app-router/app/api/voice/route.ts` and `POST /api/voice`
 in `apps/quickstart/python-fastapi/main.py`.
+
+## Pre-rendered video
+
+**Everything in one shot happens at the same time; shots play one after another.**
+
+```ts
+const render = await rta.createRender({
+  avatarId: "ava_0123456789abcdef0123456789abcdef",
+  shots: [
+    { clipId: "gesture_send_flower", say: "你终于来了。今天……我有话想对你说。" },
+    { clipId: "idle_touch_collar", say: "别笑，我是认真的。", pauseAfterMs: 800 },
+    { say: "所以，今晚留下来。" },
+  ],
+});
+const done = await rta.waitForRender(render.id);
+if (done.status === "failed") throw new Error(done.error?.message);
+const { url, expiresAt } = await rta.getRenderAccess(done.id);   // <video src={url}> plays it
+```
+
+She sends the flower while she says the first line, touches her collar while she says the
+second and then stays quiet for 800 ms, and says the last line without a new clip. The result is
+an MP4 (H.264 + AAC, 25 fps) with the same face, clips, voice and lip-sync as a call, made
+offline with no call and no LiveKit room. The avatar id is a placeholder: use your own
+`avatarId`, and clip ids from `listClips(avatarId)`.
+
+| Field | What it is |
+| --- | --- |
+| `avatarId` | The avatar. |
+| `voiceId` | A voice from your workspace's voice library. |
+| `voice` | An inline Fish voice, the same object a call takes: `{ provider: "fish", voice_id, model?, speed?, emotion?, language? }`. |
+| `lipGain` | Mouth-motion amplitude, as on a call. Omit it for the default. |
+| `shots` | The script: 1 to 50 shots, played one after another. |
+| `shots[].clipId` | What she does: a ready clip from the avatar's clip library, or `"primary"` for the avatar's own video. Omit it to keep the current loop clip. |
+| `shots[].say` | What she says, 1 to 1,000 characters after trimming whitespace; a blank `say` is refused. Speech starts when the shot starts. |
+| `shots[].pauseAfterMs` | How long she stays silent after speaking, 0 to 10,000 ms. Default 0. |
+
+**How long a shot lasts.** Its speech plus `pauseAfterMs`, or its clip's action if that is
+longer, rounded up to 200 ms. A loop clip does not set a shot's length: a shot with only a loop
+clip lasts 200 ms, so add `pauseAfterMs` to hold it.
+
+**Which clips loop.** A clip loops if it is `"primary"` or in the avatar's idle pool
+(`listClips(avatarId).behavior.idle.clips`); every other clip plays once, so a listening clip
+or an action that is not also in the idle pool plays once. The clip list has no per-clip
+`playback`; read `behavior.idle.clips` from it.
+
+- **once**, an action: it plays exactly once from its first frame and is never cut. If the shot
+  runs longer, she continues on the loop clip from before the shot. The same clip in two shots
+  in a row plays twice.
+- **loop**: it fills the shot, and the same loop clip in shots in a row continues without
+  restarting.
+
+The video opens with about 400 ms and closes with about 600 ms on the current loop clip.
+
+**Where each shot landed.** A `ready` render carries `timeline`, one entry per shot, in order.
+Every time is milliseconds from the start of the video.
+
+| Field | What it is |
+| --- | --- |
+| `index` | The shot's position in your `shots`, from 0. |
+| `startMs` · `endMs` | When the shot starts and ends; the next shot starts at `endMs`. |
+| `clipId` | The clip the shot played: the one you named, else the loop clip it kept, else `"primary"`. |
+| `playback` | `"once"` or `"loop"`. |
+| `speechStartMs` · `speechEndMs` | When she starts and stops speaking. `null` when the shot has no `say`. |
+| `clipEndMs` | When the action finished. Once clips only, else `null`. |
+| `afterClipId` | The loop clip shown after the action, when the shot outlasts it. Once clips only, else `null`. |
+
+- **The key needs `renders:write` to create and `renders:read` to read.** Both are off on a new
+  key until you tick them; a key without the scope answers `403 insufficient_scope`.
+- **`createRender` returns on acceptance.** A render is `queued`, then `rendering`, then `ready`
+  or `failed`. `waitForRender` returns a failed render rather than throwing, so `error.code`
+  (`asset_unavailable`, `tts_failed`, `too_long`, `render_failed`) stays a value you can branch
+  on. It throws only when its timeout (30 minutes by default) runs out, and that is not a
+  failure.
+- **A `clipId` must be a READY clip of the avatar, or `"primary"`.** Otherwise the create is
+  refused with `422 render_clip_unavailable` before anything is charged. Run `waitForClips`
+  after changing the library.
+- **The voice is `voiceId`, or `voice`, or neither for the avatar's own.** Sending both does not
+  compile, and the platform refuses it with `422`. Only a Fish voice renders: a `voiceId` the
+  workspace cannot see is `404 voice_not_found`, and an inline voice of another provider, a
+  `voiceId` that is not Fish, or, when neither was sent, an avatar whose own voice is not Fish
+  is `422 voice_unavailable`, refused before anything is charged. A render is never quietly
+  spoken in another voice. `render.voiceId` is the library voice it spoke with, `null` for an
+  inline `voice`.
+- **Keep the render id, not the URL.** The URL is signed for an hour; ask `getRenderAccess`
+  again for a fresh one. The file itself is kept until you delete the account.
+- **Limits.** Every shot sets at least one field (`pauseAfterMs: 0` alone does not count), at
+  least one shot has `say`, at most 4,000 characters of `say` in total and 16 different clips
+  besides `"primary"`. A script whose video would run past 180 seconds is refused with
+  `400 render_too_long` before any credits are held. A workspace may have 4 renders queued or rendering at once; the
+  next is `429 concurrency_limit_reached`, which clears when one settles.
+- **Billing.** Per second of rendered video at the live per-second rate. A failed render is not
+  charged.
 
 ## Input source on room messages
 

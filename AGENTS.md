@@ -855,6 +855,68 @@ from request or creation timestamps when media timestamps are missing.
 
 ---
 
+## Pre-rendered video
+
+`createRender` turns a script of `shots` into an MP4 of the avatar, offline, with no call: the
+same face, clips, voice and lip-sync. **Everything in one shot happens at the same time; shots
+play one after another.** It needs `renders:write`, and the reads need `renders:read`; both are
+off on a new key.
+
+```ts
+const render = await rta.createRender({
+  avatarId: "ava_0123456789abcdef0123456789abcdef",
+  shots: [
+    { clipId: "gesture_send_flower", say: "你终于来了。今天……我有话想对你说。" },
+    { clipId: "idle_touch_collar", say: "别笑，我是认真的。", pauseAfterMs: 800 },
+    { say: "所以，今晚留下来。" },
+  ],
+});
+const done = await rta.waitForRender(render.id);
+if (done.status === "failed") throw new Error(done.error?.message);
+return (await rta.getRenderAccess(done.id)).url;   // signed for an hour
+```
+
+The avatar id is a placeholder: use your own `avatarId`, and clip ids from
+`listClips(avatarId)`.
+
+- A shot has three optional fields, and needs at least one: `clipId` (what she does: a READY
+  library clip, or `"primary"` for her own video; omit it to keep the current loop clip), `say`
+  (what she says, 1 to 1,000 characters after trimming whitespace, starting when the shot
+  starts), `pauseAfterMs` (silence after speaking, 0 to 10,000 ms).
+- The voice is one of:
+  - `voiceId`: a voice from your workspace's voice library.
+  - `voice`: an inline Fish voice, the same object a call takes (`{ provider: "fish", voice_id,
+    model?, speed?, emotion?, language? }`; snake_case inside, like a call).
+  - Neither: the avatar's own voice.
+
+  Sending both does not compile (the platform refuses it with `422`). Only a Fish voice renders:
+  an inline voice of another provider, a `voiceId` that is not Fish, or, when neither was sent, an
+  avatar whose own voice is not Fish (none, or a retired Cartesia voice) is `422 voice_unavailable`
+  before anything is charged. It is never quietly spoken in the house voice, so pass `voice` or
+  `voiceId` for an avatar like that. `render.voiceId` is the library voice used, `null` for an
+  inline `voice`.
+- A clip loops if it is `"primary"` or in the avatar's idle pool
+  (`listClips(avatarId).behavior.idle.clips`); every other clip plays once. A listening clip or
+  an action plays once unless it is also in the idle pool. The clip list has no per-clip
+  `playback`; read `behavior.idle.clips` from it.
+- A shot lasts its speech plus `pauseAfterMs`, or a once clip's action if longer, rounded up to
+  200 ms. A loop clip does not set the length: a shot with only a loop clip lasts 200 ms, so add
+  `pauseAfterMs` to hold it.
+- A once clip plays exactly once from its first frame and is never cut; if the shot runs longer,
+  she continues on the loop clip from before the shot. The same once clip in two shots in a row
+  plays twice. A loop clip fills the shot and carries on, without restarting, into the next shot
+  that keeps it.
+- A `ready` render's `timeline` has one entry per shot (`startMs`, `endMs`, `clipId`,
+  `playback`, `speechStartMs`, `speechEndMs`, `clipEndMs`, `afterClipId`), in video time.
+  Align captions or cuts to it instead of estimating.
+- **`waitForRender` returns a failed render; it does not throw one.** Branch on `status` and
+  `error.code`. It throws only on timeout, and a timeout is not a failure.
+- **A `clipId` must already be READY.** A clip still rendering is `422 render_clip_unavailable`;
+  call `waitForClips` first. Nothing is charged for a refused create.
+- **Store the render id, never the URL.** Ask `getRenderAccess` again when the hour is up.
+
+---
+
 ## Errors worth branching on
 
 ```ts
