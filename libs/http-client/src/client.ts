@@ -7,6 +7,7 @@ import {
   newIdempotencyKey,
   sleep,
 } from "./retry.ts";
+import type { z } from "zod";
 import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
 import { clipLibraryResponseSchema, clipLibraryUpdateSchema } from "./generated/clip-library-schema.ts";
 import { recordingModeSchema, recordingArtifactSchema, listRecordingsQuerySchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
@@ -601,19 +602,11 @@ export class RealtimeAvatar {
     const response = await this.#request("GET", `/usage/sessions${suffix}`, {
       headers: options.speechDiagnostics === true ? { "X-RTA-Speech-Diagnostics": "1" } : undefined,
     });
-    const mismatch = "Usage sessions response did not match the SDK contract";
-    let raw: unknown;
-    try {
-      raw = await this.#json(response);
-    } catch (error) {
-      if (error instanceof SyntaxError) throw new RealtimeAvatarError(mismatch);
-      throw error;
-    }
-    const page = listUsageSessionsResponseSchema.safeParse(raw);
-    if (!page.success) {
-      throw new RealtimeAvatarError(mismatch);
-    }
-    return toSessionsPage(page.data);
+    return toSessionsPage(await this.#contract(
+      response,
+      listUsageSessionsResponseSchema,
+      "Usage sessions response did not match the SDK contract",
+    ));
   }
 
   /**
@@ -733,6 +726,23 @@ export class RealtimeAvatar {
       // Not JSON — an HTML body usually means the route is not served at all.
     }
     throw new RealtimeAvatarHttpError(response.status, code, text, response.headers.get("x-request-id") ?? undefined);
+  }
+
+  /**
+   * A 2xx body validated against its contract schema. A mismatch, malformed JSON included,
+   * throws one fixed message with no cause, so the rejected body never reaches a log.
+   */
+  async #contract<Schema extends z.ZodType>(response: Response, schema: Schema, mismatch: string): Promise<z.output<Schema>> {
+    let raw: unknown;
+    try {
+      raw = await this.#json(response);
+    } catch (error) {
+      if (error instanceof SyntaxError) throw new RealtimeAvatarError(mismatch);
+      throw error;
+    }
+    const parsed = schema.safeParse(raw);
+    if (!parsed.success) throw new RealtimeAvatarError(mismatch);
+    return parsed.data;
   }
 }
 
