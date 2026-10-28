@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.31.0
+
+A minor release: pre-rendered video. An avatar can speak a script into an MP4 with no live call.
+
+### Added
+
+- **`createRender({ avatarId, voiceId?, segments, lipGain? })`** renders the avatar speaking an
+  ordered script of speech and pause segments, each optionally switching to a ready clip, into
+  an MP4 offline. It returns the `queued` render (202). A retry carries the same
+  `Idempotency-Key`, so a lost response never starts or bills a second render.
+- **`waitForRender(renderId, { timeoutMs?, pollMs? })`** polls until the render is `succeeded`
+  or `failed` and returns it. A failure is returned with its typed `error.code`, not thrown; only
+  a timeout throws (default 30 minutes, the platform's own budget), and its message says it is a
+  timeout, not a failure.
+- **`getRender`, `listRenders({ limit?, cursor? })`, `iterateRenders`** and
+  **`getRenderAccess(renderId)`**, which returns `{ id, url, expiresAt }`: a signed download URL
+  that lasts an hour.
+- Types `Render`, `RenderStatus`, `RenderFailureCode`, `CreateRenderInput`, `RenderSegment`,
+  `ListRendersQuery`, `ListRendersResponse` and `RenderAccessResponse`, and the runtime schemas
+  `renderSchema`, `listRendersResponseSchema` and `renderAccessResponseSchema`. The resource
+  types and schemas are the platform's published `/render.contract.ts` (`x-render-contract`),
+  vendored byte for byte and SHA-256 checked like the recording contract. The request type is
+  the generated `CreateRenderRequest`.
+- The key scopes `renders:read` and `renders:write`. Both are off on a new key.
+
+### Changed
+
+- Every render response is validated against its contract. A malformed one, including malformed
+  JSON, throws `RealtimeAvatarError` with one fixed message and no cause, the way `listSessions`
+  already did; the two now share that code path.
+- The vendored contract is re-synced from the platform with the renders routes.
+
+### Release order
+
+Publish only after the platform serves the renders routes. Until it does, `npm run spec:check`
+reports the drift, and every call answers 404. A platform that serves the routes but has not
+been configured answers `503 render_export_unavailable` to `createRender`, with nothing charged.
+
 ## 0.30.0
 
 ### Added
