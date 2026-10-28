@@ -18,10 +18,12 @@ const files = [
   "libs/http-client/src/generated/content-policy.ts",
   "libs/http-client/src/generated/transcription.ts",
   "libs/http-client/src/generated/usage-sessions.ts",
+  "libs/http-client/src/generated/render.ts",
 ] as const;
 const specBytes = await readFile(new URL(files[0], root));
 const vendorBytes = await readFile(new URL(files[1], root));
 const recordingBytes = await readFile(new URL(files[3], root));
+const renderBytes = await readFile(new URL(files[7], root));
 const script = "scripts/generate-clip-schema.mjs";
 
 async function fixture() {
@@ -54,14 +56,16 @@ function mockPull(spec: Buffer = specBytes, artifact: Buffer = vendorBytes) {
       calls.push(String(url));
       assert.deepEqual(calls, ['https://realtimeavatar.ai/openapi.json',
         ${JSON.stringify(`https://realtimeavatar.ai${source}`)},
-        'https://realtimeavatar.ai/recording.contract.ts'].slice(0, calls.length));
-      assert.ok(calls.length <= 3);
+        'https://realtimeavatar.ai/recording.contract.ts',
+        'https://realtimeavatar.ai/render.contract.ts'].slice(0, calls.length));
+      assert.ok(calls.length <= 4);
       return new Response(Buffer.from(calls.length === 1
         ? ${JSON.stringify(spec.toString("base64"))}
         : calls.length === 2 ? ${JSON.stringify(artifact.toString("base64"))}
-        : ${JSON.stringify(recordingBytes.toString("base64"))}, 'base64'));
+        : calls.length === 3 ? ${JSON.stringify(recordingBytes.toString("base64"))}
+        : ${JSON.stringify(renderBytes.toString("base64"))}, 'base64'));
     };
-    process.on('exit', code => { if (code === 0) assert.equal(calls.length, 3); });
+    process.on('exit', code => { if (code === 0) assert.equal(calls.length, 4); });
   `;
 }
 
@@ -295,6 +299,8 @@ test("--sync requires an absolute platform root and verifies published bytes aga
       [artifact, vendorBytes], [owner, vendorBytes],
       ["apps/web/public/recording.contract.ts", recordingBytes],
       ["packages/realtime-avatar-contracts/src/product/recording.ts", recordingBytes],
+      ["apps/web/public/render.contract.ts", renderBytes],
+      ["packages/realtime-avatar-contracts/src/product/render.ts", renderBytes],
       ["packages/realtime-avatar-contracts/openapi/realtime-avatar.openapi.json", specBytes],
     ] as const) {
       const target = join(platform, file);
@@ -305,6 +311,11 @@ test("--sync requires an absolute platform root and verifies published bytes aga
     await f.run(["--sync", platform]);
     await f.run(["--check"]);
     const before = await f.snapshot();
+    const renderOwner = join(platform, "packages/realtime-avatar-contracts/src/product/render.ts");
+    await writeFile(renderOwner, "different owner");
+    await assert.rejects(f.run(["--sync", platform]), /x-render-contract differs from its canonical owner/);
+    assert.deepEqual(await f.snapshot(), before);
+    await writeFile(renderOwner, renderBytes);
     await writeFile(join(platform, owner), "different owner");
     await assert.rejects(f.run(["--sync", platform]), /differs from its canonical owner/);
     assert.deepEqual(await f.snapshot(), before);

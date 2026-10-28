@@ -56,6 +56,8 @@ async function readContract(key, ownerPath, targetPath) {
 const { bytes: vendorBytes, hash } = await readContract("x-clip-contract", "packages/realtime-avatar-contracts/src/character-motion.ts", vendorTarget);
 const recordingTarget = new URL("../libs/http-client/src/generated/recording.ts", import.meta.url);
 const recording = await readContract("x-recording-contract", "packages/realtime-avatar-contracts/src/product/recording.ts", recordingTarget);
+const renderTarget = new URL("../libs/http-client/src/generated/render.ts", import.meta.url);
+const render = await readContract("x-render-contract", "packages/realtime-avatar-contracts/src/product/render.ts", renderTarget);
 
 const supported = new Set([
   "$schema", "type", "properties", "required", "additionalProperties",
@@ -390,6 +392,7 @@ if (check) {
   if (pull || sync) {
     await writeFile(vendorTarget, vendorBytes);
     await writeFile(recordingTarget, recording.bytes);
+    await writeFile(renderTarget, render.bytes);
     await writeFile(specTarget, specBytes);
   }
   await writeFile(target, output);

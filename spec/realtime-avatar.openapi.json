@@ -36,6 +36,8 @@
           "recordings:read": "Read private recording metadata and issue playback URLs.",
           "usage:write": "Report usage events. Reserved for first-party runtimes; no public operation requires it.",
           "speech:write": "Generate audio files from text in a voice your workspace can use. Spends credits.",
+          "renders:read": "List and read pre-rendered videos and issue their download URLs.",
+          "renders:write": "Render pre-recorded lip-synced videos of an avatar. Spends credits.",
           "api_keys:write": "Mint further API keys.",
           "*": "Every operation. Granted by the dashboard's default key for convenience — prefer the narrow scopes above, which are what an agent should request."
         }
@@ -3294,7 +3296,9 @@
                 "usage:read",
                 "recordings:read",
                 "usage:write",
-                "speech:write"
+                "speech:write",
+                "renders:read",
+                "renders:write"
               ]
             }
           },
@@ -3371,7 +3375,9 @@
                 "usage:read",
                 "recordings:read",
                 "usage:write",
-                "speech:write"
+                "speech:write",
+                "renders:read",
+                "renders:write"
               ]
             }
           },
@@ -5045,6 +5051,390 @@
         ],
         "additionalProperties": false
       },
+      "CreateRenderRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "avatarId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "voiceId": {
+            "description": "A voice this workspace can use. Omit it for the avatar's own voice.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "segments": {
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "speech"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "description": "What she says, at most 1,000 characters after trimming."
+                    },
+                    "clipId": {
+                      "description": "Switch to this clip from the avatar's clip library as the segment starts. It must be ready.",
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "pause"
+                    },
+                    "durationMs": {
+                      "type": "integer",
+                      "minimum": 100,
+                      "maximum": 10000,
+                      "description": "Silence, from 100 to 10,000 ms."
+                    },
+                    "clipId": {
+                      "description": "Switch to this clip from the avatar's clip library as the pause starts. It must be ready.",
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "durationMs"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "The script, in order: 1 to 50 segments, at most 4,000 characters of speech in total and at most 16 different clips."
+          },
+          "lipGain": {
+            "description": "Mouth-motion amplitude, as on a live call (lip_gain). Omit it for the platform default.",
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 2
+          }
+        },
+        "required": [
+          "avatarId",
+          "segments"
+        ],
+        "additionalProperties": false
+      },
+      "Render": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^rnd_[0-9a-f]{32}$"
+          },
+          "object": {
+            "type": "string",
+            "const": "render"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "rendering",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "avatarId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Length of the rendered video. Set once status is succeeded."
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "invalid_request",
+                      "asset_unavailable",
+                      "tts_failed",
+                      "too_long",
+                      "render_failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set only when status is failed."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "status",
+          "avatarId",
+          "durationMs",
+          "width",
+          "height",
+          "error",
+          "createdAt",
+          "completedAt"
+        ],
+        "additionalProperties": false
+      },
+      "ListRendersResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^rnd_[0-9a-f]{32}$"
+                },
+                "object": {
+                  "type": "string",
+                  "const": "render"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "rendering",
+                    "succeeded",
+                    "failed"
+                  ]
+                },
+                "avatarId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "durationMs": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Length of the rendered video. Set once status is succeeded."
+                },
+                "width": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "height": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "invalid_request",
+                            "asset_unavailable",
+                            "tts_failed",
+                            "too_long",
+                            "render_failed"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Set only when status is failed."
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "completedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "object",
+                "status",
+                "avatarId",
+                "durationMs",
+                "width",
+                "height",
+                "error",
+                "createdAt",
+                "completedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ],
+        "additionalProperties": false
+      },
+      "RenderAccessResponse": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^rnd_[0-9a-f]{32}$"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
       "ConnectionHistoryResponse": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -6368,7 +6758,9 @@
               "usage:read",
               "recordings:read",
               "usage:write",
-              "speech:write"
+              "speech:write",
+              "renders:read",
+              "renders:write"
             ]
           },
           "grantedScopes": {
@@ -6386,7 +6778,9 @@
                 "usage:read",
                 "recordings:read",
                 "usage:write",
-                "speech:write"
+                "speech:write",
+                "renders:read",
+                "renders:write"
               ]
             }
           },
@@ -8684,6 +9078,389 @@
         ]
       }
     },
+    "/v1/renders": {
+      "post": {
+        "operationId": "createRender",
+        "description": "Render an MP4 (H.264 and AAC, 25 fps) of an avatar speaking a script, offline, with no live call. The script is 1 to 50 segments in order: speech (text, at most 1,000 characters each and 4,000 in total) or a pause (100 to 10,000 ms), each of which may switch to a ready clip from the avatar's clip library as it starts (clipId). The voice is voiceId or the avatar's own. Billed per second of the rendered video at the live-call rate (1 credit per second). The request holds an upper-bound estimate, settles to the rendered length, and releases everything if the render fails. A video may be at most 180 seconds. Answers 202 with status queued: poll GET /v1/renders/{renderId} until succeeded or failed, then request a download URL. Send an Idempotency-Key so a retried request returns the same render instead of starting another. 422 render_clip_unavailable names a clip that is not a ready clip of this avatar; 404 voice_not_found names a voice this workspace cannot see and 422 voice_unavailable one that cannot be used for video (a named voice is never replaced); 503 render_export_unavailable means rendering is not available on this deployment.\n\nRequires an API key with the `renders:write` scope.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Replays the original response byte-for-byte instead of performing the write again. Recommended on retries: a re-render is billed. Keys longer than 180 characters are IGNORED — the write proceeds without replay protection rather than failing — so keep it short.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRenderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Render"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Not enough credits for the estimated length, or the key's spend limit is reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Avatar not found in this workspace, or a voiceId it cannot see (voice_not_found)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid script, an unknown or unready clip (render_clip_unavailable), a voice that cannot be used for video (voice_unavailable), or an avatar with no source video",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Rendering is not available on this deployment (render_export_unavailable)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "renders:write"
+        ],
+        "summary": "Render a video of an avatar speaking a script",
+        "tags": [
+          "Renders"
+        ]
+      },
+      "get": {
+        "operationId": "listRenders",
+        "description": "This workspace's renders, newest first.\n\nRequires an API key with the `renders:read` scope.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The previous response's nextCursor."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Renders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListRendersResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "renders:read"
+        ],
+        "summary": "List rendered videos",
+        "tags": [
+          "Renders"
+        ]
+      }
+    },
+    "/v1/renders/{renderId}": {
+      "get": {
+        "operationId": "getRender",
+        "description": "A render's status. A failed render carries error.code: invalid_request, asset_unavailable, tts_failed, too_long, render_failed. Nothing is charged for a failed render.\n\nRequires an API key with the `renders:read` scope.",
+        "parameters": [
+          {
+            "name": "renderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^rnd_[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Render",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Render"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No render with this id in this workspace (render_not_found)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "renders:read"
+        ],
+        "summary": "Get a render's status",
+        "tags": [
+          "Renders"
+        ]
+      }
+    },
+    "/v1/renders/{renderId}/access": {
+      "get": {
+        "operationId": "getRenderAccess",
+        "description": "Issue a signed GET URL for a succeeded render's MP4. The URL supports byte ranges and lasts one hour; request a new one when it expires. Keep it private.\n\nRequires an API key with the `renders:read` scope.",
+        "parameters": [
+          {
+            "name": "renderId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^rnd_[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Temporary access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderAccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, revoked, or expired key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The key lacks the scope for this operation, or the tenant is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No render with this id in this workspace (render_not_found)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The render has not succeeded (render_not_ready)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The render's video is no longer stored (render_gone)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Render storage temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads \"does not belong to this tenant\", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-required-scopes": [
+          "renders:read"
+        ],
+        "summary": "Get a temporary rendered-video download URL",
+        "tags": [
+          "Renders"
+        ]
+      }
+    },
     "/v1/usage/sessions": {
       "get": {
         "operationId": "listUsageSessions",
@@ -8825,6 +9602,10 @@
     "source": "/recording.contract.ts",
     "sha256": "f32b468bb70561d26ae376954242c50364100147eacb66a966398d5115d98016"
   },
+  "x-render-contract": {
+    "source": "/render.contract.ts",
+    "sha256": "6ba70a8084bfcb41bc9ea137c29b5a4acd54c3d326a53e058c1cffff2f92297e"
+  },
   "tags": [
     {
       "name": "API keys",
@@ -8849,6 +9630,10 @@
     {
       "name": "Recordings",
       "description": "Private session recordings and renewable access URLs."
+    },
+    {
+      "name": "Renders",
+      "description": "Pre-rendered lip-synced videos of an avatar speaking a script, made without a live call."
     },
     {
       "name": "Scenes",

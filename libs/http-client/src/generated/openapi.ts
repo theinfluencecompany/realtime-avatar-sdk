@@ -434,6 +434,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/renders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List rendered videos
+         * @description This workspace's renders, newest first.
+         *
+         *     Requires an API key with the `renders:read` scope.
+         */
+        get: operations["listRenders"];
+        put?: never;
+        /**
+         * Render a video of an avatar speaking a script
+         * @description Render an MP4 (H.264 and AAC, 25 fps) of an avatar speaking a script, offline, with no live call. The script is 1 to 50 segments in order: speech (text, at most 1,000 characters each and 4,000 in total) or a pause (100 to 10,000 ms), each of which may switch to a ready clip from the avatar's clip library as it starts (clipId). The voice is voiceId or the avatar's own. Billed per second of the rendered video at the live-call rate (1 credit per second). The request holds an upper-bound estimate, settles to the rendered length, and releases everything if the render fails. A video may be at most 180 seconds. Answers 202 with status queued: poll GET /v1/renders/{renderId} until succeeded or failed, then request a download URL. Send an Idempotency-Key so a retried request returns the same render instead of starting another. 422 render_clip_unavailable names a clip that is not a ready clip of this avatar; 404 voice_not_found names a voice this workspace cannot see and 422 voice_unavailable one that cannot be used for video (a named voice is never replaced); 503 render_export_unavailable means rendering is not available on this deployment.
+         *
+         *     Requires an API key with the `renders:write` scope.
+         */
+        post: operations["createRender"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/renders/{renderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a render's status
+         * @description A render's status. A failed render carries error.code: invalid_request, asset_unavailable, tts_failed, too_long, render_failed. Nothing is charged for a failed render.
+         *
+         *     Requires an API key with the `renders:read` scope.
+         */
+        get: operations["getRender"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/renders/{renderId}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a temporary rendered-video download URL
+         * @description Issue a signed GET URL for a succeeded render's MP4. The URL supports byte ranges and lasts one hour; request a new one when it expires. Keep it private.
+         *
+         *     Requires an API key with the `renders:read` scope.
+         */
+        get: operations["getRenderAccess"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/usage/sessions": {
         parameters: {
             query?: never;
@@ -1335,7 +1407,7 @@ export interface components {
              *       "avatars:read"
              *     ]
              */
-            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write")[];
+            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write" | "renders:read" | "renders:write")[];
             spendLimitCreditMicros?: number | null;
             expiresAt?: string | null;
         };
@@ -1347,7 +1419,7 @@ export interface components {
             redactedKey: string;
             /** @default false */
             canReveal: boolean;
-            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write")[];
+            scopes: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write" | "renders:read" | "renders:write")[];
             /** @enum {string} */
             status: "active" | "revoked" | "expired";
             spendLimitCreditMicros: number | null;
@@ -1729,6 +1801,81 @@ export interface components {
             /** Format: date-time */
             expiresAt: string;
         };
+        CreateRenderRequest: {
+            avatarId: string;
+            /** @description A voice this workspace can use. Omit it for the avatar's own voice. */
+            voiceId?: string;
+            /** @description The script, in order: 1 to 50 segments, at most 4,000 characters of speech in total and at most 16 different clips. */
+            segments: ({
+                /** @constant */
+                type: "speech";
+                /** @description What she says, at most 1,000 characters after trimming. */
+                text: string;
+                /** @description Switch to this clip from the avatar's clip library as the segment starts. It must be ready. */
+                clipId?: string;
+            } | {
+                /** @constant */
+                type: "pause";
+                /** @description Silence, from 100 to 10,000 ms. */
+                durationMs: number;
+                /** @description Switch to this clip from the avatar's clip library as the pause starts. It must be ready. */
+                clipId?: string;
+            })[];
+            /** @description Mouth-motion amplitude, as on a live call (lip_gain). Omit it for the platform default. */
+            lipGain?: number;
+        };
+        Render: {
+            id: string;
+            /** @constant */
+            object: "render";
+            /** @enum {string} */
+            status: "queued" | "rendering" | "succeeded" | "failed";
+            avatarId: string;
+            /** @description Length of the rendered video. Set once status is succeeded. */
+            durationMs: number | null;
+            width: number | null;
+            height: number | null;
+            /** @description Set only when status is failed. */
+            error: {
+                /** @enum {string} */
+                code: "invalid_request" | "asset_unavailable" | "tts_failed" | "too_long" | "render_failed";
+                message: string;
+            } | null;
+            /** Format: date-time */
+            createdAt: string;
+            completedAt: string | null;
+        };
+        ListRendersResponse: {
+            data: {
+                id: string;
+                /** @constant */
+                object: "render";
+                /** @enum {string} */
+                status: "queued" | "rendering" | "succeeded" | "failed";
+                avatarId: string;
+                /** @description Length of the rendered video. Set once status is succeeded. */
+                durationMs: number | null;
+                width: number | null;
+                height: number | null;
+                /** @description Set only when status is failed. */
+                error: {
+                    /** @enum {string} */
+                    code: "invalid_request" | "asset_unavailable" | "tts_failed" | "too_long" | "render_failed";
+                    message: string;
+                } | null;
+                /** Format: date-time */
+                createdAt: string;
+                completedAt: string | null;
+            }[];
+            nextCursor: string | null;
+        };
+        RenderAccessResponse: {
+            id: string;
+            /** Format: uri */
+            url: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
         ConnectionHistoryResponse: {
             sessionId: string;
             observations: {
@@ -1975,9 +2122,9 @@ export interface components {
              * @description Present on `403 insufficient_scope` — the one scope this operation needed and the key did not carry. Repeated in the `WWW-Authenticate` challenge as `scope=`.
              * @enum {string}
              */
-            requiredScope?: "*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write";
+            requiredScope?: "*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write" | "renders:read" | "renders:write";
             /** @description Present alongside `requiredScope` — the scopes the presented key does carry. */
-            grantedScopes?: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write")[];
+            grantedScopes?: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write" | "renders:read" | "renders:write")[];
             /** @description Present on 402 — where to send the user to top up. */
             billingUrl?: string;
             /** @description On concurrency_limit_reached: the workspace's concurrent session limit. */
@@ -3342,6 +3489,299 @@ export interface operations {
                 };
             };
             /** @description Recording media temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listRenders: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description The previous response's nextCursor. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Renders */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListRendersResponse"];
+                };
+            };
+            /** @description Invalid query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Missing, malformed, revoked, or expired key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key lacks the scope for this operation, or the tenant is not active. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createRender: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Replays the original response byte-for-byte instead of performing the write again. Recommended on retries: a re-render is billed. Keys longer than 180 characters are IGNORED — the write proceeds without replay protection rather than failing — so keep it short. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRenderRequest"];
+            };
+        };
+        responses: {
+            /** @description Queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Render"];
+                };
+            };
+            /** @description Missing, malformed, revoked, or expired key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not enough credits for the estimated length, or the key's spend limit is reached */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key lacks the scope for this operation, or the tenant is not active. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Avatar not found in this workspace, or a voiceId it cannot see (voice_not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Invalid script, an unknown or unready clip (render_clip_unavailable), a voice that cannot be used for video (voice_unavailable), or an avatar with no source video */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Rendering is not available on this deployment (render_export_unavailable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getRender: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                renderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Render */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Render"];
+                };
+            };
+            /** @description Missing, malformed, revoked, or expired key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key lacks the scope for this operation, or the tenant is not active. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No render with this id in this workspace (render_not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getRenderAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                renderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Temporary access */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderAccessResponse"];
+                };
+            };
+            /** @description Missing, malformed, revoked, or expired key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key lacks the scope for this operation, or the tenant is not active. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No render with this id in this workspace (render_not_found) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The render has not succeeded (render_not_ready) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The render's video is no longer stored (render_gone) */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Render storage temporarily unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;
