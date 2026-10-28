@@ -16,6 +16,7 @@ import { connectionHistoryGrantSchema } from "../../http-client/src/generated/co
 import { transcriptionOptionsSchema, transcriptionWireSchema, transcriptionToWire } from "../../http-client/src/generated/transcription.ts";
 import { contentPolicySchema } from "../../http-client/src/generated/content-policy.ts";
 import { voiceErrorFrameSchema as contractVoiceErrorFrameSchema } from "../../http-client/src/generated/voice-error-frame.ts";
+import { fishTtsModelSchema } from "../../http-client/src/generated/fish-tts-model.ts";
 
 const DEFAULT_AVATAR_ID = "maria";
 const DEFAULT_BACKGROUND_ID = "plain_white";
@@ -110,9 +111,6 @@ const cartesiaVoiceSpecSchema = z
     language: z.string().min(2).max(16).nullable().optional(),
   })
   .strict();
-
-const FISH_TTS_MODELS = ["speech-1.6", "s1", "s2-pro", "speech-1.5", "s1-mini"] as const;
-const fishTtsModelSchema = z.enum(FISH_TTS_MODELS);
 
 const breezeVoiceSpecSchema = z
   .object({

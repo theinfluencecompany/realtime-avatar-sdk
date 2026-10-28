@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Fish voices accept every model the platform accepts, including `s2.1-pro` and `drama-3`.**
+  `voice: { provider: "fish", model }` was validated against a hand-kept list that had fallen
+  behind the platform: `drama-3` and `s2.1-pro` were refused before any request was sent. The
+  list is now generated from the published contract (`fishTtsModelSchema` in
+  `libs/http-client/src/generated/fish-tts-model.ts`), and the typecheck fails if it and the
+  contract ever disagree.
+- The vendored contract also carries the platform's optional `lip_gain` session field; the
+  SDK's session options do not expose it yet.
+
 ## 0.28.0
 
 A minor release: a call can speak in a voice your server provides.

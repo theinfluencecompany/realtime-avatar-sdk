@@ -587,7 +587,7 @@ export interface components {
                  * @default speech-1.6
                  * @enum {string}
                  */
-                model: "speech-1.6" | "s1" | "s2-pro" | "drama-3" | "speech-1.5" | "s1-mini";
+                model: "speech-1.6" | "s1" | "s2-pro" | "s2.1-pro" | "drama-3" | "speech-1.5" | "s1-mini";
                 voice_id: string;
                 speed?: number | null;
                 emotion?: string | null;
@@ -648,6 +648,8 @@ export interface components {
                 gestures_enabled?: boolean;
             };
             expression_profile?: string;
+            /** @description Mouth-motion amplitude for this session's lip-sync, from 0.5 to 2. Lower values make speech movements smaller, higher values larger. Omit it to use the platform default. Applies to video sessions; ignored for voice sessions and render_backend generative. */
+            lip_gain?: number;
             /** @enum {string} */
             render_backend?: "warp" | "generative";
             support_edits?: {
