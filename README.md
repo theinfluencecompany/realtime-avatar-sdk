@@ -234,6 +234,27 @@ rta.iterateSessions({ from, to })                   // the same, paging handled
 // webhooks
 verifyTranscript(rawBytes, headers, secret)
 verifyVoiceWebhook(rawBytes, headers, secret)   // one sentence to speak, typed; see "Custom voice (webhook)"
+
+// contract values; also exported by realtime-avatar/react and /react-native
+fishTtsModelSchema.safeParse(storedModelId)     // a Fish model id you stored -> FishTtsModel, or a failure
+DEFAULT_FISH_TTS_MODEL                          // the platform's Fish default model
+```
+
+**A Fish model id you stored is validated once, with the SDK's own list.** Both values are
+generated from the platform's contract: every live and deprecated id it accepts, and its
+default. `fishTtsModelSchema.safeParse(row.model)` returns the public `FishTtsModel` on success,
+so the voice you build needs no cast and your code keeps no copy of the list. Do it where the
+stored string enters your server, and decide there what a refused id falls back to.
+
+```ts
+import { DEFAULT_FISH_TTS_MODEL, fishTtsModelSchema, type VoiceSpecInput } from "realtime-avatar/react";
+
+const parsed = fishTtsModelSchema.safeParse(row.model);
+const voice: VoiceSpecInput = {
+  provider: "fish",
+  voice_id: row.voiceId,
+  model: parsed.success ? parsed.data : DEFAULT_FISH_TTS_MODEL,
+};
 ```
 
 `listSessions` validates the entire response against the generated platform contract before

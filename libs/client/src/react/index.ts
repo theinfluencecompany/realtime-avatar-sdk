@@ -158,6 +158,9 @@ export {
 } from "../wire";
 // The mint's cap on `instructions`, so an app can budget prompt assembly without probing.
 export { MAX_SESSION_INSTRUCTIONS_CHARS } from "../wire";
+// The platform's Fish model ids, generated from its contract, so a stored id is validated once
+// with `fishTtsModelSchema.safeParse` and comes back as `FishTtsModel` instead of being cast.
+export { fishTtsModelSchema, DEFAULT_FISH_TTS_MODEL } from "../wire";
 
 // The contract `AvatarCall` and the hooks ask for. Exported so a consumer can implement it.
 export type {

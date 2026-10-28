@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`fishTtsModelSchema` and `DEFAULT_FISH_TTS_MODEL` are public, so a stored Fish model id can
+  be validated without a cast or a copied list.** They are exported by `realtime-avatar` (and
+  `/server`), `realtime-avatar/react` and `realtime-avatar/react-native`, and are the same
+  values 0.29.0 generates from the platform's contract. `fishTtsModelSchema.safeParse(id)`
+  returns the public `FishTtsModel` on success, which a `VoiceSpecInput` accepts as its Fish
+  `model`. `FishTtsModel` is now also exported by `realtime-avatar`; every entry names one type,
+  declared in the generated file.
+
 ## 0.29.0
 
 A minor release: Fish voices follow the platform's model list and default.
