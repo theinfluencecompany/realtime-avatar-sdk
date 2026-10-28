@@ -3,24 +3,43 @@ import { test } from "node:test";
 import { RealtimeAvatar } from "../src/client.ts";
 import { RealtimeAvatarError, RealtimeAvatarHttpError } from "../src/errors.ts";
 import type { components } from "../src/generated/openapi.ts";
-import type { CreateRenderInput, ListRendersResponse, Render, RenderAccessResponse } from "../src/types.ts";
+import type { CreateRenderInput, ListRendersResponse, Render, RenderAccessResponse, RenderShot, ShotTiming } from "../src/types.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 const contractParity: [
   Equal<Render, components["schemas"]["Render"]>,
+  Equal<ShotTiming, NonNullable<components["schemas"]["Render"]["timeline"]>[number]>,
+  Equal<CreateRenderInput, components["schemas"]["CreateRenderRequest"]>,
+  Equal<RenderShot, components["schemas"]["CreateRenderRequest"]["shots"][number]>,
   Equal<RenderAccessResponse, components["schemas"]["RenderAccessResponse"]>,
   Equal<ListRendersResponse, components["schemas"]["ListRendersResponse"]>,
-] = [true, true, true];
+] = [true, true, true, true, true, true];
 void contractParity;
 
 const renderId = "rnd_0123456789abcdef0123456789abcdef";
 const queued: Render = {
-  id: renderId, object: "render", status: "queued", avatarId: "ava_test",
-  durationMs: null, width: null, height: null, error: null,
+  id: renderId, object: "render", status: "queued", avatarId: "ava_6b80f113f07346c0ba6eedb32ec76aee",
+  voiceId: "voice_test", durationMs: null, width: null, height: null, timeline: null, error: null,
   createdAt: "2026-10-28T12:00:00.000Z", completedAt: null,
 };
-const succeeded: Render = {
-  ...queued, status: "succeeded", durationMs: 4_200, width: 512, height: 512,
+// The founder's script as it lands: a once clip that outlasts its speech, a once clip that the
+// speech plus pause outlasts (the body continues on the loop from before), and a shot that keeps it.
+const timeline: ShotTiming[] = [
+  {
+    index: 0, startMs: 400, endMs: 5_000, clipId: "gesture_send_flower", playback: "once",
+    speechStartMs: 400, speechEndMs: 3_900, clipEndMs: 5_000, afterClipId: null,
+  },
+  {
+    index: 1, startMs: 5_000, endMs: 8_200, clipId: "idle_touch_collar", playback: "once",
+    speechStartMs: 5_000, speechEndMs: 7_300, clipEndMs: 7_000, afterClipId: "primary",
+  },
+  {
+    index: 2, startMs: 8_200, endMs: 10_000, clipId: "primary", playback: "loop",
+    speechStartMs: 8_200, speechEndMs: 9_900, clipEndMs: null, afterClipId: null,
+  },
+];
+const ready: Render = {
+  ...queued, status: "ready", durationMs: 10_600, width: 512, height: 512, timeline,
   completedAt: "2026-10-28T12:01:00.000Z",
 };
 const failed: Render = {
@@ -29,21 +48,19 @@ const failed: Render = {
   completedAt: "2026-10-28T12:01:00.000Z",
 };
 const script: CreateRenderInput = {
-  avatarId: "ava_test",
-  voiceId: "voice_test",
-  segments: [
-    { type: "speech", text: "Hello there.", clipId: "wave_hi" },
-    { type: "pause", durationMs: 400 },
-    { type: "speech", text: "Here is the plan." },
+  avatarId: "ava_6b80f113f07346c0ba6eedb32ec76aee",
+  shots: [
+    { clipId: "gesture_send_flower", say: "你终于来了。今天……我有话想对你说。" },
+    { clipId: "idle_touch_collar", say: "别笑，我是认真的。", pauseAfterMs: 800 },
+    { say: "所以，今晚留下来。" },
   ],
-  lipGain: 1.2,
 };
 
 function client(fetchImpl: (request: Request) => Response | Promise<Response>) {
   return new RealtimeAvatar({ apiKey: "test-key", fetch: async (input, init) => fetchImpl(new Request(input, init)) });
 }
 
-test("createRender posts the camelCase script unchanged with one idempotency key across a retry", async () => {
+test("createRender posts the camelCase shots unchanged with one idempotency key across a retry", async () => {
   const requests: Request[] = [];
   const bodies: unknown[] = [];
   const rta = client(async (request) => {
@@ -69,7 +86,7 @@ test("createRender posts the camelCase script unchanged with one idempotency key
 
 test("createRender refusals stay typed HTTP errors carrying the platform code", async () => {
   const rta = client(() => Response.json(
-    { code: "render_clip_unavailable", message: "Clip wave_hi is not ready.", details: { clipId: "wave_hi" } },
+    { code: "render_clip_unavailable", message: "Clip gesture_send_flower is not ready.", details: { clipId: "gesture_send_flower" } },
     { status: 422, headers: { "x-request-id": "0b8a1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d" } },
   ));
   await assert.rejects(rta.createRender(script), (error: unknown) => {
@@ -90,9 +107,9 @@ test("getRender and getRenderAccess read the encoded render paths", async () => 
     seen.push(new URL(request.url).pathname);
     assert.equal(request.method, "GET");
     assert.equal(request.headers.get("idempotency-key"), null);
-    return Response.json(request.url.endsWith("/access") ? access : succeeded);
+    return Response.json(request.url.endsWith("/access") ? access : ready);
   });
-  assert.deepEqual(await rta.getRender(renderId), succeeded);
+  assert.deepEqual(await rta.getRender(renderId), ready);
   assert.deepEqual(await rta.getRenderAccess(renderId), access);
   await rta.getRender("rnd_x/../y");
   assert.deepEqual(seen, [
@@ -110,21 +127,23 @@ test("listRenders forwards limit and cursor, and iterateRenders follows every cu
     queries.push(url.search);
     return Response.json(url.searchParams.get("cursor") === "page+2="
       ? { data: [failed], nextCursor: null }
-      : { data: [queued, succeeded], nextCursor: "page+2=" });
+      : { data: [queued, ready], nextCursor: "page+2=" });
   });
-  assert.deepEqual(await rta.listRenders(), { data: [queued, succeeded], nextCursor: "page+2=" });
+  assert.deepEqual(await rta.listRenders(), { data: [queued, ready], nextCursor: "page+2=" });
   await rta.listRenders({ limit: 10, cursor: "page+2=" });
   const all: Render[] = [];
   for await (const render of rta.iterateRenders({ limit: 2 })) all.push(render);
-  assert.deepEqual(all, [queued, succeeded, failed]);
+  assert.deepEqual(all, [queued, ready, failed]);
   assert.deepEqual(queries, ["", "?limit=10&cursor=page%2B2%3D", "?limit=2", "?limit=2&cursor=page%2B2%3D"]);
   await assert.rejects(rta.listRenders({ limit: 500 }));
 });
 
 test("waitForRender returns the settled render, failures included, and throws only on timeout", async () => {
-  const sequence = [queued, { ...queued, status: "rendering" }, succeeded];
+  const sequence = [queued, { ...queued, status: "rendering" }, ready];
   const polling = client(() => Response.json(sequence.shift()));
-  assert.deepEqual(await polling.waitForRender(renderId, { pollMs: 1_000 }), succeeded);
+  const settledReady = await polling.waitForRender(renderId, { pollMs: 1_000 });
+  assert.deepEqual(settledReady, ready);
+  assert.deepEqual(settledReady.timeline, timeline);
   assert.equal(sequence.length, 0);
 
   const failing = client(() => Response.json(failed));
@@ -178,11 +197,29 @@ test("listRenders refuses a bad limit as a RealtimeAvatarError before any reques
   assert.equal(requests, 0);
 });
 
+test("getRender returns the timeline exactly as the contract types it", async () => {
+  const rta = client(() => Response.json(ready));
+  const render = await rta.getRender(renderId);
+  assert.equal(render.status, "ready");
+  assert.equal(render.voiceId, "voice_test");
+  assert.deepEqual(render.timeline, timeline);
+  assert.deepEqual(render.timeline?.map((shot) => [shot.clipId, shot.playback, shot.afterClipId]), [
+    ["gesture_send_flower", "once", null],
+    ["idle_touch_collar", "once", "primary"],
+    ["primary", "loop", null],
+  ]);
+});
+
 test("render responses that break the contract throw one fixed error without the body", async () => {
+  const shot = timeline[1];
   const bodies = [
-    JSON.stringify({ ...succeeded, durationMs: "secret-response-value" }),
-    JSON.stringify({ ...succeeded, status: "done" }),
-    JSON.stringify({ ...succeeded, extra: "secret-response-value" }),
+    JSON.stringify({ ...ready, durationMs: "secret-response-value" }),
+    JSON.stringify({ ...ready, status: "succeeded" }),
+    JSON.stringify({ ...ready, extra: "secret-response-value" }),
+    JSON.stringify({ ...ready, timeline: [{ ...shot, playback: "secret-response-value" }] }),
+    JSON.stringify({ ...ready, timeline: [{ ...shot, clipId: null }] }),
+    JSON.stringify({ ...ready, timeline: [{ ...shot, extra: "secret-response-value" }] }),
+    JSON.stringify({ ...ready, timeline: [Object.fromEntries(Object.entries(shot).filter(([key]) => key !== "afterClipId"))] }),
     "{ not json secret-response-value",
   ];
   for (const body of bodies) {

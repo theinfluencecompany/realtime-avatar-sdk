@@ -857,19 +857,33 @@ from request or creation timestamps when media timestamps are missing.
 
 ## Pre-rendered video
 
-`createRender` turns a script into an MP4 of the avatar, offline, with no call: the same face,
-clips, voice and lip-sync. It needs `renders:write`, and the reads need `renders:read`; both are
+`createRender` turns a script of `shots` into an MP4 of the avatar, offline, with no call: the
+same face, clips, voice and lip-sync. **Everything in one shot happens at the same time; shots
+play one after another.** It needs `renders:write`, and the reads need `renders:read`; both are
 off on a new key.
 
 ```ts
 const render = await rta.createRender({
-  avatarId,
-  segments: [{ type: "speech", text: "Hi, I'm Rin.", clipId: "wave_hi" }, { type: "pause", durationMs: 600 }],
+  avatarId: "ava_6b80f113f07346c0ba6eedb32ec76aee",
+  shots: [
+    { clipId: "gesture_send_flower", say: "你终于来了。今天……我有话想对你说。" },
+    { clipId: "idle_touch_collar", say: "别笑，我是认真的。", pauseAfterMs: 800 },
+    { say: "所以，今晚留下来。" },
+  ],
 });
 const done = await rta.waitForRender(render.id);
-if (done.status === "succeeded") return (await rta.getRenderAccess(done.id)).url;   // an hour
+if (done.status === "ready") return (await rta.getRenderAccess(done.id)).url;   // an hour
 ```
 
+- A shot has three optional fields, and needs at least one: `clipId` (what she does: a READY
+  library clip, or `"primary"` for her own video; omit it to keep the current loop clip), `say`
+  (what she says, 1 to 1,000 characters, starting when the shot starts), `pauseAfterMs` (silence
+  after speaking, 0 to 10,000 ms).
+- A shot lasts its speech plus `pauseAfterMs`, or a once clip's action if longer. A once clip is
+  never cut; a loop clip fills the shot and carries on into the next shot that keeps it.
+- A `ready` render's `timeline` has one entry per shot (`startMs`, `endMs`, `clipId`,
+  `playback`, `speechStartMs`, `speechEndMs`, `clipEndMs`, `afterClipId`), in video time.
+  Align captions or cuts to it instead of estimating.
 - **`waitForRender` returns a failed render; it does not throw one.** Branch on `status` and
   `error.code`. It throws only on timeout, and a timeout is not a failure.
 - **A `clipId` must already be READY.** A clip still rendering is `422 render_clip_unavailable`;

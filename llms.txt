@@ -131,13 +131,17 @@ connection payload back; your client joins and renders her.
   calls `rta.endCall(sessionId)` — and only ever end ids your own server minted.
 
 ## Pre-rendered video (render export)
-- `createRender({ avatarId, voiceId?, segments, lipGain? })` renders an MP4 (H.264 + AAC, 25 fps)
-  of the avatar speaking a script, offline, with no call. Segments are
-  `{ type: "speech", text, clipId? }` or `{ type: "pause", durationMs, clipId? }`; the body is
-  camelCase on the wire too. Then `waitForRender(id)` and `getRenderAccess(id)` for a signed URL
-  that lasts an hour; keep the render id, not the URL. A plain `<video src>` plays it.
+- `createRender({ avatarId, voiceId?, lipGain?, shots })` renders an MP4 (H.264 + AAC, 25 fps)
+  of the avatar performing a script, offline, with no call. Everything in one shot happens at the
+  same time; shots play one after another. A shot is `{ clipId?, say?, pauseAfterMs? }`: what she
+  does (a READY clip or `"primary"`), what she says, and the silence after it. Example:
+  `{ avatarId: "ava_6b80f113f07346c0ba6eedb32ec76aee", shots: [{ clipId: "gesture_send_flower", say: "你终于来了。今天……我有话想对你说。" }, { clipId: "idle_touch_collar", say: "别笑，我是认真的。", pauseAfterMs: 800 }, { say: "所以，今晚留下来。" }] }`.
+  The body is camelCase on the wire too. Then `waitForRender(id)` and `getRenderAccess(id)` for a
+  signed URL that lasts an hour; keep the render id, not the URL. A plain `<video src>` plays it.
+- A `ready` render's `timeline` lists each shot's `startMs`, `endMs`, `clipId`, `playback`
+  (`once` | `loop`), `speechStartMs`, `speechEndMs`, `clipEndMs` and `afterClipId`, in video time.
 - The key needs `renders:write` (create) and `renders:read` (read); both are OFF on a new key.
-- `createRender` returns on acceptance (202, `queued`). `waitForRender` RETURNS a `failed`
+- `createRender` returns on acceptance (202, `queued`); it settles `ready` or `failed`. `waitForRender` RETURNS a `failed`
   render with a typed `error.code` instead of throwing, and throws only on timeout.
 - Every `clipId` must be a READY clip of the avatar (`422 render_clip_unavailable` otherwise,
   nothing charged). A `voiceId` is never silently replaced (`404 voice_not_found`,

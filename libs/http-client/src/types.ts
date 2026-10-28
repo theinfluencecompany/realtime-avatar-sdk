@@ -33,7 +33,7 @@ import type { toSessionsPage } from "./generated/usage-sessions.ts";
 import type { RecordingMode, RecordingArtifact } from "./generated/recording.ts";
 import type { voiceWebhookToWire } from "./generated/voice-webhook.ts";
 export type { RecordingMode, RecordingArtifactStatus, RecordingArtifact, ListRecordingsQuery, ListRecordingsResponse, RecordingAccessResponse } from "./generated/recording.ts";
-export type { RenderStatus, RenderFailureCode, Render, ListRendersQuery, ListRendersResponse, RenderAccessResponse } from "./generated/render.ts";
+export type { RenderStatus, RenderFailureCode, RenderPlayback, ShotTiming, Render, ListRendersQuery, ListRendersResponse, RenderAccessResponse } from "./generated/render.ts";
 
 /**
  * The wire shapes, from the published contract at https://realtimeavatar.ai/openapi.json.
@@ -423,14 +423,14 @@ export type ListSessionsOptions = NonNullable<operations["listUsageSessions"]["p
 };
 
 /**
- * A pre-rendered video request: the avatar, an optional voice and the script, in order. The body
- * is camelCase on the wire too, so it is sent exactly as given. Each segment is speech or a pause,
- * and either may switch to a ready clip of the avatar as it starts.
+ * A pre-rendered video request: the avatar, an optional voice, and the script as `shots`.
+ * Everything in one shot happens at the same time; shots play one after another. The body is
+ * camelCase on the wire too, so it is sent exactly as given.
  */
 export type CreateRenderInput = Wire["CreateRenderRequest"];
 
-/** One step of a render script: `{ type: "speech", text }` or `{ type: "pause", durationMs }`. */
-export type RenderSegment = Wire["CreateRenderRequest"]["segments"][number];
+/** One shot: `clipId` is what she does, `say` what she says, `pauseAfterMs` the silence after it. */
+export type RenderShot = Wire["CreateRenderRequest"]["shots"][number];
 
 export type CreditBalance = Pick<
   Wire["CreditBalance"],

@@ -655,12 +655,13 @@ export class RealtimeAvatar {
   // ── renders (pre-rendered video) ─────────────────────────────────────────
 
   /**
-   * Render an MP4 of the avatar speaking a script, offline, with no live call. Requires
+   * Render an MP4 of the avatar performing a script of `shots`, offline, with no live call.
+   * Everything in one shot happens at the same time; shots play one after another. Requires
    * `renders:write`, which a new key does not carry unless you tick it.
    *
    * `202` is acceptance: the render is `queued`, and `waitForRender` follows it to the end.
-   * Every `clipId` must be a READY clip of this avatar, or the request is refused with
-   * `422 render_clip_unavailable` before anything is charged. The retry carries the same
+   * Every `clipId` must be a READY clip of this avatar or `"primary"`, or the request is refused
+   * with `422 render_clip_unavailable` before anything is charged. The retry carries the same
    * `Idempotency-Key`, so a lost response never starts, or bills, a second render.
    */
   async createRender(input: CreateRenderInput): Promise<Render> {
@@ -698,9 +699,9 @@ export class RealtimeAvatar {
   }
 
   /**
-   * A signed download URL for a succeeded render. It expires at `expiresAt` (an hour); keep the
+   * A signed download URL for a ready render. It expires at `expiresAt` (an hour); keep the
    * render id and ask again rather than storing the URL. `409 render_not_ready` before the
-   * render succeeds, `410 render_gone` if the file is no longer stored.
+   * render is ready, `410 render_gone` if the file is no longer stored.
    */
   async getRenderAccess(renderId: string): Promise<RenderAccessResponse> {
     return this.#contract(
@@ -711,7 +712,8 @@ export class RealtimeAvatar {
   }
 
   /**
-   * Block until a render settles, and return it: `succeeded`, or `failed` with `error.code`.
+   * Block until a render settles, and return it: `ready` with its `timeline`, or `failed` with
+   * `error.code`.
    *
    * A failed render is returned, not thrown, so its code stays a typed value you can branch on
    * (`too_long` means shorten the script; `tts_failed` and `render_failed` are worth one retry).
@@ -726,7 +728,7 @@ export class RealtimeAvatar {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const render = await this.getRender(renderId);
-      if (render.status === "succeeded" || render.status === "failed") return render;
+      if (render.status === "ready" || render.status === "failed") return render;
       if (Date.now() >= deadline) {
         throw new RealtimeAvatarError(
           `Render ${renderId} was still ${render.status} after ${Math.round(timeoutMs / 1000)}s. ` +

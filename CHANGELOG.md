@@ -2,27 +2,33 @@
 
 ## 0.31.0
 
-A minor release: pre-rendered video. An avatar can speak a script into an MP4 with no live call.
+A minor release: pre-rendered video. An avatar can perform a script into an MP4 with no live call.
 
 ### Added
 
-- **`createRender({ avatarId, voiceId?, segments, lipGain? })`** renders the avatar speaking an
-  ordered script of speech and pause segments, each optionally switching to a ready clip, into
-  an MP4 offline. It returns the `queued` render (202). A retry carries the same
+- **`createRender({ avatarId, voiceId?, lipGain?, shots })`** renders the avatar performing a
+  script of shots into an MP4 offline. Everything in one shot happens at the same time; shots
+  play one after another. A shot is `{ clipId?, say?, pauseAfterMs? }`: what she does (a ready
+  clip from the avatar's library, or `"primary"` for her own video), what she says, and how long
+  she stays silent afterwards. It returns the `queued` render (202). A retry carries the same
   `Idempotency-Key`, so a lost response never starts or bills a second render.
-- **`waitForRender(renderId, { timeoutMs?, pollMs? })`** polls until the render is `succeeded`
-  or `failed` and returns it. A failure is returned with its typed `error.code`, not thrown; only
+- **`Render.timeline`**: once a render is `ready`, one entry per shot with `startMs`, `endMs`,
+  the `clipId` it played, `playback` (`once` | `loop`), `speechStartMs`, `speechEndMs`,
+  `clipEndMs` and `afterClipId`, all in video time. `Render.voiceId` names the voice used.
+- **`waitForRender(renderId, { timeoutMs?, pollMs? })`** polls until the render is `ready` or
+  `failed` and returns it. A failure is returned with its typed `error.code`, not thrown; only
   a timeout throws (default 30 minutes, the platform's own budget), and its message says it is a
   timeout, not a failure.
 - **`getRender`, `listRenders({ limit?, cursor? })`, `iterateRenders`** and
   **`getRenderAccess(renderId)`**, which returns `{ id, url, expiresAt }`: a signed download URL
   that lasts an hour.
-- Types `Render`, `RenderStatus`, `RenderFailureCode`, `CreateRenderInput`, `RenderSegment`,
-  `ListRendersQuery`, `ListRendersResponse` and `RenderAccessResponse`, and the runtime schemas
+- Types `Render`, `RenderStatus`, `RenderFailureCode`, `RenderPlayback`, `ShotTiming`,
+  `CreateRenderInput`, `RenderShot`, `ListRendersQuery`, `ListRendersResponse` and
+  `RenderAccessResponse`, and the runtime schemas
   `renderSchema`, `listRendersResponseSchema` and `renderAccessResponseSchema`. The resource
   types and schemas are the platform's published `/render.contract.ts` (`x-render-contract`),
-  vendored byte for byte and SHA-256 checked like the recording contract. The request type is
-  the generated `CreateRenderRequest`.
+  vendored byte for byte and SHA-256 checked like the recording contract. The request types are
+  the generated `CreateRenderRequest` and its `shots` entry.
 - The key scopes `renders:read` and `renders:write`. Both are off on a new key.
 
 ### Changed
@@ -31,6 +37,8 @@ A minor release: pre-rendered video. An avatar can speak a script into an MP4 wi
   JSON, throws `RealtimeAvatarError` with one fixed message and no cause, the way `listSessions`
   already did; the two now share that code path.
 - The vendored contract is re-synced from the platform with the renders routes.
+- `concurrency_limit_reached` (429) also comes from `createRender` when a workspace already has 4
+  renders queued or rendering; `RealtimeAvatarHttpError`'s table says so.
 
 ### Release order
 

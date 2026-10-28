@@ -451,7 +451,7 @@ export interface paths {
         put?: never;
         /**
          * Render a video of an avatar speaking a script
-         * @description Render an MP4 (H.264 and AAC, 25 fps) of an avatar speaking a script, offline, with no live call. The script is 1 to 50 segments in order: speech (text, at most 1,000 characters each and 4,000 in total) or a pause (100 to 10,000 ms), each of which may switch to a ready clip from the avatar's clip library as it starts (clipId). The voice is voiceId or the avatar's own. Billed per second of the rendered video at the live-call rate (1 credit per second). The request holds an upper-bound estimate, settles to the rendered length, and releases everything if the render fails. A video may be at most 180 seconds. Answers 202 with status queued: poll GET /v1/renders/{renderId} until succeeded or failed, then request a download URL. Send an Idempotency-Key so a retried request returns the same render instead of starting another. 422 render_clip_unavailable names a clip that is not a ready clip of this avatar; 404 voice_not_found names a voice this workspace cannot see and 422 voice_unavailable one that cannot be used for video (a named voice is never replaced); 503 render_export_unavailable means rendering is not available on this deployment.
+         * @description Everything in one shot happens at the same time; shots play one after another. Example: {"avatarId":"ava_6b80f113f07346c0ba6eedb32ec76aee","shots":[{"clipId":"gesture_send_flower","say":"你终于来了。今天……我有话想对你说。"},{"clipId":"idle_touch_collar","say":"别笑，我是认真的。","pauseAfterMs":800},{"say":"所以，今晚留下来。"}]}. Each shot has three optional fields: clipId is what she does (a ready clip from the avatar's clip library, or "primary" for the avatar's own video; omit it to keep the current loop clip), say is what she says (speech starts when the shot starts), and pauseAfterMs is how long she stays silent after speaking (0 to 10,000 ms). A shot lasts as long as its speech plus pauseAfterMs, or as long as a once clip's action if that is longer, rounded up to 200 ms. A once clip plays its action exactly once from its first frame, never cut; if the shot is longer, she continues on the loop clip from before the shot. A loop clip fills the shot, and the same loop clip in consecutive shots continues without restarting. Renders an MP4 (H.264 and AAC, 25 fps) offline, with no live call, and every frame is lip-synced. The voice is voiceId or the avatar's own. The finished render's timeline reports where each shot landed in the video. Billed per second of the rendered video at the live-call rate (1 credit per second). The request holds an upper-bound estimate, settles to the rendered length, and releases everything if the render fails. A video may be at most 180 seconds. Answers 202 with status queued: poll GET /v1/renders/{renderId} until ready or failed, then request a download URL. Send an Idempotency-Key so a retried request returns the same render instead of starting another. 422 render_clip_unavailable names a clip that is not a ready clip of this avatar; 404 voice_not_found names a voice this workspace cannot see and 422 voice_unavailable one that cannot be used for video (a named voice is never replaced); 429 concurrency_limit_reached means this workspace already has 4 renders queued or rendering (retry when one finishes); 503 render_export_unavailable means rendering is not available on this deployment.
          *
          *     Requires an API key with the `renders:write` scope.
          */
@@ -471,7 +471,7 @@ export interface paths {
         };
         /**
          * Get a render's status
-         * @description A render's status. A failed render carries error.code: invalid_request, asset_unavailable, tts_failed, too_long, render_failed. Nothing is charged for a failed render.
+         * @description A render's status. A failed render carries error.code: asset_unavailable, tts_failed, too_long, render_failed. Nothing is charged for a failed render.
          *
          *     Requires an API key with the `renders:read` scope.
          */
@@ -493,7 +493,7 @@ export interface paths {
         };
         /**
          * Get a temporary rendered-video download URL
-         * @description Issue a signed GET URL for a succeeded render's MP4. The URL supports byte ranges and lasts one hour; request a new one when it expires. Keep it private.
+         * @description Issue a signed GET URL for a ready render's MP4. The URL supports byte ranges and lasts one hour; request a new one when it expires. Keep it private.
          *
          *     Requires an API key with the `renders:read` scope.
          */
@@ -655,8 +655,11 @@ export interface components {
             } | {
                 /** @constant */
                 provider: "fish";
-                /** @default s2.1-pro */
-                model: ("s1" | "s2-pro" | "s2.1-pro" | "drama-3") | ("speech-1.6" | "speech-1.5" | "s1-mini");
+                /**
+                 * @default speech-1.6
+                 * @enum {string}
+                 */
+                model: "speech-1.6" | "s1" | "s2-pro" | "s2.1-pro" | "drama-3" | "speech-1.5" | "s1-mini";
                 voice_id: string;
                 speed?: number | null;
                 emotion?: string | null;
@@ -1805,40 +1808,59 @@ export interface components {
             avatarId: string;
             /** @description A voice this workspace can use. Omit it for the avatar's own voice. */
             voiceId?: string;
-            /** @description The script, in order: 1 to 50 segments, at most 4,000 characters of speech in total and at most 16 different clips. */
-            segments: ({
-                /** @constant */
-                type: "speech";
-                /** @description What she says, at most 1,000 characters after trimming. */
-                text: string;
-                /** @description Switch to this clip from the avatar's clip library as the segment starts. It must be ready. */
-                clipId?: string;
-            } | {
-                /** @constant */
-                type: "pause";
-                /** @description Silence, from 100 to 10,000 ms. */
-                durationMs: number;
-                /** @description Switch to this clip from the avatar's clip library as the pause starts. It must be ready. */
-                clipId?: string;
-            })[];
             /** @description Mouth-motion amplitude, as on a live call (lip_gain). Omit it for the platform default. */
             lipGain?: number;
+            /** @description The script: 1 to 50 shots, played one after another. At least one shot says something; at most 4,000 characters of say in total and 16 different clips besides "primary". */
+            shots: {
+                /** @description What she does: a ready clip from the avatar's clip library, or "primary" for the avatar's own video. Omit it to keep the current loop clip. */
+                clipId?: string;
+                /** @description What she says, 1 to 1,000 characters. Speech starts when the shot starts. */
+                say?: string;
+                /** @description How long she stays silent after speaking, 0 to 10,000 ms. Default 0. */
+                pauseAfterMs?: number;
+            }[];
         };
         Render: {
             id: string;
             /** @constant */
             object: "render";
             /** @enum {string} */
-            status: "queued" | "rendering" | "succeeded" | "failed";
+            status: "queued" | "rendering" | "ready" | "failed";
             avatarId: string;
-            /** @description Length of the rendered video. Set once status is succeeded. */
+            /** @description The voice the render speaks with: the voiceId you sent, else the avatar's own voice. Null when the avatar has no usable voice and the platform's default voice was used. */
+            voiceId: string | null;
+            /** @description Length of the rendered video. Set once status is ready. */
             durationMs: number | null;
             width: number | null;
             height: number | null;
+            /** @description One entry per shot, in order. Set once status is ready. */
+            timeline: {
+                /** @description The shot's position in your shots list, from 0. */
+                index: number;
+                /** @description When the shot starts. */
+                startMs: number;
+                /** @description When the shot ends; the next shot starts here. */
+                endMs: number;
+                /** @description The clip the shot played: the one you named, else the loop clip it kept, else "primary". */
+                clipId: string;
+                /**
+                 * @description once: the clip's action played one time. loop: the clip filled the shot.
+                 * @enum {string}
+                 */
+                playback: "once" | "loop";
+                /** @description When she starts speaking. Null when the shot has no say. */
+                speechStartMs: number | null;
+                /** @description When she stops speaking. Null when the shot has no say. */
+                speechEndMs: number | null;
+                /** @description When the action finished. Once clips only; null for a loop clip. */
+                clipEndMs: number | null;
+                /** @description The loop clip shown after the action finished, when the shot outlasts it. Once clips only; otherwise null. */
+                afterClipId: string | null;
+            }[] | null;
             /** @description Set only when status is failed. */
             error: {
                 /** @enum {string} */
-                code: "invalid_request" | "asset_unavailable" | "tts_failed" | "too_long" | "render_failed";
+                code: "asset_unavailable" | "tts_failed" | "too_long" | "render_failed";
                 message: string;
             } | null;
             /** Format: date-time */
@@ -1851,16 +1873,42 @@ export interface components {
                 /** @constant */
                 object: "render";
                 /** @enum {string} */
-                status: "queued" | "rendering" | "succeeded" | "failed";
+                status: "queued" | "rendering" | "ready" | "failed";
                 avatarId: string;
-                /** @description Length of the rendered video. Set once status is succeeded. */
+                /** @description The voice the render speaks with: the voiceId you sent, else the avatar's own voice. Null when the avatar has no usable voice and the platform's default voice was used. */
+                voiceId: string | null;
+                /** @description Length of the rendered video. Set once status is ready. */
                 durationMs: number | null;
                 width: number | null;
                 height: number | null;
+                /** @description One entry per shot, in order. Set once status is ready. */
+                timeline: {
+                    /** @description The shot's position in your shots list, from 0. */
+                    index: number;
+                    /** @description When the shot starts. */
+                    startMs: number;
+                    /** @description When the shot ends; the next shot starts here. */
+                    endMs: number;
+                    /** @description The clip the shot played: the one you named, else the loop clip it kept, else "primary". */
+                    clipId: string;
+                    /**
+                     * @description once: the clip's action played one time. loop: the clip filled the shot.
+                     * @enum {string}
+                     */
+                    playback: "once" | "loop";
+                    /** @description When she starts speaking. Null when the shot has no say. */
+                    speechStartMs: number | null;
+                    /** @description When she stops speaking. Null when the shot has no say. */
+                    speechEndMs: number | null;
+                    /** @description When the action finished. Once clips only; null for a loop clip. */
+                    clipEndMs: number | null;
+                    /** @description The loop clip shown after the action finished, when the shot outlasts it. Once clips only; otherwise null. */
+                    afterClipId: string | null;
+                }[] | null;
                 /** @description Set only when status is failed. */
                 error: {
                     /** @enum {string} */
-                    code: "invalid_request" | "asset_unavailable" | "tts_failed" | "too_long" | "render_failed";
+                    code: "asset_unavailable" | "tts_failed" | "too_long" | "render_failed";
                     message: string;
                 } | null;
                 /** Format: date-time */
@@ -3580,6 +3628,25 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "avatarId": "ava_6b80f113f07346c0ba6eedb32ec76aee",
+                 *       "shots": [
+                 *         {
+                 *           "clipId": "gesture_send_flower",
+                 *           "say": "你终于来了。今天……我有话想对你说。"
+                 *         },
+                 *         {
+                 *           "clipId": "idle_touch_collar",
+                 *           "say": "别笑，我是认真的。",
+                 *           "pauseAfterMs": 800
+                 *         },
+                 *         {
+                 *           "say": "所以，今晚留下来。"
+                 *         }
+                 *       ]
+                 *     }
+                 */
                 "application/json": components["schemas"]["CreateRenderRequest"];
             };
         };
@@ -3591,6 +3658,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Render"];
+                };
+            };
+            /** @description The body is not JSON, or the script's estimated video is longer than 180 seconds (refused before any credits are held) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
             /** @description Missing, malformed, revoked, or expired key. */
@@ -3631,6 +3707,15 @@ export interface operations {
             };
             /** @description Invalid script, an unknown or unready clip (render_clip_unavailable), a voice that cannot be used for video (voice_unavailable), or an avatar with no source video */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description This workspace already has the maximum number of renders queued or rendering (concurrency_limit_reached) */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3763,7 +3848,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The render has not succeeded (render_not_ready) */
+            /** @description The render is not ready (render_not_ready) */
             409: {
                 headers: {
                     [name: string]: unknown;

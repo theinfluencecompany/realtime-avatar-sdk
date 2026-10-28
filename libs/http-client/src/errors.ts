@@ -49,10 +49,10 @@ export function isRequestId(value: unknown): value is string {
  * | `loop_pending` · `anchor_pending` | 409 | one is already in flight — wait, then retry |
  * | `revision_conflict` | 409 | someone declared first. Re-read `listClips`, re-decide, re-declare |
  * | `clip_render_limit` | 429 | a true rate limit; nothing was applied. Retry later |
- * | `concurrency_limit_reached` | 429 | active and starting sessions occupy the limit; release one or wait for pending starts before retrying |
+ * | `concurrency_limit_reached` | 429 | active and starting sessions occupy the limit; release one or wait for pending starts before retrying. From `createRender`: the workspace already has 4 renders queued or rendering; retry when one settles |
  * | `clip_screen_unavailable` | 503 | the prose screen could not run. Retry |
- * | `render_clip_unavailable` | 422 | a `clipId` is not a ready clip of that avatar. `waitForClips`, then render |
- * | `render_not_ready` | 409 | `getRenderAccess` before the render succeeded. `waitForRender` first |
+ * | `render_clip_unavailable` | 422 | a shot's `clipId` is not a ready clip of that avatar (or `"primary"`). `waitForClips`, then render |
+ * | `render_not_ready` | 409 | `getRenderAccess` before the render is `ready`. `waitForRender` first |
  * | `render_export_unavailable` | 503 | read `retryable`. `false`: pre-rendered video is not switched on for this deployment; nothing was charged, and retrying will not help. `true`: the render was accepted but could not be started; retry (the SDK already has). That attempt stays in `listRenders` as a `failed` render, not charged |
  *
  * Pose validation does NOT appear here: a rejected upload is not an error response at all.
