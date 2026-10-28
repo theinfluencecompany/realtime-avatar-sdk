@@ -53,7 +53,7 @@ export function isRequestId(value: unknown): value is string {
  * | `clip_screen_unavailable` | 503 | the prose screen could not run. Retry |
  * | `render_clip_unavailable` | 422 | a `clipId` is not a ready clip of that avatar. `waitForClips`, then render |
  * | `render_not_ready` | 409 | `getRenderAccess` before the render succeeded. `waitForRender` first |
- * | `render_export_unavailable` | 503 | pre-rendered video is not switched on for this deployment; nothing was charged |
+ * | `render_export_unavailable` | 503 | read `retryable`. `false`: pre-rendered video is not switched on for this deployment; nothing was charged, and retrying will not help. `true`: the render was accepted but could not be started; retry (the SDK already has). That attempt stays in `listRenders` as a `failed` render, not charged |
  *
  * Pose validation does NOT appear here: a rejected upload is not an error response at all.
  * The declaration is accepted, and that clip settles `status: "failed"` with the verdict in

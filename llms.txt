@@ -143,8 +143,10 @@ connection payload back; your client joins and renders her.
   nothing charged). A `voiceId` is never silently replaced (`404 voice_not_found`,
   `422 voice_unavailable`).
 - Billed per second of output at the live per-second rate, at most 180 s per video; a failed
-  render is not charged. `503 render_export_unavailable` means the deployment has not switched
-  the feature on.
+  render is not charged. `503 render_export_unavailable` with `retryable: false` means the
+  deployment has not switched the feature on; with `retryable: true` the render could not be
+  started, so retry (the SDK already retries a 503), and that attempt stays in `listRenders` as a
+  `failed` render, not charged.
 
 ## Not provided
 - Hosted tool execution — the platform never runs your tools. They run in YOUR page (the

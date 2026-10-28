@@ -36,7 +36,10 @@ A minor release: pre-rendered video. An avatar can speak a script into an MP4 wi
 
 Publish only after the platform serves the renders routes. Until it does, `npm run spec:check`
 reports the drift, and every call answers 404. A platform that serves the routes but has not
-been configured answers `503 render_export_unavailable` to `createRender`, with nothing charged.
+been configured answers `503 render_export_unavailable` to `createRender` with `retryable: false`
+and nothing charged. The same code with `retryable: true` means the render was accepted but could
+not be started: the SDK retries it, and the attempt stays in `listRenders` as a `failed` render,
+not charged.
 
 ## 0.30.0
 
