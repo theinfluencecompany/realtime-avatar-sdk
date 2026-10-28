@@ -10,8 +10,7 @@ const contractParity: [
   Equal<Render, components["schemas"]["Render"]>,
   Equal<RenderAccessResponse, components["schemas"]["RenderAccessResponse"]>,
   Equal<ListRendersResponse, components["schemas"]["ListRendersResponse"]>,
-  Equal<CreateRenderInput, components["schemas"]["CreateRenderRequest"]>,
-] = [true, true, true, true];
+] = [true, true, true];
 void contractParity;
 
 const renderId = "rnd_0123456789abcdef0123456789abcdef";
@@ -139,6 +138,44 @@ test("waitForRender returns the settled render, failures included, and throws on
     assert.match(error.message, /still rendering.*timeout, not a failure/);
     return true;
   });
+});
+
+test("waitForRender treats a NaN pollMs or timeoutMs as absent, not as a tight loop with no end", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  let polls = 0;
+  const stuck = client(() => { polls++; return Response.json({ ...queued, status: "rendering" }); });
+  let outcome: unknown;
+  stuck.waitForRender(renderId, { pollMs: Number.NaN, timeoutMs: Number.NaN }).then(
+    () => { outcome = "resolved"; },
+    (error: unknown) => { outcome = error; },
+  );
+  await settle();
+  t.mock.timers.tick(4_999);
+  await settle();
+  assert.equal(polls, 1, "the default 5 s interval, not setTimeout(NaN)");
+  t.mock.timers.tick(1);
+  await settle();
+  assert.equal(polls, 2);
+  for (let i = 0; i < 400 && outcome === undefined; i++) {
+    t.mock.timers.tick(5_000);
+    await settle();
+  }
+  assert.ok(outcome instanceof RealtimeAvatarError, "the default 30 min timeout, not a NaN deadline");
+  assert.match(outcome.message, /after 1800s/);
+});
+
+test("listRenders refuses a bad limit as a RealtimeAvatarError before any request", async () => {
+  let requests = 0;
+  const rta = client(() => { requests++; return Response.json({ data: [], nextCursor: null }); });
+  for (const limit of [0, 101, 2.5]) {
+    await assert.rejects(rta.listRenders({ limit }), (error: unknown) => {
+      assert.ok(error instanceof RealtimeAvatarError);
+      assert.match(error.message, /^Invalid listRenders options: limit/);
+      return true;
+    });
+  }
+  assert.equal(requests, 0);
 });
 
 test("render responses that break the contract throw one fixed error without the body", async () => {

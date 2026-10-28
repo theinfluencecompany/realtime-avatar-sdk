@@ -34,6 +34,23 @@ export function backoffMs(attempt: number, retryAfter: string | null): number {
 
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+/** The caller-tunable timing of a `waitFor*` poll loop. */
+export type PollOptions = { timeoutMs?: number; pollMs?: number };
+
+/**
+ * A `waitFor*` loop's timeout and interval. A value that is not a finite number counts as
+ * absent: `Number(process.env.UNSET)` is `NaN`, which `Math.max` passes through, `setTimeout`
+ * runs after about 1 ms, and a `NaN` deadline is never reached — a poll loop with no end.
+ */
+export function pollBudget(options: PollOptions, defaults: Required<PollOptions>): Required<PollOptions> {
+  const finite = (value: number | undefined, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return {
+    timeoutMs: finite(options.timeoutMs, defaults.timeoutMs),
+    pollMs: Math.max(1_000, finite(options.pollMs, defaults.pollMs)),
+  };
+}
+
 /** How long `createProxyClient` waits for your route to answer one request. */
 export const PROXY_CLIENT_TIMEOUT_MS = 60_000;
 

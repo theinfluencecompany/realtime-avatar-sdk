@@ -5,7 +5,9 @@ import {
   isTransient,
   retryFits,
   newIdempotencyKey,
+  pollBudget,
   sleep,
+  type PollOptions,
 } from "./retry.ts";
 import type { z } from "zod";
 import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
@@ -496,10 +498,9 @@ export class RealtimeAvatar {
    */
   async waitForLoop(
     avatarId: string,
-    options: { timeoutMs?: number; pollMs?: number } = {},
+    options: PollOptions = {},
   ): Promise<Avatar> {
-    const timeoutMs = options.timeoutMs ?? 20 * 60_000;
-    const pollMs = Math.max(1_000, options.pollMs ?? 10_000);
+    const { timeoutMs, pollMs } = pollBudget(options, { timeoutMs: 20 * 60_000, pollMs: 10_000 });
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const avatar = await this.getAvatar(avatarId);
@@ -533,10 +534,9 @@ export class RealtimeAvatar {
    */
   async waitForClips(
     avatarId: string,
-    options: { timeoutMs?: number; pollMs?: number } = {},
+    options: PollOptions = {},
   ): Promise<ClipLibrary> {
-    const timeoutMs = options.timeoutMs ?? 20 * 60_000;
-    const pollMs = Math.max(1_000, options.pollMs ?? 10_000);
+    const { timeoutMs, pollMs } = pollBudget(options, { timeoutMs: 20 * 60_000, pollMs: 10_000 });
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const library = await this.listClips(avatarId);
@@ -674,7 +674,12 @@ export class RealtimeAvatar {
 
   /** This workspace's renders, newest first, one page. Requires `renders:read`. */
   async listRenders(options: ListRendersQuery = {}): Promise<ListRendersResponse> {
-    const parsed = listRendersQuerySchema.parse(options);
+    const checked = listRendersQuerySchema.safeParse(options);
+    if (!checked.success) {
+      const issues = checked.error.issues.map((issue) => `${issue.path.join(".")} ${issue.message}`).join("; ");
+      throw new RealtimeAvatarError(`Invalid listRenders options: ${issues}`);
+    }
+    const parsed = checked.data;
     const query = new URLSearchParams();
     if (options.limit !== undefined) query.set("limit", String(parsed.limit));
     if (parsed.cursor !== undefined) query.set("cursor", parsed.cursor);
@@ -715,10 +720,9 @@ export class RealtimeAvatar {
    */
   async waitForRender(
     renderId: string,
-    options: { timeoutMs?: number; pollMs?: number } = {},
+    options: PollOptions = {},
   ): Promise<Render> {
-    const timeoutMs = options.timeoutMs ?? 30 * 60_000;
-    const pollMs = Math.max(1_000, options.pollMs ?? 5_000);
+    const { timeoutMs, pollMs } = pollBudget(options, { timeoutMs: 30 * 60_000, pollMs: 5_000 });
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const render = await this.getRender(renderId);
