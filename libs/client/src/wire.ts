@@ -16,7 +16,13 @@ import { connectionHistoryGrantSchema } from "../../http-client/src/generated/co
 import { transcriptionOptionsSchema, transcriptionWireSchema, transcriptionToWire } from "../../http-client/src/generated/transcription.ts";
 import { contentPolicySchema } from "../../http-client/src/generated/content-policy.ts";
 import { voiceErrorFrameSchema as contractVoiceErrorFrameSchema } from "../../http-client/src/generated/voice-error-frame.ts";
-import { DEFAULT_FISH_TTS_MODEL, fishTtsModelSchema } from "../../http-client/src/generated/fish-tts-model.ts";
+import {
+  DEFAULT_FISH_TTS_MODEL,
+  fishTtsModelSchema,
+  type FishTtsModel as ContractFishTtsModel,
+} from "../../http-client/src/generated/fish-tts-model.ts";
+
+export { DEFAULT_FISH_TTS_MODEL, fishTtsModelSchema };
 
 const DEFAULT_AVATAR_ID = "maria";
 const DEFAULT_BACKGROUND_ID = "plain_white";
@@ -547,7 +553,7 @@ export type LLMSelectionForProvider<TProvider extends LLMProvider = LLMProvider>
     : never;
 export type LiveKitInitialContextMessage = z.infer<typeof liveKitInitialContextMessageSchema>;
 export type CartesiaTtsModel = z.infer<typeof cartesiaTtsModelSchema>;
-export type FishTtsModel = z.infer<typeof fishTtsModelSchema>;
+export type FishTtsModel = ContractFishTtsModel;
 export type CartesiaVoiceSpec = z.infer<typeof cartesiaVoiceSpecSchema>;
 export type BreezeVoiceSpec = z.infer<typeof breezeVoiceSpecSchema>;
 export type FishVoiceSpec = z.infer<typeof fishVoiceSpecSchema>;

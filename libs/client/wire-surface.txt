@@ -15,6 +15,7 @@ CapacityBusyResponse
 CartesiaTtsModel
 CartesiaVoiceSpec
 ClientMetadata
+DEFAULT_FISH_TTS_MODEL
 FishTtsModel
 FishVoiceSpec
 KnownBehaviorState
@@ -50,6 +51,7 @@ VoiceSpec
 VoiceSpecInput
 VoiceErrorCode
 capacityBusyResponseSchema
+fishTtsModelSchema
 knownBehaviorStates
 lifecycleServerFrameSchema
 liveKitCapacitySnapshotSchema

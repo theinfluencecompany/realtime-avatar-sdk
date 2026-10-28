@@ -372,9 +372,10 @@ type FishVoice = Extract<NonNullable<components["schemas"]["LiveKitSessionReques
 ${definitions.join("\n\n")}
 
 export const fishTtsModelSchema = ${fishTtsModelRoot} satisfies z.ZodType<FishVoice["model"]>;
-export const DEFAULT_FISH_TTS_MODEL = ${JSON.stringify(fishTtsModelDefault)} as const satisfies z.infer<typeof fishTtsModelSchema>;
+export type FishTtsModel = z.infer<typeof fishTtsModelSchema>;
+export const DEFAULT_FISH_TTS_MODEL = ${JSON.stringify(fishTtsModelDefault)} as const satisfies FishTtsModel;
 type AssertTrue<Value extends true> = Value;
-type _FishTtsModelCoversWire = AssertTrue<[FishVoice["model"]] extends [z.infer<typeof fishTtsModelSchema>] ? true : false>;
+type _FishTtsModelCoversWire = AssertTrue<[FishVoice["model"]] extends [FishTtsModel] ? true : false>;
 `;
 if (check) {
   if (await readFile(fishTtsModelTarget, "utf8") !== fishTtsModelOutput) throw new Error("Fish model schema is stale; run npm run spec:types");
