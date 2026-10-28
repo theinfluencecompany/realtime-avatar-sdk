@@ -56,7 +56,7 @@ export const RENDER_PRIMARY_CLIP_ID = "primary";
  * clip gets is this one rule, word for word in every doc that states it.
  */
 export const RENDER_PLAYBACK_RULE =
-  "A clip loops if it is \"primary\" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once.";
+  "A clip loops if it is \"primary\" or in the avatar's idle pool (behavior.idle.clips in the avatar's clip list); every other clip plays once.";
 export const RENDER_PLAYBACKS = ["once", "loop"] as const;
 export const renderPlaybackSchema = z.enum(RENDER_PLAYBACKS);
 export type RenderPlayback = z.infer<typeof renderPlaybackSchema>;

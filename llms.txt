@@ -144,7 +144,8 @@ connection payload back; your client joins and renders her.
   loop clip, which is `"primary"` until a shot names another loop clip.
 - A clip loops if it is `"primary"` or in the avatar's idle pool
   (`listClips(avatarId).behavior.idle.clips`); every other clip plays once, including a listening
-  clip or an action that is not also in the idle pool. `listClips` reports each clip's `playback`.
+  clip or an action that is not also in the idle pool. The clip list has no per-clip `playback`;
+  read `behavior.idle.clips` from it.
 - A shot lasts its speech plus `pauseAfterMs`, or a once clip's action if longer, rounded up to
   200 ms. A loop clip does not set the length: a shot with only a loop clip lasts 200 ms, so add
   `pauseAfterMs` to hold it.

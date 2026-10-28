@@ -1809,7 +1809,7 @@ export interface components {
             lipGain?: number;
             /** @description The script: 1 to 50 shots, played one after another. At least one shot says something; at most 4,000 characters of say in total and 16 different clips besides "primary". */
             shots: {
-                /** @description What she does: a ready clip from the avatar's clip library, or "primary" for the avatar's own video. Omit it to keep the current loop clip. A clip loops if it is "primary" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once. */
+                /** @description What she does: a ready clip from the avatar's clip library, or "primary" for the avatar's own video. Omit it to keep the current loop clip. A clip loops if it is "primary" or in the avatar's idle pool (behavior.idle.clips in the avatar's clip list); every other clip plays once. */
                 clipId?: string;
                 /** @description What she says, 1 to 1,000 characters. Speech starts when the shot starts. */
                 say?: string;
@@ -1971,11 +1971,6 @@ export interface components {
                 uploadAssetId: string | null;
                 motionPrompt: string | null;
                 durationSeconds: number | null;
-                /**
-                 * @description How the clip plays in a render's shot. once: its action plays one time. loop: it fills the shot. A clip loops if it is "primary" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once.
-                 * @enum {string}
-                 */
-                playback: "once" | "loop";
                 anchorVersion: number;
                 poseCheck: {
                     verdict: {
@@ -2078,11 +2073,6 @@ export interface components {
                 uploadAssetId: string | null;
                 motionPrompt: string | null;
                 durationSeconds: number | null;
-                /**
-                 * @description How the clip plays in a render's shot. once: its action plays one time. loop: it fills the shot. A clip loops if it is "primary" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once.
-                 * @enum {string}
-                 */
-                playback: "once" | "loop";
                 anchorVersion: number;
                 poseCheck: {
                     verdict: {

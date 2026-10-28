@@ -283,8 +283,8 @@ clip lasts 200 ms, so add `pauseAfterMs` to hold it.
 
 **Which clips loop.** A clip loops if it is `"primary"` or in the avatar's idle pool
 (`listClips(avatarId).behavior.idle.clips`); every other clip plays once, so a listening clip
-or an action that is not also in the idle pool plays once. `listClips` reports each clip's
-`playback`.
+or an action that is not also in the idle pool plays once. The clip list has no per-clip
+`playback`; read `behavior.idle.clips` from it.
 
 - **once**, an action: it plays exactly once from its first frame and is never cut. If the shot
   runs longer, she continues on the loop clip from before the shot. The same clip in two shots

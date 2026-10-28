@@ -31,10 +31,6 @@ A minor release: pre-rendered video. An avatar can perform a script into an MP4 
   vendored byte for byte and SHA-256 checked like the recording contract. The request types are
   the generated `CreateRenderRequest` and its `shots` entry.
 - The key scopes `renders:read` and `renders:write`. Both are off on a new key.
-- **`playback` (`once` | `loop`) on every clip `listClips` returns.** A clip loops if it is
-  `"primary"` or in the avatar's idle pool (`behavior.idle.clips`); every other clip plays once,
-  including a listening clip or an action that is not also in the idle pool. It is the same rule
-  that sets `playback` on a render's timeline.
 
 ### Changed
 
@@ -55,9 +51,6 @@ been configured answers `503 render_export_unavailable` to `createRender` with `
 and nothing charged. `503 render_start_failed` with `retryable: true` means the render was created
 but could not be started: the SDK retries it, and the attempt stays in `listRenders` as a `failed`
 render, not charged.
-
-`listClips` now requires `playback` on every clip, so this release must also wait until the
-platform's clip listing serves it; before then `listClips` and `waitForClips` throw.
 
 ## 0.30.0
 

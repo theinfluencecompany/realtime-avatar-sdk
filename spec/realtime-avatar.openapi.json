@@ -5080,7 +5080,7 @@
               "type": "object",
               "properties": {
                 "clipId": {
-                  "description": "What she does: a ready clip from the avatar's clip library, or \"primary\" for the avatar's own video. Omit it to keep the current loop clip. A clip loops if it is \"primary\" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once.",
+                  "description": "What she does: a ready clip from the avatar's clip library, or \"primary\" for the avatar's own video. Omit it to keep the current loop clip. A clip loops if it is \"primary\" or in the avatar's idle pool (behavior.idle.clips in the avatar's clip list); every other clip plays once.",
                   "type": "string",
                   "pattern": "^[A-Za-z0-9_-]{1,64}$"
                 },
@@ -5971,14 +5971,6 @@
                     }
                   ]
                 },
-                "playback": {
-                  "type": "string",
-                  "enum": [
-                    "once",
-                    "loop"
-                  ],
-                  "description": "How the clip plays in a render's shot. once: its action plays one time. loop: it fills the shot. A clip loops if it is \"primary\" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once."
-                },
                 "anchorVersion": {
                   "type": "integer",
                   "minimum": -9007199254740991,
@@ -6099,7 +6091,6 @@
                 "uploadAssetId",
                 "motionPrompt",
                 "durationSeconds",
-                "playback",
                 "anchorVersion",
                 "poseCheck",
                 "error",
@@ -6540,14 +6531,6 @@
                     }
                   ]
                 },
-                "playback": {
-                  "type": "string",
-                  "enum": [
-                    "once",
-                    "loop"
-                  ],
-                  "description": "How the clip plays in a render's shot. once: its action plays one time. loop: it fills the shot. A clip loops if it is \"primary\" or in the avatar's idle pool (behavior.idle.clips from listClips(avatarId), or GET /v1/avatars/{avatarId}/clips); every other clip plays once."
-                },
                 "anchorVersion": {
                   "type": "integer",
                   "minimum": -9007199254740991,
@@ -6668,7 +6651,6 @@
                 "uploadAssetId",
                 "motionPrompt",
                 "durationSeconds",
-                "playback",
                 "anchorVersion",
                 "poseCheck",
                 "error",
@@ -9874,7 +9856,7 @@
   },
   "x-render-contract": {
     "source": "/render.contract.ts",
-    "sha256": "07b7c50ac997c238f7a2a3242f952deb0a8a37013ae495b7830c74291cda2eb8"
+    "sha256": "2cc032a0f7c84b49b0a23468aa64b00f5d0970ecfe80f24bfecc76b497ff0627"
   },
   "tags": [
     {

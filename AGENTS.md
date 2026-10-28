@@ -885,8 +885,8 @@ The avatar id is a placeholder: use your own `avatarId`, and clip ids from
   starts), `pauseAfterMs` (silence after speaking, 0 to 10,000 ms).
 - A clip loops if it is `"primary"` or in the avatar's idle pool
   (`listClips(avatarId).behavior.idle.clips`); every other clip plays once. A listening clip or
-  an action plays once unless it is also in the idle pool. `listClips` reports each clip's
-  `playback`.
+  an action plays once unless it is also in the idle pool. The clip list has no per-clip
+  `playback`; read `behavior.idle.clips` from it.
 - A shot lasts its speech plus `pauseAfterMs`, or a once clip's action if longer, rounded up to
   200 ms. A loop clip does not set the length: a shot with only a loop clip lasts 200 ms, so add
   `pauseAfterMs` to hold it.
