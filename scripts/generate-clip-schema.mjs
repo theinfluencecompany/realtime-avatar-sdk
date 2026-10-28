@@ -352,7 +352,29 @@ ${definitions.join("\n\n")}
 
 export const voiceErrorFrameSchema = ${voiceErrorFrameRoot} satisfies z.ZodType<Wire["VoiceErrorFrame"], Wire["VoiceErrorFrame"]>;
 `;
+definitions.length = 0;
+names.clear();
+const voiceArms = (schema) => (schema.anyOf ?? schema.oneOf)?.flatMap(voiceArms) ?? [schema];
+const fishArms = voiceArms(spec.components.schemas.LiveKitSessionRequest.properties.voice)
+  .filter((arm) => arm.properties?.provider?.const === "fish");
+if (fishArms.length !== 1) throw new Error(`Expected one Fish voice arm, found ${fishArms.length}`);
+const fishTtsModelRoot = expression(fishArms[0].properties.model);
+const fishTtsModelTarget = new URL("../libs/http-client/src/generated/fish-tts-model.ts", import.meta.url);
+const fishTtsModelOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
+// Do not edit; the platform owns the Fish model vocabulary.
+import { z } from "zod";
+import type { components } from "./openapi.ts";
+
+type FishVoice = Extract<NonNullable<components["schemas"]["LiveKitSessionRequest"]["voice"]>, { provider: "fish" }>;
+
+${definitions.join("\n\n")}
+
+export const fishTtsModelSchema = ${fishTtsModelRoot} satisfies z.ZodType<FishVoice["model"]>;
+type AssertTrue<Value extends true> = Value;
+type _FishTtsModelCoversWire = AssertTrue<[FishVoice["model"]] extends [z.infer<typeof fishTtsModelSchema>] ? true : false>;
+`;
 if (check) {
+  if (await readFile(fishTtsModelTarget, "utf8") !== fishTtsModelOutput) throw new Error("Fish model schema is stale; run npm run spec:types");
   if (await readFile(usageSessionsTarget, "utf8") !== usageSessionsOutput) throw new Error("Usage sessions schema is stale; run npm run spec:types");
   if (await readFile(contentPolicyTarget, "utf8") !== contentPolicyOutput) throw new Error("Content policy schema is stale; run npm run spec:types");
   if (await readFile(target, "utf8") !== output) throw new Error("Clip schemas are stale; run npm run spec:types");
@@ -372,5 +394,6 @@ if (check) {
   await writeFile(usageSessionsTarget, usageSessionsOutput);
   await writeFile(voiceWebhookTarget, voiceWebhookOutput);
   await writeFile(voiceErrorFrameTarget, voiceErrorFrameOutput);
+  await writeFile(fishTtsModelTarget, fishTtsModelOutput);
 }
 console.log(`Clip contract SHA-256 ${hash}; response schemas ${check ? "verified" : "generated"}`);

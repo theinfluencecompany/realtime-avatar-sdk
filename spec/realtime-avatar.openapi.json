@@ -395,6 +395,7 @@
                           "speech-1.6",
                           "s1",
                           "s2-pro",
+                          "s2.1-pro",
                           "drama-3",
                           "speech-1.5",
                           "s1-mini"
@@ -694,6 +695,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 40
+          },
+          "lip_gain": {
+            "description": "Mouth-motion amplitude for this session's lip-sync, from 0.5 to 2. Lower values make speech movements smaller, higher values larger. Omit it to use the platform default. Applies to video sessions; ignored for voice sessions and render_backend generative.",
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 2
           },
           "render_backend": {
             "type": "string",

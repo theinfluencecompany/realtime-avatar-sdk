@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { z } from "zod";
 
 import type { components } from "../../http-client/src/generated/openapi.ts";
-import { liveKitSessionGrantSchema, toLiveKitSessionWireRequest } from "../src/wire.ts";
+import { liveKitSessionGrantSchema, toLiveKitSessionWireRequest, voiceSpecSchema } from "../src/wire.ts";
 
 /**
  * The zod schemas and the generated contract types describe the SAME wire, twice.
@@ -63,4 +65,41 @@ test("the grant schema still parses every field the contract promises", () => {
   });
   // Rule 4 again, from the other side: an absent mode must not come back as silence.
   assert.equal(grant.stt_mode, "server");
+});
+
+// Read from the committed spec rather than the generated schema, so a hand-kept SDK list that
+// lags the contract fails here (it once dropped drama-3 while the spec carried it).
+const publishedVoiceSchema = z.object({
+  components: z.object({
+    schemas: z.object({
+      LiveKitSessionRequest: z.object({
+        properties: z.object({
+          voice: z.object({
+            anyOf: z.array(z.object({
+              oneOf: z.array(z.object({
+                properties: z.object({
+                  provider: z.object({ const: z.string() }),
+                  model: z.object({ enum: z.array(z.string()).optional() }).optional(),
+                }),
+              })).optional(),
+            })),
+          }),
+        }),
+      }),
+    }),
+  }),
+});
+
+test("an SDK caller can send every Fish model the published contract lists", async () => {
+  const spec = publishedVoiceSchema.parse(
+    JSON.parse(await readFile(new URL("../../../spec/realtime-avatar.openapi.json", import.meta.url), "utf-8")),
+  );
+  const models = spec.components.schemas.LiveKitSessionRequest.properties.voice.anyOf
+    .flatMap((member) => member.oneOf ?? [])
+    .filter((arm) => arm.properties.provider.const === "fish")
+    .flatMap((arm) => arm.properties.model?.enum ?? []);
+  assert.ok(models.includes("s2.1-pro"), "the published contract lists s2.1-pro");
+  for (const model of models) {
+    assert.equal(voiceSpecSchema.parse({ provider: "fish", voice_id: "ref", model }).model, model);
+  }
 });
