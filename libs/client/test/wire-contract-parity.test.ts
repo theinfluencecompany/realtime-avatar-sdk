@@ -79,7 +79,12 @@ const publishedVoiceSchema = z.object({
               oneOf: z.array(z.object({
                 properties: z.object({
                   provider: z.object({ const: z.string() }),
-                  model: z.object({ enum: z.array(z.string()).optional() }).optional(),
+                  model: z.object({
+                    default: z.string().optional(),
+                    enum: z.array(z.string()).optional(),
+                    // Live ids and the deprecated ids the platform still accepts are separate branches.
+                    anyOf: z.array(z.object({ enum: z.array(z.string()) })).optional(),
+                  }).optional(),
                 }),
               })).optional(),
             })),
@@ -90,16 +95,27 @@ const publishedVoiceSchema = z.object({
   }),
 });
 
-test("an SDK caller can send every Fish model the published contract lists", async () => {
+async function publishedFishModel() {
   const spec = publishedVoiceSchema.parse(
     JSON.parse(await readFile(new URL("../../../spec/realtime-avatar.openapi.json", import.meta.url), "utf-8")),
   );
-  const models = spec.components.schemas.LiveKitSessionRequest.properties.voice.anyOf
+  const [model] = spec.components.schemas.LiveKitSessionRequest.properties.voice.anyOf
     .flatMap((member) => member.oneOf ?? [])
     .filter((arm) => arm.properties.provider.const === "fish")
-    .flatMap((arm) => arm.properties.model?.enum ?? []);
-  assert.ok(models.includes("s2.1-pro"), "the published contract lists s2.1-pro");
-  for (const model of models) {
+    .map((arm) => arm.properties.model);
+  assert.ok(model, "the published contract has a Fish voice model");
+  return { default: model.default, ids: [...(model.enum ?? []), ...(model.anyOf ?? []).flatMap((branch) => branch.enum)] };
+}
+
+test("an SDK caller can send every Fish model the published contract lists", async () => {
+  const { ids } = await publishedFishModel();
+  assert.ok(ids.includes("s2.1-pro"), "the published contract lists s2.1-pro");
+  for (const model of ids) {
     assert.equal(voiceSpecSchema.parse({ provider: "fish", voice_id: "ref", model }).model, model);
   }
+});
+
+test("a Fish voice with no model takes the published contract's default", async () => {
+  const published = await publishedFishModel();
+  assert.equal(voiceSpecSchema.parse({ provider: "fish", voice_id: "ref" }).model, published.default);
 });

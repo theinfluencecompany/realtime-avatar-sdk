@@ -583,11 +583,8 @@ export interface components {
             } | {
                 /** @constant */
                 provider: "fish";
-                /**
-                 * @default speech-1.6
-                 * @enum {string}
-                 */
-                model: "speech-1.6" | "s1" | "s2-pro" | "s2.1-pro" | "drama-3" | "speech-1.5" | "s1-mini";
+                /** @default s2.1-pro */
+                model: ("s1" | "s2-pro" | "s2.1-pro" | "drama-3") | ("speech-1.6" | "speech-1.5" | "s1-mini");
                 voice_id: string;
                 speed?: number | null;
                 emotion?: string | null;

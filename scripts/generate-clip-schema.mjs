@@ -61,7 +61,7 @@ const supported = new Set([
   "$schema", "type", "properties", "required", "additionalProperties",
   "anyOf", "oneOf", "enum", "format", "pattern", "minLength", "maxLength", "minimum", "maximum",
   "items", "minItems", "maxItems", "const", "description", "readOnly", "default", "propertyNames", "exclusiveMinimum", "exclusiveMaximum",
-  "writeOnly", "maxProperties",
+  "writeOnly", "maxProperties", "deprecated",
 ]);
 const definitions = [];
 const behavior = JSON.stringify(spec.components.schemas.ListAvatarClipsResponse.properties.behavior);
@@ -358,6 +358,8 @@ const voiceArms = (schema) => (schema.anyOf ?? schema.oneOf)?.flatMap(voiceArms)
 const fishArms = voiceArms(spec.components.schemas.LiveKitSessionRequest.properties.voice)
   .filter((arm) => arm.properties?.provider?.const === "fish");
 if (fishArms.length !== 1) throw new Error(`Expected one Fish voice arm, found ${fishArms.length}`);
+const fishTtsModelDefault = fishArms[0].properties.model.default;
+if (typeof fishTtsModelDefault !== "string") throw new Error("Expected the Fish voice model to declare a string default");
 const fishTtsModelRoot = expression(fishArms[0].properties.model);
 const fishTtsModelTarget = new URL("../libs/http-client/src/generated/fish-tts-model.ts", import.meta.url);
 const fishTtsModelOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
@@ -370,6 +372,7 @@ type FishVoice = Extract<NonNullable<components["schemas"]["LiveKitSessionReques
 ${definitions.join("\n\n")}
 
 export const fishTtsModelSchema = ${fishTtsModelRoot} satisfies z.ZodType<FishVoice["model"]>;
+export const DEFAULT_FISH_TTS_MODEL = ${JSON.stringify(fishTtsModelDefault)} as const satisfies z.infer<typeof fishTtsModelSchema>;
 type AssertTrue<Value extends true> = Value;
 type _FishTtsModelCoversWire = AssertTrue<[FishVoice["model"]] extends [z.infer<typeof fishTtsModelSchema>] ? true : false>;
 `;
