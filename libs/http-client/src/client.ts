@@ -55,7 +55,7 @@ const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 const RENDER_MISMATCH = "Render response did not match the SDK contract";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.31.0";
+export const SDK_VERSION = "0.32.0";
 
 
 
