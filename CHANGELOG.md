@@ -5,7 +5,7 @@
 ### Fixed
 
 - **React Native, iOS: a call after a server-ended call no longer hears silence.** A server-closed
-  room, or an app's own mute on a live room, left iOS 26's per-app input mute set until relaunch, so
+  room, or an app's own mute on a live room, left the iOS per-app input mute set until relaunch, so
   later calls published an unmuted track of zeros. `RealtimeAvatarLiveKitRoom` now clears it each
   time its own microphone goes live (see the README).
 
