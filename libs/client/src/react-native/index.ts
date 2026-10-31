@@ -15,6 +15,7 @@
 //   registerGlobals();
 //
 // Peer deps the app installs: @livekit/react-native, @livekit/react-native-webrtc.
+// Only this entry imports @livekit/react-native-webrtc; the web entry never does.
 // ---------------------------------------------------------------------------
 
 // Native platform bootstrap + audio-session control, re-exported so an app
@@ -24,9 +25,12 @@ export { AudioSession, registerGlobals } from "@livekit/react-native";
 export { useAvatarCamera } from "../react/use-avatar-camera";
 export { VideoTrack, type VideoTrackProps } from "@livekit/react-native";
 
-// The native room bridge + audio-session hook (twins of the web ./react ones).
+// The native room bridge + audio-session hook (twins of the web ./react ones), and the iOS
+// stale input-mute clear the bridge runs, for apps that compose their own room.
 export {
   RealtimeAvatarLiveKitRoom,
+  clearStaleInputMute,
+  useClearStaleInputMute,
   useRealtimeAvatarAudioSession,
   type RealtimeAvatarLiveKitRoomProps,
 } from "./room";

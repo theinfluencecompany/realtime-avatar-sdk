@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **React Native, iOS: a call after a server-ended call no longer hears silence.** iOS 26 keeps one
+  input-mute flag per app process. When the server closed a room, livekit-client disabled the
+  microphone track while the peer connection was still live, libwebrtc muted the app through
+  Voice Processing, and no later engine wrote it back, so every later call published an unmuted
+  track of zeros until the app was relaunched or a user hang-up happened. An app's own mute on a
+  live room took the same path. `RealtimeAvatarLiveKitRoom` now clears it each time its own
+  microphone goes live (published unmuted, or unmuted later): it waits up to 5 seconds for input
+  to start, then mutes and unmutes the audio engine once, so the engine writes "unmuted" itself.
+  It writes nothing if the microphone is unpublished or muted first, if the room unmounts, if the
+  engine's mute mode is not Voice Processing, or on Android. The unmute is attempted even if the
+  mute fails, and nothing throws.
+
+### Added
+
+- **`clearStaleInputMute(stillWanted)` and `useClearStaleInputMute(room)`** on
+  `realtime-avatar/react-native`, for apps that compose their own room. The web entry does not
+  import `@livekit/react-native-webrtc`.
+
 ## 0.31.0
 
 A minor release: pre-rendered video. An avatar can perform a script into an MP4 with no live call.

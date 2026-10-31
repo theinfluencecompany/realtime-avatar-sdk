@@ -204,6 +204,13 @@ The four that are expensive to guess:
   to miss it is a bare `new Room()` with neither call; `applyPlayoutDelay(track)` is the primitive
   if you need to reach in by hand.
 
+**React Native on iOS has one more, and it is silent.** iOS 26 keeps one input-mute flag per app,
+and a server-closed room sets it: livekit-client disables the microphone track before the peer
+connection closes, Voice Processing mutes the app, and no later engine writes it back. Every later
+call then publishes an unmuted track of zeros, with `microphone.status` reading `on`, until the app
+is relaunched. `RealtimeAvatarLiveKitRoom` clears it each time its microphone goes live; a room you
+compose yourself needs `useClearStaleInputMute(room)` inside it.
+
 Mic capture needs a secure origin: https, or `http://localhost`. A LAN address over plain
 HTTP leaves `navigator.mediaDevices` undefined, which surfaces as a `TypeError` naming a
 property rather than the reason.

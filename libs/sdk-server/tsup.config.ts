@@ -49,6 +49,7 @@ const shared = {
     "react-native",
     "@livekit/components-react",
     "@livekit/react-native",
+    "@livekit/react-native-webrtc",
     "livekit-client",
     "zod",
   ],

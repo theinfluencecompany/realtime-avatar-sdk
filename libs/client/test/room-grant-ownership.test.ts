@@ -27,7 +27,10 @@ for (const platform of ["react/livekit", "react-native/room"]) {
       module, exports: module.exports,
       require: (name: string) => name === "@livekit/components-react" || name === "@livekit/react-native"
         ? { ...require("@livekit/components-react"), LiveKitRoom: Room,
-          AudioSession: { startAudioSession() {}, stopAudioSession() {} } } : require(name),
+          AudioSession: { startAudioSession() {}, stopAudioSession() {} } }
+        : name === "react-native" ? { Platform: { OS: "android" } }
+        : name === "@livekit/react-native-webrtc" ? { AudioDeviceModule: {}, AudioEngineMuteMode: {} }
+        : require(name),
     });
     const Wrapper = module.exports.RealtimeAvatarLiveKitRoom;
     assert.ok(Wrapper);

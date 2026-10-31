@@ -24,6 +24,7 @@ const hooks = registerHooks({
     if (specifier === "../src/react-native/index.ts") return { url: new URL("libs/sdk-server/dist/react-native.js", root).href, shortCircuit: true };
     if (specifier === "@livekit/react-native") return { url: "fixture:livekit-native", shortCircuit: true };
     if (specifier === "react-native") return { url: "fixture:react-native", shortCircuit: true };
+    if (specifier === "@livekit/react-native-webrtc") return { url: "fixture:react-native-webrtc", shortCircuit: true };
     if (specifier === "../LKNativeModule" && context.parentURL === new URL("audio/AudioSession.js", native).href) {
       return { url: new URL("LKNativeModule.js", native).href, shortCircuit: true };
     }
@@ -36,6 +37,16 @@ const hooks = registerHooks({
         export { default as AudioSession } from ${JSON.stringify(new URL("audio/AudioSession.js", native).href)};
         export function VideoTrack() { throw new Error('RTCView requires a native device'); }
         export function registerGlobals() { throw new Error('WebRTC globals require a native device'); }`,
+    };
+    if (url === "fixture:react-native-webrtc") return {
+      format: "module", shortCircuit: true,
+      source: `import { channel } from 'node:diagnostics_channel';
+        export const AudioEngineMuteMode = { Unknown: -1, VoiceProcessing: 0, RestartEngine: 1, InputMixer: 2 };
+        export const AudioDeviceModule = {
+          isRecording: () => true,
+          getMuteMode: () => AudioEngineMuteMode.VoiceProcessing,
+          setMicrophoneMuted: async (muted) => channel('rta-sdk-native-package-test').publish(\`mute:\${muted}\`),
+        };`,
     };
     if (url === "fixture:react-native") return {
       format: "module", shortCircuit: true,
@@ -217,4 +228,23 @@ test("native room forwards connection and media failures through LiveKit callbac
   await act(async () => { f.room.emit(RoomEvent.SignalConnected); });
   assert.deepEqual(errors, [failure, denied]);
   await mounted.unmount();
+});
+
+test("packaged native room clears the iOS app-wide input mute when its microphone goes live", async (t) => {
+  const f = controlledRoom(t);
+  const mounted = await mount({ grant, room: f.room });
+  calls.length = 0;
+  const local = f.room.localParticipant;
+  const camera = { trackSid: "TR_camera", source: "camera", isMuted: false };
+  const microphone = { trackSid: "TR_microphone", source: "microphone", isMuted: false };
+  local.trackPublications.set(camera.trackSid, camera as never);
+  await act(async () => { f.room.emit(RoomEvent.LocalTrackPublished, camera as never, local); });
+  assert.deepEqual(calls, []);
+  local.trackPublications.set(microphone.trackSid, microphone as never);
+  await act(async () => { f.room.emit(RoomEvent.LocalTrackPublished, microphone as never, local); });
+  assert.deepEqual(calls, ["mute:true", "mute:false"]);
+  assert.equal(typeof sdk.clearStaleInputMute, "function");
+  assert.equal(typeof sdk.useClearStaleInputMute, "function");
+  await mounted.unmount();
+  assert.equal(f.room.listenerCount(RoomEvent.LocalTrackPublished), 0, "leaked the clear's listener");
 });
