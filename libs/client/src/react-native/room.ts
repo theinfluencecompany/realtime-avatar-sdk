@@ -15,10 +15,17 @@
 // The app MUST call `registerGlobals()` (re-exported from the ./react-native
 // entry) once at startup before any LiveKit code runs — it installs the WebRTC
 // globals livekit-client expects.
+//
+// It also clears the iOS app-wide input mute an earlier call can leave behind
+// (see clearStaleInputMute).
 // ---------------------------------------------------------------------------
+import { useMaybeRoomContext } from "@livekit/components-react";
 import { AudioSession, LiveKitRoom, type LiveKitRoomProps } from "@livekit/react-native";
+import { AudioDeviceModule, AudioEngineMuteMode } from "@livekit/react-native-webrtc";
+import { RoomEvent, Track, type Participant, type Room, type TrackPublication } from "livekit-client";
 import { createElement, useEffect } from "react";
 import type { ReactElement, ReactNode } from "react";
+import { Platform } from "react-native";
 import type { LiveKitSessionGrant } from "../livekit-grant";
 import { cameraPublishOptions } from "../camera";
 
@@ -58,6 +65,81 @@ export function useRealtimeAvatarAudioSession(enabled: boolean): void {
   }, [enabled]);
 }
 
+const INPUT_LIVE_WAIT_MS = 5_000;
+const INPUT_LIVE_POLL_MS = 100;
+
+/**
+ * Clear a microphone mute an earlier call left on the whole app, once this call's input is live.
+ *
+ * iOS 26 keeps ONE input-mute flag per app process, and libwebrtc's audio engine sets it through
+ * Voice Processing whenever a send track still attached to a live peer connection is disabled.
+ * livekit-client does exactly that when the SERVER closes the room (it stops the microphone track
+ * before closing the connection, and on React Native `stop()` only disables it); an app's own
+ * mute on a live room takes the same path. The engine is then rebuilt playout-only without
+ * writing the flag back, and every later engine assumes it starts unmuted, so later calls
+ * publish an unmuted track of digital silence until the app is relaunched or a live unmute
+ * happens. A mute and unmute round trip with input live makes the engine write UNMUTED itself.
+ *
+ * Not public: `RealtimeAvatarLiveKitRoom` runs it, and a composed room uses
+ * `useClearStaleInputMute`, which supplies the right `stillWanted`. A no-op off iOS; never throws.
+ */
+export async function clearStaleInputMute(stillWanted: () => boolean): Promise<void> {
+  if (Platform.OS !== "ios") return;
+  try {
+    // Only the Voice Processing mute writes the app flag; the other modes restart the engine.
+    if (AudioDeviceModule.getMuteMode() !== AudioEngineMuteMode.VoiceProcessing) return;
+    for (const deadline = Date.now() + INPUT_LIVE_WAIT_MS; !AudioDeviceModule.isRecording(); ) {
+      if (Date.now() >= deadline || !stillWanted()) return;
+      await new Promise((resolve) => setTimeout(resolve, INPUT_LIVE_POLL_MS));
+    }
+    if (!stillWanted()) return;
+    // Overlapping clears are harmless: each ends on its own unmute, so the last write is false.
+    try {
+      await AudioDeviceModule.setMicrophoneMuted(true);
+    } finally {
+      await AudioDeviceModule.setMicrophoneMuted(false);
+    }
+  } catch {
+    // A native refusal, or a method an older binary lacks, leaves the call as it was.
+  }
+}
+
+/**
+ * Run `clearStaleInputMute` each time `room`'s local microphone goes live: when it is published
+ * unmuted and when it is unmuted later, for as long as that publication stays published and
+ * unmuted and this hook stays mounted.
+ */
+export function useClearStaleInputMute(room: Room | undefined): void {
+  useEffect(() => {
+    if (!room) return;
+    let mounted = true;
+    const local = room.localParticipant;
+    const clearIfLive = (publication: TrackPublication | undefined) => {
+      if (publication?.source !== Track.Source.Microphone || publication.isMuted) return;
+      void clearStaleInputMute(
+        () =>
+          mounted &&
+          !publication.isMuted &&
+          local.getTrackPublication(Track.Source.Microphone) === publication,
+      );
+    };
+    const onUnmuted = (publication: TrackPublication, participant: Participant) => {
+      if (participant === local) clearIfLive(publication);
+    };
+    room.on(RoomEvent.LocalTrackPublished, clearIfLive).on(RoomEvent.TrackUnmuted, onUnmuted);
+    clearIfLive(local.getTrackPublication(Track.Source.Microphone));
+    return () => {
+      mounted = false;
+      room.off(RoomEvent.LocalTrackPublished, clearIfLive).off(RoomEvent.TrackUnmuted, onUnmuted);
+    };
+  }, [room]);
+}
+
+function StaleInputMuteClearer(): null {
+  useClearStaleInputMute(useMaybeRoomContext());
+  return null;
+}
+
 /** Thin typed bridge from a Realtime Avatar grant into the native LiveKitRoom. */
 export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps): ReactElement {
   const {
@@ -92,6 +174,7 @@ export function RealtimeAvatarLiveKitRoom(props: RealtimeAvatarLiveKitRoomProps)
       video: cameraPublishOptions(grant, video),
       options: roomOptions,
     },
+    createElement(StaleInputMuteClearer),
     children,
   );
 }

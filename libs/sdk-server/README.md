@@ -53,6 +53,12 @@ lifecycle; the hook is not a shared audio-session lease. Camera publication stil
 server grant's permission and the caller's opt-in. Room callbacks/options continue to use LiveKit's
 public types and implementation; no separate connection state machine is introduced.
 
+**On iOS, the room also clears an input mute an earlier call left on the app.** A server-closed room
+can leave iOS 26's per-app input mute set, so later calls publish an unmuted track of silence. Each
+time the room's own microphone goes live, `RealtimeAvatarLiveKitRoom` round-trips the audio engine's
+mute once so the engine writes "unmuted" itself (iOS with the Voice Processing mute mode only; never
+on Android). A room you compose yourself needs `useClearStaleInputMute(room)` inside it.
+
 **This is a native build upgrade, not an OTA-only change.** Rebuild iOS and Android binaries with
 RN3/WebRTC 144.2.0 before shipping JavaScript that requires them. Retain the previous SDK group for
 installed binaries that still use RN2, and isolate their OTA runtime/channel appropriately.
