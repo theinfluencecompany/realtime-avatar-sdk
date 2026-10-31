@@ -9,7 +9,7 @@ import { build } from "esbuild";
 import type { Room as LiveKitRoomType } from "livekit-client";
 import type { RealtimeAvatarLiveKitRoomProps } from "../src/react-native/room.ts";
 
-// iOS 26 keeps one input-mute flag per app process, and a server-closed call can leave it MUTED
+// iOS keeps one input-mute flag per app process, and a server-closed call can leave it MUTED
 // for every later call (room.ts clearStaleInputMute explains the mechanism). These run the
 // native room bridge against a real livekit-client Room; only the native modules are recorded.
 Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { value: true, configurable: true });
