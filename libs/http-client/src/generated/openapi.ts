@@ -661,6 +661,11 @@ export interface components {
                 speed?: number | null;
                 emotion?: string | null;
                 language?: string | null;
+                whisper?: {
+                    /** @enum {string} */
+                    model: "s2-pro" | "s2.1-pro" | "drama-3";
+                    gain_db?: number;
+                } | null;
             }) | null;
             voice_id?: string | null;
             /** @description The session's motion-state map. Normally omitted: the avatar's PLATFORM-GENERATED library (idle / listen / gesture clips rendered from the portrait at creation) is injected automatically. An explicit [] opts the call out of clips. Supplying custom clip URLs is a legacy channel for existing integrations — custom video is not part of the public contract. */
@@ -778,7 +783,7 @@ export interface components {
             /** @description DEPRECATED, no-op. Accepted and ignored. The faster hesitation ceiling this requested is now the default for every session, so sending it changes nothing. Safe to stop sending; the field is retained only so existing callers do not break. */
             fast_endpointing?: boolean;
             require_ready_clip_library?: boolean;
-            /** @description Preview, enabled per workspace. A prepared scene from POST /v1/scenes, played forward over its full length in place of the avatar's source video; the avatar keeps the voice and persona. Cannot be combined with mode voice, render_backend generative, source_video_url, video_cache_id or a non-empty clip_library. */
+            /** @description Preview, enabled per workspace. A prepared scene from POST /v1/scenes, played forward over its full length in place of the avatar's source video; the avatar keeps the voice and persona. Cannot be combined with mode voice, render_backend generative, source_video_url, video_cache_id or a non-empty clip_library (unless scene.clips is library, whose clips are scenes this workspace prepared). */
             scene?: {
                 /** @description The prepared scene's artifact id, as returned by POST /v1/scenes when status is ready. */
                 video_cache_id: string;
@@ -790,6 +795,26 @@ export interface components {
                 attach_continuation?: boolean;
                 /** @description Preview, opt-in. Lets the minting server switch this scene session to another ready scene it owns mid-call, without a new session. Requires extend_secret to sign replace_scene commands. Absent or false plays this scene for the whole call. */
                 replaceable?: boolean;
+                /**
+                 * @description Preview, opt-in. How the speaking render is fitted onto the filmed scene: frame keeps the lips on each filmed frame's face (its own position and mouth). Absent renders as before.
+                 * @enum {string}
+                 */
+                speech_fit?: "frame";
+                /**
+                 * @description Preview, opt-in. Which part of the face the speaking render replaces on the filmed scene: full re-renders the whole face, as a video call does. Absent re-renders the mouth and jaw only, as before.
+                 * @enum {string}
+                 */
+                speech_mask?: "full";
+                /**
+                 * @description Preview, opt-in. library lets this scene session carry clip_library and clip_behavior: gesture clips that are scenes this workspace prepared, each starting on this scene's first frame and ending on its last. The character picks them as reactions and gestures; they play at the scene's loop boundary. A clip that cannot be admitted is left out, never refused. Absent plays this scene alone.
+                 * @enum {string}
+                 */
+                clips?: "library";
+                /**
+                 * @description Preview, opt-in, needs clips. hurry plays the scene at twice its speed to its last frame while a gesture waits, so the gesture starts sooner; hurry_silent does so only while she is silent. Absent waits for the scene's natural end.
+                 * @enum {string}
+                 */
+                clip_lead?: "hurry" | "hurry_silent";
             };
         };
         LiveKitSessionGrant: {
@@ -1838,6 +1863,11 @@ export interface components {
                 speed?: number | null;
                 emotion?: string | null;
                 language?: string | null;
+                whisper?: {
+                    /** @enum {string} */
+                    model: "s2-pro" | "s2.1-pro" | "drama-3";
+                    gain_db?: number;
+                } | null;
             };
             /** @description Mouth-motion amplitude, as on a live call (lip_gain). Omit it for the platform default. */
             lipGain?: number;
