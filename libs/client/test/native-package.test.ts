@@ -243,8 +243,9 @@ test("packaged native room clears the iOS app-wide input mute when its microphon
   local.trackPublications.set(microphone.trackSid, microphone as never);
   await act(async () => { f.room.emit(RoomEvent.LocalTrackPublished, microphone as never, local); });
   assert.deepEqual(calls, ["mute:true", "mute:false"]);
-  assert.equal(typeof sdk.clearStaleInputMute, "function");
+  assert.equal("clearStaleInputMute" in sdk, false, "the raw clear is not public; the hook is");
   assert.equal(typeof sdk.useClearStaleInputMute, "function");
   await mounted.unmount();
   assert.equal(f.room.listenerCount(RoomEvent.LocalTrackPublished), 0, "leaked the clear's listener");
+  assert.equal(f.room.listenerCount(RoomEvent.TrackUnmuted), 0, "leaked the clear's unmute listener");
 });

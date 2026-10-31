@@ -67,7 +67,6 @@ export function useRealtimeAvatarAudioSession(enabled: boolean): void {
 
 const INPUT_LIVE_WAIT_MS = 5_000;
 const INPUT_LIVE_POLL_MS = 100;
-let inputMuteWrites: Promise<void> = Promise.resolve();
 
 /**
  * Clear a microphone mute an earlier call left on the whole app, once this call's input is live.
@@ -79,38 +78,30 @@ let inputMuteWrites: Promise<void> = Promise.resolve();
  * mute on a live room takes the same path. The engine is then rebuilt playout-only without
  * writing the flag back, and every later engine assumes it starts unmuted, so later calls
  * publish an unmuted track of digital silence until the app is relaunched or a live unmute
- * happens. Measured 2026-10-31 in a device's syslog: MUTED at a capped call's server close,
- * three silent calls, UNMUTED only at a user hang-up; in production about 30% of iOS calls that
- * followed a server-ended call heard nothing, against 3.4% after a user hang-up and 2-3% on
- * Android. A mute and unmute round trip with input live makes the engine write UNMUTED itself.
+ * happens. A mute and unmute round trip with input live makes the engine write UNMUTED itself.
  *
- * `RealtimeAvatarLiveKitRoom` runs this for you; call it (or `useClearStaleInputMute`) only
- * when you compose your own room. A no-op off iOS, and it never throws.
+ * Not public: `RealtimeAvatarLiveKitRoom` runs it, and a composed room uses
+ * `useClearStaleInputMute`, which supplies the right `stillWanted`. A no-op off iOS; never throws.
  */
 export async function clearStaleInputMute(stillWanted: () => boolean): Promise<void> {
   if (Platform.OS !== "ios") return;
   try {
-    for (let waited = 0; !AudioDeviceModule.isRecording(); waited += INPUT_LIVE_POLL_MS) {
-      if (waited >= INPUT_LIVE_WAIT_MS || !stillWanted()) return;
-      await new Promise((resolve) => setTimeout(resolve, INPUT_LIVE_POLL_MS));
-    }
     // Only the Voice Processing mute writes the app flag; the other modes restart the engine.
     if (AudioDeviceModule.getMuteMode() !== AudioEngineMuteMode.VoiceProcessing) return;
+    for (const deadline = Date.now() + INPUT_LIVE_WAIT_MS; !AudioDeviceModule.isRecording(); ) {
+      if (Date.now() >= deadline || !stillWanted()) return;
+      await new Promise((resolve) => setTimeout(resolve, INPUT_LIVE_POLL_MS));
+    }
+    if (!stillWanted()) return;
+    // Overlapping clears are harmless: each ends on its own unmute, so the last write is false.
+    try {
+      await AudioDeviceModule.setMicrophoneMuted(true);
+    } finally {
+      await AudioDeviceModule.setMicrophoneMuted(false);
+    }
   } catch {
-    return;
+    // A native refusal, or a method an older binary lacks, leaves the call as it was.
   }
-  // One round trip at a time, so two clears cannot leave the engine muted between them.
-  inputMuteWrites = inputMuteWrites
-    .then(async () => {
-      if (!stillWanted()) return;
-      try {
-        await AudioDeviceModule.setMicrophoneMuted(true);
-      } finally {
-        await AudioDeviceModule.setMicrophoneMuted(false);
-      }
-    })
-    .catch(() => {});
-  await inputMuteWrites;
 }
 
 /**

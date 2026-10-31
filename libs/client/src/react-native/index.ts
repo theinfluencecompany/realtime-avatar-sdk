@@ -29,7 +29,6 @@ export { VideoTrack, type VideoTrackProps } from "@livekit/react-native";
 // stale input-mute clear the bridge runs, for apps that compose their own room.
 export {
   RealtimeAvatarLiveKitRoom,
-  clearStaleInputMute,
   useClearStaleInputMute,
   useRealtimeAvatarAudioSession,
   type RealtimeAvatarLiveKitRoomProps,

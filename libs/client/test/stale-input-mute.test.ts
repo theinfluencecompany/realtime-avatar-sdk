@@ -10,7 +10,7 @@ import type { Room as LiveKitRoomType } from "livekit-client";
 import type { RealtimeAvatarLiveKitRoomProps } from "../src/react-native/room.ts";
 
 // iOS 26 keeps one input-mute flag per app process, and a server-closed call can leave it MUTED
-// for every later call (room.ts clearStaleInputMute carries the device evidence). These run the
+// for every later call (room.ts clearStaleInputMute explains the mechanism). These run the
 // native room bridge against a real livekit-client Room; only the native modules are recorded.
 Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { value: true, configurable: true });
 const require = createRequire(import.meta.url);
@@ -28,7 +28,7 @@ type Bridge = {
 type Engine = { os?: "ios" | "android"; liveAfterPolls?: number; muteMode?: number; failMute?: boolean };
 
 function load(t: TestContext, engine: Engine = {}) {
-  t.mock.timers.enable({ apis: ["setTimeout"] });
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const writes: boolean[] = [];
   const recorder = {
     polls: 0,
@@ -45,8 +45,9 @@ function load(t: TestContext, engine: Engine = {}) {
   const module: { exports: Bridge } = { exports: {} };
   runInNewContext(bundle.outputFiles[0].text, {
     module, exports: module.exports,
-    // Read at call time so the mocked timers reach the bridge inside the sandbox.
+    // Read at call time so the mocked timers and clock reach the bridge inside the sandbox.
     setTimeout: (run: () => void, ms: number) => setTimeout(run, ms),
+    Date: { now: () => Date.now() },
     require: (name: string) => {
       if (name === "react-native") return { Platform: { OS: engine.os ?? "ios" } };
       if (name === "@livekit/react-native-webrtc") return {
@@ -175,7 +176,7 @@ test("nothing is written when the engine mutes another way, or on Android", asyn
   const a = await mountRoom(t, restart.bridge);
   await a.publish(Track.Source.Microphone);
   await advance(t, 500);
-  assert.ok(restart.recorder.polls > 0, "never checked the engine");
+  assert.equal(restart.recorder.polls, 0, "waited for input in a mode it will not write");
   assert.deepEqual(restart.writes, [], "a non-Voice-Processing mute restarts the engine instead");
   await a.unmount();
   t.mock.timers.reset();
