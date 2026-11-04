@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **A Fish voice's persistent `delivery`.** `voice: { provider: "fish", model: "drama-3", delivery:
+  "whisper", … }` makes the voice whisper on every line, rendered by the worker. `FISH_DELIVERY_MODELS`
+  and the `FishDelivery` type are generated from the platform contract (`x-fish-delivery-models`);
+  `voiceSpecSchema` refuses a delivery on a model that cannot carry it (today only `drama-3`), as the
+  platform does. Exported from the root, `realtime-avatar/react` and `realtime-avatar/react-native`.
+
 ## 0.32.0
 
 ### Fixed

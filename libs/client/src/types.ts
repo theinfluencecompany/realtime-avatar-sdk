@@ -3,6 +3,7 @@ export type {
   BreezeVoiceSpec,
   CartesiaTtsModel,
   CartesiaVoiceSpec,
+  FishDelivery,
   FishTtsModel,
   FishVoiceSpec,
   LLMConfig,

@@ -41,3 +41,10 @@ export async function publishedFishModel() {
   assert.ok(model, "the published contract has a Fish voice model");
   return { default: model.default, ids: [...(model.enum ?? []), ...(model.anyOf ?? []).flatMap((branch) => branch.enum)] };
 }
+
+/** The published rule a Fish `delivery` obeys: the models each one can be heard on. */
+export async function publishedFishDeliveryModels(): Promise<Record<string, string[]>> {
+  const spec = z.object({ "x-fish-delivery-models": z.object({ models: z.record(z.string(), z.array(z.string()).min(1)) }) })
+    .parse(JSON.parse(await readFile(new URL("../../../spec/realtime-avatar.openapi.json", import.meta.url), "utf-8")));
+  return spec["x-fish-delivery-models"].models;
+}

@@ -3,7 +3,7 @@ export { RealtimeAvatarError, RealtimeAvatarHttpError, RealtimeAvatarWebhookErro
 export { verifyTranscript, verifyVoiceWebhook } from "./webhook.ts";
 export { isQueued } from "./types.ts";
 export { clipLibraryDeclarationSchema } from "./generated/clip-library-schema.ts";
-export { fishTtsModelSchema, DEFAULT_FISH_TTS_MODEL, type FishTtsModel } from "./generated/fish-tts-model.ts";
+export { fishTtsModelSchema, DEFAULT_FISH_TTS_MODEL, type FishTtsModel, FISH_DELIVERY_MODELS, type FishDelivery } from "./generated/fish-tts-model.ts";
 export { recordingModeSchema, recordingArtifactSchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
 export { renderSchema, listRendersResponseSchema, renderAccessResponseSchema } from "./generated/render.ts";
 export type {

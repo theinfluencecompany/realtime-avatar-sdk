@@ -246,6 +246,18 @@ verifyVoiceWebhook(rawBytes, headers, secret)   // one sentence to speak, typed;
 // contract values; also exported by realtime-avatar/react and /react-native
 fishTtsModelSchema.safeParse(storedModelId)     // a Fish model id you stored -> FishTtsModel, or a failure
 DEFAULT_FISH_TTS_MODEL                          // the platform's Fish default model
+FISH_DELIVERY_MODELS                            // which models can carry each voice `delivery`
+```
+
+**A voice can always whisper: `delivery: "whisper"`.** It is how the voice speaks on every line,
+whatever a turn's emotion, and the worker renders it into every text it sends Fish. Only the models
+`FISH_DELIVERY_MODELS[delivery]` names can carry it (today `whisper` → `drama-3`): `voiceSpecSchema`
+refuses any other pairing, and so does the platform, so a call cannot claim a whisper it would not
+produce. It is a different field from `whisper`, which whispers only the sentences a reply cues;
+send one or the other.
+
+```ts
+const voice: VoiceSpecInput = { provider: "fish", voice_id: row.voiceId, model: "drama-3", delivery: "whisper" };
 ```
 
 **A Fish model id you stored is validated once, with the SDK's own list.** Both values are

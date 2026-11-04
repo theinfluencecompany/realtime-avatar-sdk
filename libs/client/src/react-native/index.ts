@@ -190,7 +190,8 @@ export {
 export { MAX_SESSION_INSTRUCTIONS_CHARS } from "../wire";
 // The platform's Fish model ids, generated from its contract, so a stored id is validated once
 // with `fishTtsModelSchema.safeParse` and comes back as `FishTtsModel` instead of being cast.
-export { fishTtsModelSchema, DEFAULT_FISH_TTS_MODEL } from "../wire";
+// `FISH_DELIVERY_MODELS` is the models each `delivery` can be heard on, from the same contract.
+export { fishTtsModelSchema, DEFAULT_FISH_TTS_MODEL, FISH_DELIVERY_MODELS } from "../wire";
 
 // Mic single-flight lease — the cross-room getUserMedia guard. Both halves are
 // RN-safe but were not re-exported on native before; an Android call path needs
@@ -232,4 +233,5 @@ export type {
   VoiceSpecInput,
   CartesiaTtsModel,
   FishTtsModel,
+  FishDelivery,
 } from "../wire";

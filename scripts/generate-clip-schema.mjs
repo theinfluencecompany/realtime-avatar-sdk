@@ -363,9 +363,19 @@ if (fishArms.length !== 1) throw new Error(`Expected one Fish voice arm, found $
 const fishTtsModelDefault = fishArms[0].properties.model.default;
 if (typeof fishTtsModelDefault !== "string") throw new Error("Expected the Fish voice model to declare a string default");
 const fishTtsModelRoot = expression(fishArms[0].properties.model);
+const fishDeliveryWire = fishArms[0].properties.delivery;
+if (!fishDeliveryWire) throw new Error("Expected the Fish voice arm to declare delivery");
+const fishDeliveryRoot = expression(fishDeliveryWire);
+// JSON Schema cannot say which models carry a delivery; the platform publishes that rule beside it.
+const fishDeliveryModels = spec["x-fish-delivery-models"]?.models;
+if (!fishDeliveryModels || typeof fishDeliveryModels !== "object"
+  || !Object.values(fishDeliveryModels).every((models) => Array.isArray(models) && models.length
+    && models.every((model) => typeof model === "string"))) {
+  throw new Error("Expected x-fish-delivery-models.models to map each delivery to its model ids");
+}
 const fishTtsModelTarget = new URL("../libs/http-client/src/generated/fish-tts-model.ts", import.meta.url);
 const fishTtsModelOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
-// Do not edit; the platform owns the Fish model vocabulary.
+// Do not edit; the platform owns the Fish model vocabulary and which models carry each delivery.
 import { z } from "zod";
 import type { components } from "./openapi.ts";
 
@@ -376,8 +386,13 @@ ${definitions.join("\n\n")}
 export const fishTtsModelSchema = ${fishTtsModelRoot} satisfies z.ZodType<FishVoice["model"]>;
 export type FishTtsModel = z.infer<typeof fishTtsModelSchema>;
 export const DEFAULT_FISH_TTS_MODEL = ${JSON.stringify(fishTtsModelDefault)} as const satisfies FishTtsModel;
+export const fishDeliverySchema = ${fishDeliveryRoot} satisfies z.ZodType<FishVoice["delivery"]>;
+export type FishDelivery = NonNullable<z.infer<typeof fishDeliverySchema>>;
+/** The models each delivery can be heard on, from the platform's \`x-fish-delivery-models\`. */
+export const FISH_DELIVERY_MODELS = ${JSON.stringify(fishDeliveryModels)} as const satisfies Record<FishDelivery, readonly FishTtsModel[]>;
 type AssertTrue<Value extends true> = Value;
 type _FishTtsModelCoversWire = AssertTrue<[FishVoice["model"]] extends [FishTtsModel] ? true : false>;
+type _EveryDeliveryNamesItsModels = AssertTrue<[FishDelivery] extends [keyof typeof FISH_DELIVERY_MODELS] ? true : false>;
 `;
 if (check) {
   if (await readFile(fishTtsModelTarget, "utf8") !== fishTtsModelOutput) throw new Error("Fish model schema is stale; run npm run spec:types");
