@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import type { components } from "../../http-client/src/generated/openapi.ts";
 import { liveKitSessionGrantSchema, toLiveKitSessionWireRequest, voiceSpecSchema } from "../src/wire.ts";
-import { publishedFishModel } from "./published-fish-model.fixture.ts";
+import { publishedFishDeliveryModels, publishedFishModel } from "./published-fish-model.fixture.ts";
 
 /**
  * The zod schemas and the generated contract types describe the SAME wire, twice.
@@ -77,4 +77,21 @@ test("an SDK caller can send every Fish model the published contract lists", asy
 test("a Fish voice with no model takes the published contract's default", async () => {
   const published = await publishedFishModel();
   assert.equal(voiceSpecSchema.parse({ provider: "fish", voice_id: "ref" }).model, published.default);
+});
+
+// The platform refuses a delivery on any model its rule does not name; the SDK runs the same
+// published rule, so a call that could only be refused is refused before it is sent.
+test("a Fish delivery is accepted exactly on the models the published contract names", async () => {
+  const rule = await publishedFishDeliveryModels();
+  const published = await publishedFishModel();
+  assert.ok(Object.keys(rule).length > 0, "the published contract names at least one delivery");
+  for (const [delivery, carriers] of Object.entries(rule)) {
+    for (const model of published.ids) {
+      const parsed = voiceSpecSchema.safeParse({ provider: "fish", voice_id: "ref", model, delivery });
+      // The SDK sends the id it was given; the platform maps a deprecated one after it validates.
+      assert.equal(parsed.success, carriers.includes(model), `${delivery} on ${model}`);
+    }
+    const unnamed = voiceSpecSchema.safeParse({ provider: "fish", voice_id: "ref", delivery });
+    assert.equal(unnamed.success, published.default !== undefined && carriers.includes(published.default));
+  }
 });

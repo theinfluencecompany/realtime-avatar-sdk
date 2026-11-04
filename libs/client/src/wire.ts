@@ -18,11 +18,14 @@ import { contentPolicySchema } from "../../http-client/src/generated/content-pol
 import { voiceErrorFrameSchema as contractVoiceErrorFrameSchema } from "../../http-client/src/generated/voice-error-frame.ts";
 import {
   DEFAULT_FISH_TTS_MODEL,
+  FISH_DELIVERY_MODELS,
+  fishDeliverySchema,
   fishTtsModelSchema,
+  type FishDelivery,
   type FishTtsModel as ContractFishTtsModel,
 } from "../../http-client/src/generated/fish-tts-model.ts";
 
-export { DEFAULT_FISH_TTS_MODEL, fishTtsModelSchema };
+export { DEFAULT_FISH_TTS_MODEL, FISH_DELIVERY_MODELS, fishTtsModelSchema };
 
 const DEFAULT_AVATAR_ID = "maria";
 const DEFAULT_BACKGROUND_ID = "plain_white";
@@ -129,6 +132,8 @@ const breezeVoiceSpecSchema = z
   })
   .strict();
 
+// `delivery`: how the voice always speaks (today `whisper`). The generated FISH_DELIVERY_MODELS
+// says which models can carry it, so a pairing the platform would refuse fails here instead.
 const fishVoiceSpecSchema = z
   .object({
     provider: z.literal("fish"),
@@ -137,8 +142,16 @@ const fishVoiceSpecSchema = z
     speed: z.number().min(0.5).max(2).nullable().optional(),
     emotion: z.string().min(1).max(80).nullable().optional(),
     language: z.string().min(2).max(16).nullable().optional(),
+    delivery: fishDeliverySchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((voice, ctx) => {
+    if (!voice.delivery) return;
+    const models: readonly string[] = FISH_DELIVERY_MODELS[voice.delivery];
+    if (!models.includes(voice.model)) {
+      ctx.addIssue({ code: "custom", path: ["delivery"], message: `delivery "${voice.delivery}" needs model ${models.join(" | ")}` });
+    }
+  });
 
 export const voiceSpecSchema = z.discriminatedUnion("provider", [
   cartesiaVoiceSpecSchema,
@@ -557,6 +570,7 @@ export type FishTtsModel = ContractFishTtsModel;
 export type CartesiaVoiceSpec = z.infer<typeof cartesiaVoiceSpecSchema>;
 export type BreezeVoiceSpec = z.infer<typeof breezeVoiceSpecSchema>;
 export type FishVoiceSpec = z.infer<typeof fishVoiceSpecSchema>;
+export type { FishDelivery };
 
 export type VoiceSpec = z.infer<typeof voiceSpecSchema>;
 

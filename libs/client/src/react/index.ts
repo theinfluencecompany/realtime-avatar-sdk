@@ -160,7 +160,8 @@ export {
 export { MAX_SESSION_INSTRUCTIONS_CHARS } from "../wire";
 // The platform's Fish model ids, generated from its contract, so a stored id is validated once
 // with `fishTtsModelSchema.safeParse` and comes back as `FishTtsModel` instead of being cast.
-export { fishTtsModelSchema, DEFAULT_FISH_TTS_MODEL } from "../wire";
+// `FISH_DELIVERY_MODELS` is the models each `delivery` can be heard on, from the same contract.
+export { fishTtsModelSchema, DEFAULT_FISH_TTS_MODEL, FISH_DELIVERY_MODELS } from "../wire";
 
 // The contract `AvatarCall` and the hooks ask for. Exported so a consumer can implement it.
 export type {
@@ -201,5 +202,6 @@ export type {
   VoiceSpecInput,
   CartesiaTtsModel,
   FishTtsModel,
+  FishDelivery,
 } from "../wire";
 export { RecordingPlayer, type RecordingPlaybackAsset } from "./recording-player";

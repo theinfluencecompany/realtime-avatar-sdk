@@ -483,6 +483,19 @@
                             "type": "null"
                           }
                         ]
+                      },
+                      "delivery": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "whisper"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -5359,6 +5372,19 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "delivery": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "whisper"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -7774,6 +7800,14 @@
       }
     },
     "maxLength": 180
+  },
+  "x-fish-delivery-models": {
+    "description": "For each Fish voice `delivery`, the `model` values that can carry it. A voice that names a delivery must name one of its models, and must not also name a `whisper` model.",
+    "models": {
+      "whisper": [
+        "drama-3"
+      ]
+    }
   },
   "paths": {
     "/v1/realtime/livekit/capacity": {

@@ -666,6 +666,7 @@ export interface components {
                     model: "s2-pro" | "s2.1-pro" | "drama-3";
                     gain_db?: number;
                 } | null;
+                delivery?: "whisper" | null;
             }) | null;
             voice_id?: string | null;
             /** @description The session's motion-state map. Normally omitted: the avatar's PLATFORM-GENERATED library (idle / listen / gesture clips rendered from the portrait at creation) is injected automatically. An explicit [] opts the call out of clips. Supplying custom clip URLs is a legacy channel for existing integrations — custom video is not part of the public contract. */
@@ -1868,6 +1869,7 @@ export interface components {
                     model: "s2-pro" | "s2.1-pro" | "drama-3";
                     gain_db?: number;
                 } | null;
+                delivery?: "whisper" | null;
             };
             /** @description Mouth-motion amplitude, as on a live call (lip_gain). Omit it for the platform default. */
             lipGain?: number;

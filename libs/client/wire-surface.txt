@@ -16,6 +16,8 @@ CartesiaTtsModel
 CartesiaVoiceSpec
 ClientMetadata
 DEFAULT_FISH_TTS_MODEL
+FISH_DELIVERY_MODELS
+FishDelivery
 FishTtsModel
 FishVoiceSpec
 KnownBehaviorState
