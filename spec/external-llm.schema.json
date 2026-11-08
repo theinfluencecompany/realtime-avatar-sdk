@@ -5,7 +5,8 @@
     "base_url": {
       "type": "string",
       "maxLength": 500,
-      "format": "uri"
+      "format": "uri",
+      "pattern": "^\\s*[Hh][Tt][Tt][Pp][Ss]:\\/\\/"
     },
     "token": {
       "type": "string",

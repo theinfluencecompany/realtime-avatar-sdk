@@ -432,6 +432,24 @@ test("invalid external opt-ins are rejected before any HTTP request", async () =
   }
 });
 
+test("llm.baseUrl is https only, as the platform enforces, and every URL the platform accepts is still sent", async () => {
+  const token = "per-call-token-0123456789";
+  const refused = stub({ body: GRANT });
+  await assert.rejects(() => new RealtimeAvatar({ apiKey: "k", fetch: refused.fetchImpl })
+    .startCall({ avatarId: "ava_1", llm: { backend: "external", baseUrl: "http://brain.example.test/v1", token } }));
+  assert.equal(refused.seen.body, undefined);
+  for (const [baseUrl, sent] of [
+    ["  https://brain.example.test/v1 ", "https://brain.example.test/v1"],
+    ["HTTPS://brain.example.test/v1", "HTTPS://brain.example.test/v1"],
+    [`https://brain.example.test/${"a".repeat(470)}`, `https://brain.example.test/${"a".repeat(470)}`],
+  ] as const) {
+    const on = stub({ body: GRANT });
+    await new RealtimeAvatar({ apiKey: "k", fetch: on.fetchImpl })
+      .startCall({ avatarId: "ava_1", llm: { backend: "external", baseUrl, token } });
+    assert.deepEqual(on.seen.body?.external_llm, { base_url: sent, token });
+  }
+});
+
 test("voiceWebhook rides the mint as voice_webhook in the wire's spelling, and only when asked for", async () => {
   const on = stub({ body: GRANT });
   await new RealtimeAvatar({ apiKey: "k", fetch: on.fetchImpl }).startCall({

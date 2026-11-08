@@ -192,17 +192,20 @@ it; validate it once, at that boundary, with the exported schema:
 ```ts
 import { externalTurnContextSchema } from "realtime-avatar";
 const context = externalTurnContextSchema.safeParse(body.rta_context);
-// { session_id, generation_id, version: 1, purpose: "respond" | "recovery" | "initiative",
-//   admission: "draft" | "accepted", visible_character? }
+// { session_id, generation_id, version: 1, purpose, admission: "draft" | "accepted",
+//   visible_character? }
 ```
+
+A newer worker may add fields, which the schema drops, and new `purpose` values: today's are
+`respond`, `recovery` and `initiative`, and an unknown one should be answered as `respond`.
 
 A `draft` is speculative: the worker may still drop it, and no second request tells your server
 when it is admitted — that arrives on the client as an `accepted` frame. Key whatever you prepare
 (an expression plan, a motion choice) by `generation_id`, and keep it on your side: the SDK
 carries no expression vocabulary and no rig logic.
 
-With `voiceWebhook`, `verifyVoiceWebhook(...).performance` carries the same `session_id` and
-`generation_id`, plus an `utterance_id` for that sentence. A retry keeps the `utterance_id` and
+With `voiceWebhook`, `verifyVoiceWebhook(...).performance` carries the same `generation_id`, plus
+an `utterance_id` for that sentence; its session is the request's own `session_id`. A retry keeps the `utterance_id` and
 changes `request_id`, so key sentences by `utterance_id`, never by `request_id` or by text. A Fish
 voice has no such callback.
 
@@ -228,12 +231,17 @@ useRealtimeSession({
 | `onInvalidated("connection_lost")` | Frames may have been lost | Discard everything; frames resume for new generations once reconnected |
 | `onInvalidated("ended" \| "binding_changed")` | This call, or this grant, is over | Discard everything |
 
-Frames are validated against the platform contract (an unknown field is refused, not dropped),
-accepted only from the call's agent on the room the grant names, and checked against the
-worker's own transitions per generation: admission or refusal first, release only after
-admission, cancellation only of admitted work, and nothing after a terminal status. Duplicates
-and late frames never reach you. After a connection loss, the generations seen before it stay
-void for good, because nothing replays what was lost.
+Frames are validated against the platform contract, accepted only from the call's agent on the
+room the grant names, and checked against the worker's own transitions per generation: admission
+or refusal first, release only after admission, cancellation only of admitted work, and nothing
+after a terminal status. Duplicates and late frames never reach you. After a connection loss, the
+generations seen before it stay void for good, because nothing replays what was lost; observation
+resumes as soon as the same call's room is connected to its agent again.
+
+A newer worker never breaks this SDK: a field it adds is dropped, and a status it adds is skipped,
+since the SDK cannot know its transitions. `onFrame` therefore only ever sees
+`KNOWN_EXTERNAL_PERFORMANCE_STATUSES`, typed as `KnownExternalPerformanceStatus`, so a `switch`
+on it is exhaustive.
 
 **Nothing here says when she is heard.** The worker marks `audible_checkpoint` and
 `audio_mapping` as `"unavailable"`, and public LiveKit APIs expose no receiver playout position
@@ -245,9 +253,11 @@ source available today is the received audio itself (render from its level, as f
 speaking or by ending the call, as before.
 
 The three frame and context schemas come from the platform's published contract. The endpoint
-fields come from its `ExternalLLMEndpoint` definition, which the published document redacts
-because only a server may send it: `spec/external-llm.schema.json` vendors exactly that
-definition. Both regenerate with `node scripts/generate-clip-schema.mjs --sync <platform root>`
+fields come from its `ExternalLLMEndpoint` definition, which the mint schema redacts because only
+a server may send it; the platform publishes that shape on its own at `/external-llm.schema.json`,
+and the spec pins its sha256 under `x-external-llm-contract`. `spec/external-llm.schema.json`
+vendors exactly those bytes, so `npm run spec:check` fails when the platform changes it. Both
+regenerate with `npm run spec` or `node scripts/generate-clip-schema.mjs --sync <platform root>`
 and are verified by `npm run spec:verify`; never edit the generated files.
 
 ## Examples

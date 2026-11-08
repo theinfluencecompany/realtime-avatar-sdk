@@ -2720,11 +2720,6 @@
           "performance": {
             "type": "object",
             "properties": {
-              "session_id": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
               "generation_id": {
                 "type": "string",
                 "minLength": 1,
@@ -2738,11 +2733,9 @@
               }
             },
             "required": [
-              "session_id",
               "generation_id",
               "utterance_id"
-            ],
-            "additionalProperties": false
+            ]
           },
           "request_id": {
             "type": "string",
@@ -2851,12 +2844,22 @@
             "const": 1
           },
           "purpose": {
-            "type": "string",
-            "enum": [
-              "respond",
-              "recovery",
-              "initiative"
-            ]
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "respond",
+                  "recovery",
+                  "initiative"
+                ]
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              }
+            ],
+            "description": "Why this turn is generated. Open: answer a purpose you do not know as you would respond."
           },
           "admission": {
             "type": "string",
@@ -2875,8 +2878,7 @@
             },
             "required": [
               "renderer"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "required": [
@@ -2885,18 +2887,12 @@
           "version",
           "purpose",
           "admission"
-        ],
-        "additionalProperties": false
+        ]
       },
       "ExternalUtterance": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "session_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
           "generation_id": {
             "type": "string",
             "minLength": 1,
@@ -2910,11 +2906,9 @@
           }
         },
         "required": [
-          "session_id",
           "generation_id",
           "utterance_id"
-        ],
-        "additionalProperties": false
+        ]
       },
       "ExternalPerformanceFrame": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2939,13 +2933,23 @@
             "const": 1
           },
           "status": {
-            "type": "string",
-            "enum": [
-              "accepted",
-              "dropped",
-              "cancelled",
-              "audio_released"
-            ]
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "accepted",
+                  "dropped",
+                  "cancelled",
+                  "audio_released"
+                ]
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              }
+            ],
+            "description": "Open: ignore a status you do not know."
           },
           "audible_checkpoint": {
             "type": "string",
@@ -2966,8 +2970,7 @@
           "status",
           "audible_checkpoint",
           "audio_mapping"
-        ],
-        "additionalProperties": false
+        ]
       },
       "VoiceWebhookErrorCode": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -10348,6 +10351,10 @@
         ]
       }
     }
+  },
+  "x-external-llm-contract": {
+    "source": "/external-llm.schema.json",
+    "sha256": "f87258e6d49131051752306de2d8f02408d8244b3feb3e61ac7418c05495bf03"
   },
   "x-clip-contract": {
     "source": "/character-motion.ts",

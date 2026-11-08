@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import {
-  createExternalPerformanceObserver, EXTERNAL_PERFORMANCE_TIMING,
+  createExternalPerformanceObserver, EXTERNAL_PERFORMANCE_TIMING, KNOWN_EXTERNAL_PERFORMANCE_STATUSES,
   type ExternalPerformanceFrame, type ExternalPerformanceInvalidation,
 } from "../src/external-performance.ts";
 import { lifecycleServerFrameSchema } from "../src/wire.ts";
@@ -25,14 +25,27 @@ function setup() {
   return { observer, frames, invalidations, seen };
 }
 
-test("the lifecycle decoder admits the canonical producer frame and nothing looser", () => {
+test("the lifecycle decoder drops a newer worker's additions and refuses only an incompatible frame", () => {
   assert.equal(lifecycleServerFrameSchema.safeParse(ACCEPTED).success, true);
+  for (const added of [{ epoch: 2 }, { utterance_id: "u" }, { sample_position: 0 }, { emotion: "happy" }]) {
+    assert.deepEqual(lifecycleServerFrameSchema.parse({ ...ACCEPTED, ...added }), ACCEPTED, JSON.stringify(added));
+  }
+  assert.equal(lifecycleServerFrameSchema.parse({ ...ACCEPTED, status: "audio_finished" }).kind, "external_performance");
   for (const invalid of [
-    { ...ACCEPTED, epoch: 2 }, { ...ACCEPTED, utterance_id: "u" }, { ...ACCEPTED, sample_position: 0 },
-    { ...ACCEPTED, emotion: "happy" }, { ...ACCEPTED, status: "played" }, { ...ACCEPTED, version: 2 },
+    { ...ACCEPTED, version: 2 }, { ...ACCEPTED, status: "" },
     { ...ACCEPTED, audible_checkpoint: 1 }, { ...ACCEPTED, audio_mapping: { sample_rate_hz: 24000 } },
     { ...ACCEPTED, generation_id: "" }, { ...ACCEPTED, session_id: undefined },
   ]) assert.equal(lifecycleServerFrameSchema.safeParse(invalid).success, false, JSON.stringify(invalid));
+});
+
+test("a status this SDK predates is skipped without disturbing its generation", () => {
+  const { observer, seen } = setup();
+  observer.receive(frame("g1", "accepted"));
+  observer.receive(frame("g1", "audio_finished"));
+  observer.receive(frame("g2", "audio_finished"));
+  observer.receive(frame("g1", "audio_released"));
+  assert.deepEqual(seen(), ["g1:accepted", "g1:audio_released"]);
+  assert.deepEqual(KNOWN_EXTERNAL_PERFORMANCE_STATUSES, ["accepted", "dropped", "cancelled", "audio_released"]);
 });
 
 test("each generation follows the producer's own transitions; duplicates and late frames are dropped", () => {

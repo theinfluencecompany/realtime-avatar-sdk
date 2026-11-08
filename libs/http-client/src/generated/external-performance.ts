@@ -8,53 +8,58 @@ const schema1 = z.literal(1);
 
 const schema2 = z.enum(["respond","recovery","initiative"]);
 
-const schema3 = z.enum(["draft","accepted"]);
+const schema3 = z.string().min(1).max(32);
 
-const schema4 = z.literal("external");
+const schema4 = z.union([schema2, schema3]);
 
-const schema5 = z.strictObject({
-  "renderer": schema4,
+const schema5 = z.enum(["draft","accepted"]);
+
+const schema6 = z.literal("external");
+
+const schema7 = z.object({
+  "renderer": schema6,
 });
 
-const schema6 = z.strictObject({
+const schema8 = z.object({
   "session_id": schema0,
   "generation_id": schema0,
   "version": schema1,
-  "purpose": schema2,
-  "admission": schema3,
-  "visible_character": schema5.optional(),
+  "purpose": schema4,
+  "admission": schema5,
+  "visible_character": schema7.optional(),
 });
 
-const schema7 = z.string().min(1).max(200);
+const schema9 = z.string().min(1).max(200);
 
-const schema8 = z.strictObject({
-  "session_id": schema0,
+const schema10 = z.object({
   "generation_id": schema0,
-  "utterance_id": schema7,
+  "utterance_id": schema9,
 });
 
-const schema9 = z.literal("external_performance");
+const schema11 = z.literal("external_performance");
 
-const schema10 = z.enum(["accepted","dropped","cancelled","audio_released"]);
+const schema12 = z.enum(["accepted","dropped","cancelled","audio_released"]);
 
-const schema11 = z.literal("unavailable");
+const schema13 = z.union([schema12, schema3]);
 
-const schema12 = z.literal("unavailable");
+const schema14 = z.literal("unavailable");
 
-const schema13 = z.strictObject({
+const schema15 = z.literal("unavailable");
+
+const schema16 = z.object({
   "session_id": schema0,
   "generation_id": schema0,
-  "kind": schema9,
+  "kind": schema11,
   "version": schema1,
-  "status": schema10,
-  "audible_checkpoint": schema11,
-  "audio_mapping": schema12,
+  "status": schema13,
+  "audible_checkpoint": schema14,
+  "audio_mapping": schema15,
 });
-export const externalTurnContextSchema = schema6 satisfies z.ZodType<Wire["ExternalTurnContext"], Wire["ExternalTurnContext"]>;
+export const externalTurnContextSchema = schema8 satisfies z.ZodType<Wire["ExternalTurnContext"], Wire["ExternalTurnContext"]>;
 export type ExternalTurnContext = z.infer<typeof externalTurnContextSchema>;
 
-export const externalUtteranceSchema = schema8 satisfies z.ZodType<Wire["ExternalUtterance"], Wire["ExternalUtterance"]>;
+export const externalUtteranceSchema = schema10 satisfies z.ZodType<Wire["ExternalUtterance"], Wire["ExternalUtterance"]>;
 export type ExternalUtterance = z.infer<typeof externalUtteranceSchema>;
 
-export const externalPerformanceFrameSchema = schema13 satisfies z.ZodType<Wire["ExternalPerformanceFrame"], Wire["ExternalPerformanceFrame"]>;
+export const externalPerformanceFrameSchema = schema16 satisfies z.ZodType<Wire["ExternalPerformanceFrame"], Wire["ExternalPerformanceFrame"]>;
 export type ExternalPerformanceFrame = z.infer<typeof externalPerformanceFrameSchema>;

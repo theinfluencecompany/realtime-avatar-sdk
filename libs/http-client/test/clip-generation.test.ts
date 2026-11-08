@@ -27,6 +27,7 @@ const specBytes = await readFile(new URL(files[0], root));
 const vendorBytes = await readFile(new URL(files[1], root));
 const recordingBytes = await readFile(new URL(files[3], root));
 const renderBytes = await readFile(new URL(files[7], root));
+const externalLlmBytes = await readFile(new URL(files[8], root));
 const script = "scripts/generate-clip-schema.mjs";
 
 async function fixture() {
@@ -60,15 +61,17 @@ function mockPull(spec: Buffer = specBytes, artifact: Buffer = vendorBytes) {
       assert.deepEqual(calls, ['https://realtimeavatar.ai/openapi.json',
         ${JSON.stringify(`https://realtimeavatar.ai${source}`)},
         'https://realtimeavatar.ai/recording.contract.ts',
-        'https://realtimeavatar.ai/render.contract.ts'].slice(0, calls.length));
-      assert.ok(calls.length <= 4);
+        'https://realtimeavatar.ai/render.contract.ts',
+        'https://realtimeavatar.ai/external-llm.schema.json'].slice(0, calls.length));
+      assert.ok(calls.length <= 5);
       return new Response(Buffer.from(calls.length === 1
         ? ${JSON.stringify(spec.toString("base64"))}
         : calls.length === 2 ? ${JSON.stringify(artifact.toString("base64"))}
         : calls.length === 3 ? ${JSON.stringify(recordingBytes.toString("base64"))}
-        : ${JSON.stringify(renderBytes.toString("base64"))}, 'base64'));
+        : calls.length === 4 ? ${JSON.stringify(renderBytes.toString("base64"))}
+        : ${JSON.stringify(externalLlmBytes.toString("base64"))}, 'base64'));
     };
-    process.on('exit', code => { if (code === 0) assert.equal(calls.length, 4); });
+    process.on('exit', code => { if (code === 0) assert.equal(calls.length, 5); });
   `;
 }
 
@@ -138,8 +141,8 @@ test("canonical numeric field mutations fail generated mapping and public consum
       `import type { ExternalLlm } from "./libs/http-client/src/index.ts";
        declare const decoded: unknown;
        const policy: ExternalLlm = decoded;`,
-      `import type { ExternalPerformanceFrame } from "./libs/http-client/src/generated/external-performance.ts";
-       const status: ExternalPerformanceFrame["status"] = "played";`,
+      `import type { KnownExternalPerformanceStatus } from "./libs/client/src/external-performance.ts";
+       const status: KnownExternalPerformanceStatus = "played";`,
       `import type { UsageSession } from "./libs/http-client/src/index.ts";
        declare const decoded: unknown;
        const row: UsageSession = decoded;`,
@@ -256,6 +259,21 @@ test("offline generation and --check fail on executable tampering before any wri
   } finally { await rm(f.dir, { recursive: true, force: true }); }
 });
 
+test("the vendored external LLM policy is pinned by the served spec, so an edited or stale copy fails", async () => {
+  // The policy is redacted from the mint schema, so without the spec's pin nothing compares it.
+  const f = await fixture();
+  try {
+    const policy = JSON.parse(externalLlmBytes.toString("utf8"));
+    policy.properties.token.maxLength = 8192;
+    await writeFile(join(f.dir, files[8]), `${JSON.stringify(policy, null, 2)}\n`);
+    const before = await f.snapshot();
+    for (const args of [[], ["--check"]]) {
+      await assert.rejects(f.run(args), /x-external-llm-contract SHA-256 mismatch/);
+      assert.deepEqual(await f.snapshot(), before);
+    }
+  } finally { await rm(f.dir, { recursive: true, force: true }); }
+});
+
 test("--pull fetches the spec before its executable from the same trusted origin", async () => {
   const f = await fixture();
   try {
@@ -310,9 +328,8 @@ test("--sync requires an absolute platform root and verifies published bytes aga
       ["apps/web/public/render.contract.ts", renderBytes],
       ["packages/realtime-avatar-contracts/src/product/render.ts", renderBytes],
       ["packages/realtime-avatar-contracts/openapi/realtime-avatar.openapi.json", specBytes],
-      ["packages/realtime-avatar-contracts/internal/job-metadata.schema.json", JSON.stringify({
-        $defs: { ExternalLLMEndpoint: JSON.parse(await readFile(new URL("spec/external-llm.schema.json", root), "utf8")) },
-      })],
+      ["apps/web/public/external-llm.schema.json", externalLlmBytes],
+      ["packages/realtime-avatar-contracts/openapi/external-llm.schema.json", externalLlmBytes],
     ] as const) {
       const target = join(platform, file);
       await mkdir(join(target, ".."), { recursive: true });

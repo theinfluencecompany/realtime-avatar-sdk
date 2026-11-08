@@ -110,9 +110,12 @@ export {
 // `externalPerformance`: an external-LLM call's admission/cancellation, for an app-drawn character.
 export {
   EXTERNAL_PERFORMANCE_TIMING,
+  KNOWN_EXTERNAL_PERFORMANCE_STATUSES,
   type ExternalPerformanceFrame,
   type ExternalPerformanceInvalidation,
   type ExternalPerformanceObserver,
+  type KnownExternalPerformanceStatus,
+  type ObservedExternalPerformanceFrame,
 } from "../external-performance";
 export type { DeclaredInputSource } from "../input-source";
 // Tab-global mic single-flight — the CROSS-call ghost-mic guard (a rapid redial

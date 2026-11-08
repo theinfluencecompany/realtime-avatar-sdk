@@ -38,6 +38,7 @@ import { createConnectionHistoryCollector } from "./connection-history";
 import { useCallMedia, type CallMediaSinks } from "./call-media";
 import {
   createExternalPerformanceObserver,
+  EXTERNAL_PERFORMANCE_KIND,
   type ExternalPerformanceInvalidation,
   type ExternalPerformanceObserver,
   type ExternalPerformanceObserverHandle,
@@ -577,6 +578,11 @@ export type SessionLifecycleApi = {
   onLifecycleData?: (frame: unknown) => void;
   /** Set when `externalPerformance` is: lets the room bridge void pending work on a room event. */
   invalidateExternalPerformance?: (reason: ExternalPerformanceInvalidation) => void;
+  /**
+   * Set when `externalPerformance` is: the room bridge resumes a connection-lost pause from the
+   * same room events and agent identity that paused it, so no batched render can strand it.
+   */
+  resumeExternalPerformance?: () => void;
   phase: SessionLifecyclePhase;
   /** The held grant for RealtimeAvatarLiveKitRoom (null until connecting+). */
   grant: LiveKitSessionGrant | null;
@@ -800,6 +806,9 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
   const invalidateExternalPerformance = useCallback((reason: ExternalPerformanceInvalidation) => {
     if (grantId === grantIdRef.current) performanceRef.current?.invalidate(reason);
   }, [grantId]);
+  const resumeExternalPerformance = useCallback(() => {
+    if (grantId === grantIdRef.current) performanceRef.current?.resume();
+  }, [grantId]);
 
   // --- Recovery sub-machine (mirrors the lifted use-session-recovery hook) ---
   const [recovery, setRecovery] = useState<RecoveryState>({ kind: "connected" });
@@ -850,10 +859,6 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
     const owner = grantIdRef.current;
     setConnectionObservation((prev) => prev.grantId === owner && prev.connected === value ? prev : { grantId: owner, connected: value });
   }, []);
-  // A connection loss pauses observation; the same grant reconnected to its agent resumes it.
-  useEffect(() => {
-    if (connected && agentPresent) performanceRef.current?.resume();
-  }, [connected, agentPresent, grantId]);
   const lastActivityRef = useRef<number>(Date.now());
   // The in-room room-leave handle (room.disconnect), supplied by the bridge. The
   // idle-enforcement effect calls it to actually END the session on idle expiry.
@@ -1398,6 +1403,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
       reset,
       onLifecycleData,
       invalidateExternalPerformance: performanceEnabled ? invalidateExternalPerformance : undefined,
+      resumeExternalPerformance: performanceEnabled ? resumeExternalPerformance : undefined,
     }),
     [
       phase,
@@ -1418,6 +1424,7 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
       reset,
       onLifecycleData,
       invalidateExternalPerformance,
+      resumeExternalPerformance,
       performanceEnabled,
     ],
   );
@@ -1490,7 +1497,7 @@ export type SessionLifecycleRoomBridgeProps = {
     | "registerLeaveRoom"
     | "markActivity"
   > &
-    Partial<Pick<SessionLifecycleApi, "grant" | "invalidateExternalPerformance">> &
+    Partial<Pick<SessionLifecycleApi, "grant" | "invalidateExternalPerformance" | "resumeExternalPerformance">> &
     RealtimeSessionRoomSinks;
 };
 
@@ -1770,7 +1777,7 @@ export function SessionLifecycleRoomBridge({
       if (topic !== RTA_LIFECYCLE_TOPIC) return;
       try {
         const frame: unknown = JSON.parse(decoder.decode(payload));
-        if (typeof frame === "object" && frame !== null && "kind" in frame && frame.kind === "external_performance" &&
+        if (typeof frame === "object" && frame !== null && "kind" in frame && frame.kind === EXTERNAL_PERFORMANCE_KIND &&
           (!assistant.agent || participant !== assistant.agent || !roomMatchesGrant || room.state !== "connected")) return;
         onLifecycleData(frame);
       } catch {
@@ -1798,11 +1805,30 @@ export function SessionLifecycleRoomBridge({
   }, [room, onLifecycleData, assistant.agent, roomMatchesGrant, lifecycle.invalidateExternalPerformance]);
 
   // A full LiveKit restart re-creates every remote participant: losing the bound agent is a
-  // connection loss, resumed by the lifecycle once the same grant is connected to its agent.
+  // connection loss, resumed by the effect below once this grant's room is connected to an agent.
   useEffect(() => {
     if (!assistant.agent) return;
     return () => lifecycle.invalidateExternalPerformance?.("connection_lost");
   }, [assistant.agent, lifecycle.invalidateExternalPerformance]);
+
+  // Resume has the same owners as the pause: the room's own events and the bound agent's
+  // identity. Keying it on rendered booleans instead stranded it whenever they did not change —
+  // an agent replaced within one render, or a reconnect whose intermediate state never rendered.
+  // Declared after the pause above, so a replaced agent is paused before it is resumed.
+  const resumeExternalPerformance = lifecycle.resumeExternalPerformance;
+  useEffect(() => {
+    if (!resumeExternalPerformance) return;
+    const resumeIfBound = (): void => {
+      if (assistant.agent && roomMatchesGrant && room.state === "connected") resumeExternalPerformance();
+    };
+    resumeIfBound();
+    room.on(RoomEvent.Reconnected, resumeIfBound);
+    room.on(RoomEvent.ConnectionStateChanged, resumeIfBound);
+    return () => {
+      room.off(RoomEvent.Reconnected, resumeIfBound);
+      room.off(RoomEvent.ConnectionStateChanged, resumeIfBound);
+    };
+  }, [room, assistant.agent, roomMatchesGrant, resumeExternalPerformance]);
 
   // Outbound client→worker frames (request_graceful_close / extend) over the same
   // reliable lifecycle topic.

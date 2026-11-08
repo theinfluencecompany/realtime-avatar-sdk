@@ -11,23 +11,36 @@ Needs a platform and worker that accept these fields; until they ship, the mint 
   written here: `failClosed: true` (a failed reply is never answered by the platform's model),
   `visibleCharacter: { renderer: "external" }` (the app shows her; `mode: "voice"` stays the
   audio transport, and no mode is added) and `performance: "v1"` (generation identity and
-  admission/cancellation frames). Calls that set none of them send exactly what they did before.
+  admission/cancellation frames). A call that sets none of them sends the same `external_llm`
+  as before, except that a `baseUrl` with surrounding whitespace is sent trimmed, which the
+  platform already did on receipt.
 - **`externalTurnContextSchema` and `externalUtteranceSchema`**, generated from the published
   contract, for the `rta_context` on each request to your endpoint and the `performance` that
-  `verifyVoiceWebhook` now returns (a retry-stable `utterance_id`; `request_id` still changes per
-  attempt).
+  `verifyVoiceWebhook` now returns (a `generation_id` and a retry-stable `utterance_id`;
+  `request_id` still changes per attempt, and the session is the request's own `session_id`).
+  Both drop a field a newer worker adds instead of refusing it, and `purpose` is an open
+  vocabulary: a newer worker's value parses.
 - **`externalPerformance: { onFrame, onInvalidated }`** on `useRealtimeSession`,
-  `useSessionLifecycle` and `AvatarCall` (web and React Native), with `EXTERNAL_PERFORMANCE_TIMING`.
-  Frames are validated against the contract, accepted only from the call's agent, and checked
-  against the worker's per-generation transitions, so duplicates and late frames never arrive. A
-  connection loss voids every pending generation; after the same call reconnects, only new
-  generations are reported. Receiver playout timing is unsupported and nothing here claims it.
+  `useSessionLifecycle` and `AvatarCall` (web and React Native), with `EXTERNAL_PERFORMANCE_TIMING`
+  and `KNOWN_EXTERNAL_PERFORMANCE_STATUSES`. Frames are validated against the contract (a field a
+  newer worker adds is dropped), accepted only from the call's agent, and checked against the
+  worker's per-generation transitions, so duplicates and late frames never arrive; a status this
+  SDK predates is skipped. A connection loss voids every pending generation; once the same call's
+  room is connected to its agent again, including after the agent is replaced or a reconnect too
+  quick to render, new generations are reported. Receiver playout timing is unsupported and
+  nothing here claims it.
 
 ### Changed
 
-- **`llm.baseUrl` and `llm.token` are checked before the request**, with the platform's own
-  bounds (a URL of at most 500 characters, a 16–4096 character token), instead of only by the
-  platform's 4xx.
+- **`llm` is validated before the request, against the platform's own `ExternalLLMEndpoint`
+  definition, instead of only by the platform's 4xx.** The bounds are the platform's exactly: an
+  https URL (any scheme case, surrounding whitespace allowed) of at most 500 characters after
+  trimming, and a 16–4096 character token. A caller the platform accepts is not refused, with two
+  exceptions a JavaScript caller can hit: an `llm` carrying a key the SDK does not define (for
+  example a misspelled `failClosed`, which would otherwise silently leave the fallback on) now
+  throws, and `baseUrl` must be a string, where a `URL` object used to be serialised by
+  `JSON.stringify`. Input that was already invalid now throws a `ZodError` before any request,
+  where it used to produce `RealtimeAvatarHttpError` 400.
 
 ## 0.33.0
 

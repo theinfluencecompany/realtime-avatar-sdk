@@ -608,7 +608,7 @@ const call = await rta.startCall({
   "external" }` keeps `mode: "voice"` audio-only and stops telling the model the caller cannot see
   her. `performance: "v1"` adds `rta_context` (`session_id`, `generation_id`, `purpose`,
   `admission: "draft" | "accepted"`) to each request — validate it with
-  `externalTurnContextSchema` — puts the same identity plus a retry-stable `utterance_id` on each
+  `externalTurnContextSchema` — puts the `generation_id` plus a retry-stable `utterance_id` on each
   voice-webhook sentence, and lets the client pass `externalPerformance: { onFrame,
   onInvalidated }` to `useRealtimeSession`. These fields are unreleased until the platform ships
   them; the README section "Drawing the character yourself" has the whole flow.

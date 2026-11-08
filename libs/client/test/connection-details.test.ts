@@ -6,6 +6,8 @@ import { build } from "esbuild";
 import { ConnectionQuality, ConnectionState, RoomEvent, Track } from "livekit-client";
 import type { AvatarCallProps, AvatarConnectionDetails, SessionLifecycleRoomBridgeProps } from "../src/react/index.ts";
 import type { AvatarConnectionDetails as NativeDetails, SessionLifecycleRoomBridgeProps as NativeBridgeProps } from "../src/react-native/index.ts";
+import { createExternalPerformanceObserver } from "../src/external-performance.ts";
+import { lifecycleServerFrameSchema } from "../src/wire.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Assert<T extends true> = T;
@@ -125,6 +127,53 @@ test("losing the bound agent (a full LiveKit restart re-creates it) pauses obser
   assert.deepEqual(invalidations, ["connection_lost"]);
   f.render();
   assert.deepEqual(invalidations, ["connection_lost"]);
+  f.dispose();
+});
+
+// The real observer behind the real bridge: what the app's onFrame/onInvalidated actually see.
+function observed(f: ReturnType<typeof fixture>) {
+  const seen: string[] = [];
+  const observer = createExternalPerformanceObserver("first", {
+    onFrame: (frame) => { seen.push(`${frame.generation_id}:${frame.status}`); },
+    onInvalidated: (reason) => { seen.push(reason); },
+  });
+  f.controlled.lifecycle.onLifecycleData = (frame) => {
+    const parsed = lifecycleServerFrameSchema.safeParse(frame);
+    if (parsed.success && parsed.data.kind === "external_performance") observer.receive(parsed.data);
+  };
+  f.controlled.lifecycle.invalidateExternalPerformance = (reason) => observer.invalidate(reason);
+  f.controlled.lifecycle.resumeExternalPerformance = () => observer.resume();
+  const send = (generation_id: string) => f.controlled.room.emit(RoomEvent.DataReceived, new TextEncoder().encode(JSON.stringify({
+    kind: "external_performance", version: 1, session_id: "first", generation_id, status: "accepted",
+    audible_checkpoint: "unavailable", audio_mapping: "unavailable",
+  })), f.controlled.assistant.agent, undefined, "rta.lifecycle");
+  return { seen, send };
+}
+
+test("an agent replaced within one render is observed again, not paused for the rest of the call", () => {
+  const f = fixture();
+  const { seen, send } = observed(f);
+  f.render();
+  send("g1");
+  f.controlled.assistant.agent = { ...f.controlled.assistant.agent };
+  f.render();
+  send("g2");
+  assert.deepEqual(seen, ["g1:accepted", "connection_lost", "g2:accepted"]);
+  f.dispose();
+});
+
+test("a reconnect whose intermediate state never renders resumes on the room's own event", () => {
+  const f = fixture();
+  const { seen, send } = observed(f);
+  f.render();
+  f.controlled.room.state = ConnectionState.SignalReconnecting;
+  f.controlled.room.emit(RoomEvent.SignalReconnecting);
+  f.controlled.room.emit(RoomEvent.ConnectionStateChanged, ConnectionState.SignalReconnecting);
+  f.controlled.room.state = ConnectionState.Connected;
+  send("g1"); // still paused: nothing has said the call is back
+  f.controlled.room.emit(RoomEvent.Reconnected);
+  send("g2");
+  assert.deepEqual(seen, ["connection_lost", "g2:accepted"]);
   f.dispose();
 });
 

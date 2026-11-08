@@ -71,14 +71,25 @@ test("a signed voice request verifies and returns the typed contract", async () 
 
 test("signed voice retries preserve logical utterance identity and reject malformed performance", async () => {
   const ts = Math.floor(Date.now() / 1000);
-  const performance = { session_id: "s", generation_id: "g", utterance_id: "u" };
+  const performance = { generation_id: "g", utterance_id: "u" };
   for (const request_id of ["attempt-1", "attempt-2"]) {
     const body = JSON.stringify({ ...VOICE_REQUEST, request_id, performance });
     assert.deepEqual((await verifyVoiceWebhook(body, sign(body, ts), SECRET)).performance, performance);
   }
-  for (const invalid of [{ ...performance, epoch: 1 }, { ...performance, utterance_id: "" }, null]) {
+  for (const invalid of [{ ...performance, utterance_id: "" }, { utterance_id: "u" }, null]) {
     const body = JSON.stringify({ ...VOICE_REQUEST, performance: invalid });
     assert.equal(await webhookCode(() => verifyVoiceWebhook(body, sign(body, ts), SECRET)), "invalid_body");
+  }
+});
+
+test("a field a newer worker adds to performance is dropped, not refused", async () => {
+  // Refusing it would make every shipped receiver answer 400 to every sentence, and repeated
+  // unrecoverable voice failures end the call.
+  const ts = Math.floor(Date.now() / 1000);
+  const performance = { generation_id: "g", utterance_id: "u" };
+  for (const added of [{ sample_offset: 0 }, { session_id: VOICE_REQUEST.session_id }]) {
+    const body = JSON.stringify({ ...VOICE_REQUEST, performance: { ...performance, ...added } });
+    assert.deepEqual((await verifyVoiceWebhook(body, sign(body, ts), SECRET)).performance, performance);
   }
 });
 

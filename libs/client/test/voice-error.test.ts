@@ -158,20 +158,24 @@ test("the shipped hook observes one grant: a reconnect voids pending work and re
   await act(async () => {
     session?.onLifecycleData(performance("sess_1", "g1", "accepted"));
     session?.onLifecycleData(performance("sess_1", "g1", "accepted"));
-    session?.onLifecycleData({ ...performance("sess_1", "g1", "audio_released"), epoch: 1 });
+    session?.onLifecycleData({ ...performance("sess_1", "g0", "accepted"), epoch: 1 });
   });
-  assert.deepEqual(seen, ["sess_1/g1:accepted"], "a duplicate or a non-contract field reached the app");
+  // A newer worker's added field is dropped, never a reason to lose the frame.
+  assert.deepEqual(seen, ["sess_1/g1:accepted", "sess_1/g0:accepted"], "a duplicate reached the app");
 
   // LiveKit's in-place reconnect: the grant is kept, and everything already admitted is void.
+  // Resuming is the room bridge's, from the room's own events (connection-details.test.ts); a
+  // rendered state alone does not resume it.
   await act(async () => session?.onConnectionStateChange(ConnectionState.SignalReconnecting));
   await act(async () => session?.onLifecycleData(performance("sess_1", "g2", "accepted")));
   await act(async () => session?.onConnectionStateChange(ConnectionState.Connected));
+  await act(async () => session?.resumeExternalPerformance?.());
   await act(async () => {
     session?.onLifecycleData(performance("sess_1", "g1", "audio_released"));
     session?.onLifecycleData(performance("sess_1", "g2", "audio_released"));
     session?.onLifecycleData(performance("sess_1", "g3", "accepted"));
   });
-  assert.deepEqual(seen, ["sess_1/g1:accepted", "sess_1/g3:accepted"]);
+  assert.deepEqual(seen, ["sess_1/g1:accepted", "sess_1/g0:accepted", "sess_1/g3:accepted"]);
   assert.deepEqual(invalidations, ["connection_lost"]);
 
   // A redial is a new grant. The old grant's sink and invalidation reach nothing.
@@ -186,7 +190,7 @@ test("the shipped hook observes one grant: a reconnect voids pending work and re
     session?.onLifecycleData(performance("sess_1", "g5", "accepted"));
     session?.onLifecycleData(performance("sess_2", "g6", "accepted"));
   });
-  assert.deepEqual(seen.slice(2), ["sess_2/g6:accepted"]);
+  assert.deepEqual(seen.slice(3), ["sess_2/g6:accepted"]);
 
   // The worker's own `ended` is final: nothing after it reaches the app, and end() adds nothing.
   await act(async () => {
@@ -194,7 +198,7 @@ test("the shipped hook observes one grant: a reconnect voids pending work and re
     session?.onLifecycleData(performance("sess_2", "g7", "accepted"));
   });
   await act(async () => session?.end());
-  assert.deepEqual(seen.slice(2), ["sess_2/g6:accepted"]);
+  assert.deepEqual(seen.slice(3), ["sess_2/g6:accepted"]);
   assert.deepEqual(invalidations, ["connection_lost", "binding_changed", "ended"]);
   await act(async () => renderer?.unmount());
 });

@@ -34,8 +34,7 @@ const schema9 = z.string().min(1).max(200);
 
 const schema10 = z.string().min(1).max(200);
 
-const schema11 = z.strictObject({
-  "session_id": schema9,
+const schema11 = z.object({
   "generation_id": schema9,
   "utterance_id": schema10,
 });

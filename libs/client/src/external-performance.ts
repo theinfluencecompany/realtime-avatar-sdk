@@ -10,6 +10,9 @@ import { externalPerformanceFrameSchema, type ExternalPerformanceFrame } from ".
 
 export type { ExternalPerformanceFrame };
 
+/** The frame's `kind`, for the room bridge's sender check before full validation. */
+export const EXTERNAL_PERFORMANCE_KIND = externalPerformanceFrameSchema.shape.kind.value;
+
 /** What a player may take from these frames: admission and cancellation, never playout timing. */
 export const EXTERNAL_PERFORMANCE_TIMING = Object.freeze({
   receiverPlayout: "unsupported",
@@ -24,12 +27,27 @@ export const EXTERNAL_PERFORMANCE_TIMING = Object.freeze({
  */
 export type ExternalPerformanceInvalidation = "connection_lost" | "ended" | "binding_changed";
 
+const statusSchema = externalPerformanceFrameSchema.shape.status;
+/**
+ * The statuses whose transitions this SDK knows: the enum arm of the contract's open `status`.
+ * A status a newer worker adds still parses, and the observer skips it rather than guessing.
+ */
+export const KNOWN_EXTERNAL_PERFORMANCE_STATUSES = Object.freeze([...statusSchema.options[0].options]);
+export type KnownExternalPerformanceStatus = (typeof KNOWN_EXTERNAL_PERFORMANCE_STATUSES)[number];
+/** What `onFrame` receives: a contract frame whose status is one this SDK knows. */
+export type ObservedExternalPerformanceFrame = ExternalPerformanceFrame & { status: KnownExternalPerformanceStatus };
+
 export type ExternalPerformanceObserver = {
-  onFrame: (frame: ExternalPerformanceFrame) => void;
+  onFrame: (frame: ObservedExternalPerformanceFrame) => void;
   onInvalidated: (reason: ExternalPerformanceInvalidation) => void;
 };
 
-type Status = ExternalPerformanceFrame["status"];
+const knownStatuses = new Set<string>(KNOWN_EXTERNAL_PERFORMANCE_STATUSES);
+function isObservable(frame: ExternalPerformanceFrame): frame is ObservedExternalPerformanceFrame {
+  return knownStatuses.has(frame.status);
+}
+
+type Status = KnownExternalPerformanceStatus;
 type Ledger = Status | "unseen" | "retired";
 
 // The worker's own transitions, as the platform documents them: admission or a refused draft
@@ -62,7 +80,7 @@ export function createExternalPerformanceObserver(sessionId: string, callbacks: 
   let state: "live" | "paused" | "closed" = "live";
   return {
     receive(frame: ExternalPerformanceFrame): void {
-      if (state !== "live" || frame.session_id !== sessionId) return;
+      if (state !== "live" || frame.session_id !== sessionId || !isObservable(frame)) return;
       const previous = generations.get(frame.generation_id) ?? "unseen";
       if (!NEXT[previous].has(frame.status)) return;
       if (previous === "unseen" && generations.size >= LEDGER_LIMIT) {

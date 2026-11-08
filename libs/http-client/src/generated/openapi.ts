@@ -1281,7 +1281,6 @@ export interface components {
             /** @constant */
             version: 1;
             performance?: {
-                session_id: string;
                 generation_id: string;
                 /** @description Logical sentence identity, unchanged across HTTP retries; not request_id. */
                 utterance_id: string;
@@ -1315,8 +1314,8 @@ export interface components {
             generation_id: string;
             /** @constant */
             version: 1;
-            /** @enum {string} */
-            purpose: "respond" | "recovery" | "initiative";
+            /** @description Why this turn is generated. Open: answer a purpose you do not know as you would respond. */
+            purpose: ("respond" | "recovery" | "initiative") | string;
             /** @enum {string} */
             admission: "draft" | "accepted";
             visible_character?: {
@@ -1325,7 +1324,6 @@ export interface components {
             };
         };
         ExternalUtterance: {
-            session_id: string;
             generation_id: string;
             /** @description Logical sentence identity, unchanged across HTTP retries; not request_id. */
             utterance_id: string;
@@ -1337,8 +1335,8 @@ export interface components {
             kind: "external_performance";
             /** @constant */
             version: 1;
-            /** @enum {string} */
-            status: "accepted" | "dropped" | "cancelled" | "audio_released";
+            /** @description Open: ignore a status you do not know. */
+            status: ("accepted" | "dropped" | "cancelled" | "audio_released") | string;
             /**
              * @description No receiver audible position or heard-text receipt exists in this producer version.
              * @constant
