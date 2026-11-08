@@ -115,8 +115,8 @@
     "build": "tsup"
   },
   "devDependencies": {
-    "tsup": "^8.5.0",
-    "typescript": "^5.9.2",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
     "@livekit/components-react": "2.9.21",
     "@livekit/react-native": "3.0.0",
     "@livekit/react-native-webrtc": "144.2.0",

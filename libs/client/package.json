@@ -45,6 +45,6 @@
     "react-dom": "19.2.7",
     "react-native": "0.81.5",
     "react-test-renderer": "19.2.7",
-    "typescript": "^5.9.2"
+    "typescript": "5.9.3"
   }
 }
