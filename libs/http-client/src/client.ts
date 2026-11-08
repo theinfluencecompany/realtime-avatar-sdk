@@ -20,6 +20,7 @@ import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 import { transcriptionToWire } from "./generated/transcription.ts";
 import { contentPolicySchema } from "./generated/content-policy.ts";
 import { voiceWebhookToWire } from "./generated/voice-webhook.ts";
+import { externalLlmToWire } from "./generated/external-llm.ts";
 import { listUsageSessionsResponseSchema, toSessionsPage } from "./generated/usage-sessions.ts";
 import type {
   Asset,
@@ -175,9 +176,9 @@ export class RealtimeAvatar {
     // mint carried this capability.
     if (options.clientTools) body.capabilities = ["client_tools"];
     if (options.llm !== undefined) {
-      const { backend, model, baseUrl, token } = options.llm;
+      const { backend, model, ...endpoint } = options.llm;
       body.llm = (model === undefined ? { backend } : { backend, model }) satisfies NonNullable<components["schemas"]["LiveKitSessionRequest"]["llm"]>;
-      body.external_llm = { base_url: baseUrl, token };
+      body.external_llm = externalLlmToWire(endpoint);
     }
     if (options.transcript !== undefined) {
       body.transcript_webhook = { url: options.transcript.url, secret: options.transcript.secret };

@@ -2717,6 +2717,33 @@
             "type": "number",
             "const": 1
           },
+          "performance": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "generation_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "utterance_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Logical sentence identity, unchanged across HTTP retries; not request_id."
+              }
+            },
+            "required": [
+              "session_id",
+              "generation_id",
+              "utterance_id"
+            ],
+            "additionalProperties": false
+          },
           "request_id": {
             "type": "string",
             "minLength": 1,
@@ -2804,6 +2831,143 @@
           "client_metadata"
         ],
         "description": "One sentence to synthesize, signed with voice_webhook.secret. Reply 200 with streamed audio."
+      },
+      "ExternalTurnContext": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "generation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "respond",
+              "recovery",
+              "initiative"
+            ]
+          },
+          "admission": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "accepted"
+            ]
+          },
+          "visible_character": {
+            "type": "object",
+            "properties": {
+              "renderer": {
+                "type": "string",
+                "const": "external"
+              }
+            },
+            "required": [
+              "renderer"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "session_id",
+          "generation_id",
+          "version",
+          "purpose",
+          "admission"
+        ],
+        "additionalProperties": false
+      },
+      "ExternalUtterance": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "generation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "utterance_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Logical sentence identity, unchanged across HTTP retries; not request_id."
+          }
+        },
+        "required": [
+          "session_id",
+          "generation_id",
+          "utterance_id"
+        ],
+        "additionalProperties": false
+      },
+      "ExternalPerformanceFrame": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "generation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "kind": {
+            "type": "string",
+            "const": "external_performance"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "dropped",
+              "cancelled",
+              "audio_released"
+            ]
+          },
+          "audible_checkpoint": {
+            "type": "string",
+            "const": "unavailable",
+            "description": "No receiver audible position or heard-text receipt exists in this producer version."
+          },
+          "audio_mapping": {
+            "type": "string",
+            "const": "unavailable",
+            "description": "No utterance-to-receiver sample mapping exists. Release is permission, not playout."
+          }
+        },
+        "required": [
+          "session_id",
+          "generation_id",
+          "kind",
+          "version",
+          "status",
+          "audible_checkpoint",
+          "audio_mapping"
+        ],
+        "additionalProperties": false
       },
       "VoiceWebhookErrorCode": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

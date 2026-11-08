@@ -76,6 +76,58 @@ function room() {
   };
 }
 
+test("the real room bridge refuses spoofed performance and synchronously invalidates recovery", () => {
+  const f = fixture();
+  const frames: unknown[] = [];
+  const invalidations: string[] = [];
+  f.controlled.lifecycle.onLifecycleData = frame => { frames.push(frame); };
+  f.controlled.lifecycle.invalidateExternalPerformance = reason => { invalidations.push(reason); };
+  f.render();
+  const payload = new TextEncoder().encode(JSON.stringify({ kind: "external_performance" }));
+  f.controlled.room.emit(RoomEvent.DataReceived, payload, {}, undefined, "rta.lifecycle");
+  assert.equal(frames.length, 0);
+  f.controlled.room.emit(RoomEvent.DataReceived, payload, f.controlled.assistant.agent, undefined, "rta.lifecycle");
+  assert.equal(frames.length, 1);
+  f.controlled.room.emit(RoomEvent.SignalReconnecting);
+  assert.deepEqual(invalidations, ["connection_lost"]);
+  f.controlled.room.state = ConnectionState.Reconnecting;
+  f.controlled.room.emit(RoomEvent.DataReceived, payload, f.controlled.assistant.agent, undefined, "rta.lifecycle");
+  assert.equal(frames.length, 1);
+  f.dispose();
+});
+
+test("initial connection does not retire the external observer before its first frame", () => {
+  const f = fixture();
+  const invalidations: string[] = [];
+  f.controlled.room.state = ConnectionState.Disconnected;
+  f.controlled.lifecycle.onLifecycleData = () => {};
+  f.controlled.lifecycle.invalidateExternalPerformance = reason => { invalidations.push(reason); };
+  f.render();
+  f.controlled.room.state = ConnectionState.Connecting;
+  f.controlled.room.emit(RoomEvent.ConnectionStateChanged);
+  f.controlled.room.state = ConnectionState.Connected;
+  f.controlled.room.emit(RoomEvent.ConnectionStateChanged);
+  assert.deepEqual(invalidations, []);
+  f.controlled.room.state = ConnectionState.Reconnecting;
+  f.controlled.room.emit(RoomEvent.ConnectionStateChanged);
+  assert.deepEqual(invalidations, ["connection_lost"]);
+  f.dispose();
+});
+
+test("losing the bound agent (a full LiveKit restart re-creates it) pauses observation, it does not end it", () => {
+  const f = fixture();
+  const invalidations: string[] = [];
+  f.controlled.lifecycle.onLifecycleData = () => {};
+  f.controlled.lifecycle.invalidateExternalPerformance = reason => { invalidations.push(reason); };
+  f.render();
+  f.controlled.assistant.agent = { ...f.controlled.assistant.agent };
+  f.render();
+  assert.deepEqual(invalidations, ["connection_lost"]);
+  f.render();
+  assert.deepEqual(invalidations, ["connection_lost"]);
+  f.dispose();
+});
+
 function source(quality: ConnectionQuality) {
   const publication: { track?: { streamState: Track.StreamState } } = { track: { streamState: Track.StreamState.Active } };
   return {
@@ -126,7 +178,7 @@ function fixture(windowValue?: object) {
   const module: { exports: { render?: () => void; renderAvatar?: () => void; bridge?: unknown } } = { exports: {} };
   runInNewContext(bundle.outputFiles[0].text, {
     fixture: controlled, module, exports: module.exports, require: createRequire(import.meta.url),
-    window: windowValue, AbortSignal,
+    window: windowValue, AbortSignal, TextDecoder,
     fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
       uploads.push(new Request(input, init));
       return new Response(null, { status: 204 });

@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+Needs a platform and worker that accept these fields; until they ship, the mint refuses them.
+
+### Added
+
+- **An app that draws the character itself, with its own model.** `llm` takes three optional,
+  server-only fields, generated from the platform's `ExternalLLMEndpoint` definition rather than
+  written here: `failClosed: true` (a failed reply is never answered by the platform's model),
+  `visibleCharacter: { renderer: "external" }` (the app shows her; `mode: "voice"` stays the
+  audio transport, and no mode is added) and `performance: "v1"` (generation identity and
+  admission/cancellation frames). Calls that set none of them send exactly what they did before.
+- **`externalTurnContextSchema` and `externalUtteranceSchema`**, generated from the published
+  contract, for the `rta_context` on each request to your endpoint and the `performance` that
+  `verifyVoiceWebhook` now returns (a retry-stable `utterance_id`; `request_id` still changes per
+  attempt).
+- **`externalPerformance: { onFrame, onInvalidated }`** on `useRealtimeSession`,
+  `useSessionLifecycle` and `AvatarCall` (web and React Native), with `EXTERNAL_PERFORMANCE_TIMING`.
+  Frames are validated against the contract, accepted only from the call's agent, and checked
+  against the worker's per-generation transitions, so duplicates and late frames never arrive. A
+  connection loss voids every pending generation; after the same call reconnects, only new
+  generations are reported. Receiver playout timing is unsupported and nothing here claims it.
+
+### Changed
+
+- **`llm.baseUrl` and `llm.token` are checked before the request**, with the platform's own
+  bounds (a URL of at most 500 characters, a 16–4096 character token), instead of only by the
+  platform's 4xx.
+
 ## 0.33.0
 
 ### Added

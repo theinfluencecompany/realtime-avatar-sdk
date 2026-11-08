@@ -69,6 +69,19 @@ test("a signed voice request verifies and returns the typed contract", async () 
   assert.equal(`${text}@${rate}`, "Hello there.@24000");
 });
 
+test("signed voice retries preserve logical utterance identity and reject malformed performance", async () => {
+  const ts = Math.floor(Date.now() / 1000);
+  const performance = { session_id: "s", generation_id: "g", utterance_id: "u" };
+  for (const request_id of ["attempt-1", "attempt-2"]) {
+    const body = JSON.stringify({ ...VOICE_REQUEST, request_id, performance });
+    assert.deepEqual((await verifyVoiceWebhook(body, sign(body, ts), SECRET)).performance, performance);
+  }
+  for (const invalid of [{ ...performance, epoch: 1 }, { ...performance, utterance_id: "" }, null]) {
+    const body = JSON.stringify({ ...VOICE_REQUEST, performance: invalid });
+    assert.equal(await webhookCode(() => verifyVoiceWebhook(body, sign(body, ts), SECRET)), "invalid_body");
+  }
+});
+
 test("a field from a newer worker is dropped, not refused", async () => {
   const ts = Math.floor(Date.now() / 1000);
   const body = JSON.stringify({ ...VOICE_REQUEST, emotion_hint: "warm", output: { ...VOICE_REQUEST.output, bit_depth: 16 } });

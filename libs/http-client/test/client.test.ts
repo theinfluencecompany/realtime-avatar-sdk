@@ -402,6 +402,36 @@ test("llm routes the call's turns to your endpoint, and only when asked for", as
   assert.ok(!("external_llm" in (off.seen.body ?? {})));
 });
 
+test("external rendering is an opt-in server policy on a normal voice call", async () => {
+  const on = stub({ body: GRANT });
+  const llm = {
+    backend: "external", baseUrl: "https://brain.example.test/v1", token: "per-call-token-0123456789",
+    failClosed: true, visibleCharacter: { renderer: "external" }, performance: "v1",
+  } as const;
+  await new RealtimeAvatar({ apiKey: "k", fetch: on.fetchImpl })
+    .startCall({ avatarId: "ava_1", mode: "voice", llm });
+  assert.equal(on.seen.body?.mode, "voice");
+  assert.equal(on.seen.body?.stt_mode, "server");
+  assert.deepEqual(on.seen.body?.external_llm, {
+    base_url: llm.baseUrl, token: llm.token, fail_closed: true,
+    visible_character: { renderer: "external" }, performance: "v1",
+  });
+});
+
+test("invalid external opt-ins are rejected before any HTTP request", async () => {
+  for (const invalid of [
+    { failClosed: null }, { performance: "v2" }, { visibleCharacter: { renderer: "live2d" } },
+    { visibleCharacter: { renderer: "external", emotion: "happy" } }, { epoch: 2 },
+  ]) {
+    const on = stub({ body: GRANT });
+    const llm = { backend: "external", baseUrl: "https://brain.example.test/v1", token: "per-call-token-0123456789", ...invalid };
+    // This exercises a JavaScript caller; the typed API separately rejects these in the fixture guard.
+    const rta = new RealtimeAvatar({ apiKey: "k", fetch: on.fetchImpl });
+    await assert.rejects(() => Reflect.apply(rta.startCall, rta, [{ avatarId: "ava_1", llm }]));
+    assert.equal(on.seen.body, undefined);
+  }
+});
+
 test("voiceWebhook rides the mint as voice_webhook in the wire's spelling, and only when asked for", async () => {
   const on = stub({ body: GRANT });
   await new RealtimeAvatar({ apiKey: "k", fetch: on.fetchImpl }).startCall({

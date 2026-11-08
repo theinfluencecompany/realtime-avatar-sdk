@@ -157,6 +157,99 @@ and the exact verified dependency tuple are documented in the [package README](.
 
 ---
 
+## Drawing the character yourself, with your own model
+
+For an app that renders its own character (a Live2D rig, a sprite, anything) and answers her
+turns from its own model, while the platform keeps listening, turn-taking, interruption and her
+voice. **Unreleased:** it needs a platform and worker that accept these fields, which have not
+shipped yet; until they do, the mint refuses them.
+
+There is no new mode. `mode: "voice"` is the audio transport, as always; that YOUR app shows her
+is a separate, server-owned fact. A call that sets none of the fields below behaves exactly as
+before.
+
+**1. Your server chooses the policy.** Never take any of it from a browser request.
+
+```ts
+const call = await rta.startCall({
+  avatarId, mode: "voice", maxSeconds,
+  // Her voice: either a Fish voice the platform renders…
+  voice: { provider: "fish", voice_id: character.voiceId },
+  // …or your own synthesis endpoint (one or the other; both is a 422):
+  // voiceWebhook: { url: "https://api.you.example/voice", secret: VOICE_SECRET },
+  llm: {
+    backend: "external", baseUrl: "https://api.you.example/brain/v1", token: perCallToken,
+    failClosed: true,                           // a failed reply is never answered by another model
+    visibleCharacter: { renderer: "external" }, // your app draws her; the call stays audio-only
+    performance: "v1",                          // generation identity + admission/cancellation
+  },
+});
+```
+
+**2. Your model endpoint reads `rta_context`.** Each `POST {baseUrl}/chat/completions` carries
+it; validate it once, at that boundary, with the exported schema:
+
+```ts
+import { externalTurnContextSchema } from "realtime-avatar";
+const context = externalTurnContextSchema.safeParse(body.rta_context);
+// { session_id, generation_id, version: 1, purpose: "respond" | "recovery" | "initiative",
+//   admission: "draft" | "accepted", visible_character? }
+```
+
+A `draft` is speculative: the worker may still drop it, and no second request tells your server
+when it is admitted — that arrives on the client as an `accepted` frame. Key whatever you prepare
+(an expression plan, a motion choice) by `generation_id`, and keep it on your side: the SDK
+carries no expression vocabulary and no rig logic.
+
+With `voiceWebhook`, `verifyVoiceWebhook(...).performance` carries the same `session_id` and
+`generation_id`, plus an `utterance_id` for that sentence. A retry keeps the `utterance_id` and
+changes `request_id`, so key sentences by `utterance_id`, never by `request_id` or by text. A Fish
+voice has no such callback.
+
+**3. Your client observes each generation.** `useRealtimeSession`, `useSessionLifecycle` and
+`AvatarCall` (and the same hooks on `realtime-avatar/react-native`) take an optional observer:
+
+```ts
+useRealtimeSession({
+  client, session,
+  externalPerformance: {
+    onFrame: ({ generation_id, status }) => player.generation(generation_id, status),
+    onInvalidated: () => player.discardAll(),
+  },
+});
+```
+
+| Event | What the worker means | What your player does |
+| --- | --- | --- |
+| `accepted` | It admitted this generation | Mark what you prepared for `generation_id` as admitted |
+| `dropped` | It refused this draft | Discard it |
+| `audio_released` | Its audio gate let the first audio out | Nothing about timing: a permission, not a sound |
+| `cancelled` | Admitted work was cut: barge-in, failure, close | Discard it, and stop anything started for it |
+| `onInvalidated("connection_lost")` | Frames may have been lost | Discard everything; frames resume for new generations once reconnected |
+| `onInvalidated("ended" \| "binding_changed")` | This call, or this grant, is over | Discard everything |
+
+Frames are validated against the platform contract (an unknown field is refused, not dropped),
+accepted only from the call's agent on the room the grant names, and checked against the
+worker's own transitions per generation: admission or refusal first, release only after
+admission, cancellation only of admitted work, and nothing after a terminal status. Duplicates
+and late frames never reach you. After a connection loss, the generations seen before it stay
+void for good, because nothing replays what was lost.
+
+**Nothing here says when she is heard.** The worker marks `audible_checkpoint` and
+`audio_mapping` as `"unavailable"`, and public LiveKit APIs expose no receiver playout position
+for a generation or a sentence, so `EXTERNAL_PERFORMANCE_TIMING.receiverPlayout` is
+`"unsupported"`. A frame's arrival is not playback, and no frame may start an animation or mark
+text as heard. When a prepared performance becomes visible is your player's decision; the timing
+source available today is the received audio itself (render from its level, as for any
+`voice`-mode visuals). There is also no client interrupt command: she is cut by the caller
+speaking or by ending the call, as before.
+
+The three frame and context schemas come from the platform's published contract. The endpoint
+fields come from its `ExternalLLMEndpoint` definition, which the published document redacts
+because only a server may send it: `spec/external-llm.schema.json` vendors exactly that
+definition. Both regenerate with `node scripts/generate-clip-schema.mjs --sync <platform root>`
+and are verified by `npm run spec:verify`; never edit the generated files.
+
 ## Examples
 
 Every example runs standalone — copy one out of the repo and it still works.

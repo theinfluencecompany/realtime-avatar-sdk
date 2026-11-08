@@ -19,6 +19,9 @@ const files = [
   "libs/http-client/src/generated/transcription.ts",
   "libs/http-client/src/generated/usage-sessions.ts",
   "libs/http-client/src/generated/render.ts",
+  "spec/external-llm.schema.json",
+  "libs/http-client/src/generated/external-llm.ts",
+  "libs/http-client/src/generated/external-performance.ts",
 ] as const;
 const specBytes = await readFile(new URL(files[0], root));
 const vendorBytes = await readFile(new URL(files[1], root));
@@ -132,6 +135,11 @@ test("canonical numeric field mutations fail generated mapping and public consum
     await compile();
     const safeConsumer = await readFile(join(f.dir, "consumer.ts"), "utf8");
     for (const unsafe of [
+      `import type { ExternalLlm } from "./libs/http-client/src/index.ts";
+       declare const decoded: unknown;
+       const policy: ExternalLlm = decoded;`,
+      `import type { ExternalPerformanceFrame } from "./libs/http-client/src/generated/external-performance.ts";
+       const status: ExternalPerformanceFrame["status"] = "played";`,
       `import type { UsageSession } from "./libs/http-client/src/index.ts";
        declare const decoded: unknown;
        const row: UsageSession = decoded;`,
@@ -302,6 +310,9 @@ test("--sync requires an absolute platform root and verifies published bytes aga
       ["apps/web/public/render.contract.ts", renderBytes],
       ["packages/realtime-avatar-contracts/src/product/render.ts", renderBytes],
       ["packages/realtime-avatar-contracts/openapi/realtime-avatar.openapi.json", specBytes],
+      ["packages/realtime-avatar-contracts/internal/job-metadata.schema.json", JSON.stringify({
+        $defs: { ExternalLLMEndpoint: JSON.parse(await readFile(new URL("spec/external-llm.schema.json", root), "utf8")) },
+      })],
     ] as const) {
       const target = join(platform, file);
       await mkdir(join(target, ".."), { recursive: true });

@@ -1,6 +1,10 @@
 export { RealtimeAvatar, type RealtimeAvatarOptions, type StartCallOptions } from "./client.ts";
 export { RealtimeAvatarError, RealtimeAvatarHttpError, RealtimeAvatarWebhookError, type WebhookVerificationErrorCode } from "./errors.ts";
 export { verifyTranscript, verifyVoiceWebhook } from "./webhook.ts";
+export {
+  externalTurnContextSchema, externalUtteranceSchema,
+  type ExternalTurnContext, type ExternalUtterance,
+} from "./generated/external-performance.ts";
 export { isQueued } from "./types.ts";
 export { clipLibraryDeclarationSchema } from "./generated/clip-library-schema.ts";
 export { fishTtsModelSchema, DEFAULT_FISH_TTS_MODEL, type FishTtsModel, FISH_DELIVERY_MODELS, type FishDelivery } from "./generated/fish-tts-model.ts";

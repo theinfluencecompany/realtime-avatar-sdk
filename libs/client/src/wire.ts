@@ -16,6 +16,7 @@ import { connectionHistoryGrantSchema } from "../../http-client/src/generated/co
 import { transcriptionOptionsSchema, transcriptionWireSchema, transcriptionToWire } from "../../http-client/src/generated/transcription.ts";
 import { contentPolicySchema } from "../../http-client/src/generated/content-policy.ts";
 import { voiceErrorFrameSchema as contractVoiceErrorFrameSchema } from "../../http-client/src/generated/voice-error-frame.ts";
+import { externalPerformanceFrameSchema } from "../../http-client/src/generated/external-performance.ts";
 import {
   DEFAULT_FISH_TTS_MODEL,
   FISH_DELIVERY_MODELS,
@@ -508,6 +509,7 @@ export const lifecycleServerFrameSchema = z.discriminatedUnion("kind", [
   behaviorStateFrameSchema,
   clipAckFrameSchema,
   voiceErrorFrameSchema,
+  externalPerformanceFrameSchema,
 ]);
 
 export const liveKitCapacitySnapshotSchema = z

@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import { build } from "esbuild";
+import { ConnectionState } from "livekit-client";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { lifecycleServerFrameSchema } from "../src/wire.ts";
@@ -10,6 +11,9 @@ import type {
   AvatarCallHandle,
   AvatarCallProps,
   AvatarSessionClient,
+  ExternalPerformanceFrame,
+  ExternalPerformanceInvalidation,
+  ExternalPerformanceObserver,
   RealtimeSessionApi,
   VoiceError,
   useRealtimeSession as UseRealtimeSession,
@@ -117,6 +121,101 @@ test("useRealtimeSession reports each voice error and keeps the last one", async
 
   await act(async () => session?.reset());
   assert.equal(session?.voiceError, null, "a reset call kept the previous call's voice error");
+  await act(async () => renderer?.unmount());
+});
+
+// ── externalPerformance: an external-LLM call's admission/cancellation, through the shipped hook ──
+const performance = (session_id: string, generation_id: string, status: ExternalPerformanceFrame["status"]) => ({
+  kind: "external_performance", version: 1, session_id, generation_id, status,
+  audible_checkpoint: "unavailable", audio_mapping: "unavailable",
+}) as const satisfies ExternalPerformanceFrame;
+
+test("the shipped hook observes one grant: a reconnect voids pending work and resumes only for new generations", async () => {
+  const seen: string[] = [];
+  const invalidations: ExternalPerformanceInvalidation[] = [];
+  let session: RealtimeSessionApi | undefined;
+  let mints = 0;
+  const minting: AvatarSessionClient = {
+    ...client,
+    createLiveKitSessionOrBusy: async (request, options) => {
+      const minted = await client.createLiveKitSessionOrBusy(request, options);
+      return minted.status === "ready" ? { ...minted, grant: { ...minted.grant, session_id: `sess_${++mints}` } } : minted;
+    },
+  };
+  function Call(): null {
+    session = sdk.useRealtimeSession({
+      client: minting, session: { avatarId: "ava_test", mode: "voice" },
+      externalPerformance: {
+        onFrame: (frame) => { seen.push(`${frame.session_id}/${frame.generation_id}:${frame.status}`); },
+        onInvalidated: (reason) => { invalidations.push(reason); },
+      },
+    });
+    return null;
+  }
+  let renderer: ReturnType<typeof create> | undefined;
+  await act(async () => { renderer = create(createElement(Call)); });
+  await act(async () => { session?.onConnected(); session?.setAgentPresent(true); });
+  await act(async () => {
+    session?.onLifecycleData(performance("sess_1", "g1", "accepted"));
+    session?.onLifecycleData(performance("sess_1", "g1", "accepted"));
+    session?.onLifecycleData({ ...performance("sess_1", "g1", "audio_released"), epoch: 1 });
+  });
+  assert.deepEqual(seen, ["sess_1/g1:accepted"], "a duplicate or a non-contract field reached the app");
+
+  // LiveKit's in-place reconnect: the grant is kept, and everything already admitted is void.
+  await act(async () => session?.onConnectionStateChange(ConnectionState.SignalReconnecting));
+  await act(async () => session?.onLifecycleData(performance("sess_1", "g2", "accepted")));
+  await act(async () => session?.onConnectionStateChange(ConnectionState.Connected));
+  await act(async () => {
+    session?.onLifecycleData(performance("sess_1", "g1", "audio_released"));
+    session?.onLifecycleData(performance("sess_1", "g2", "audio_released"));
+    session?.onLifecycleData(performance("sess_1", "g3", "accepted"));
+  });
+  assert.deepEqual(seen, ["sess_1/g1:accepted", "sess_1/g3:accepted"]);
+  assert.deepEqual(invalidations, ["connection_lost"]);
+
+  // A redial is a new grant. The old grant's sink and invalidation reach nothing.
+  const oldSink = session?.onLifecycleData;
+  const oldInvalidate = session?.invalidateExternalPerformance;
+  await act(async () => session?.reconnect());
+  assert.equal(session?.grant?.session_id, "sess_2");
+  assert.deepEqual(invalidations, ["connection_lost", "binding_changed"]);
+  await act(async () => {
+    oldInvalidate?.("ended");
+    oldSink?.(performance("sess_1", "g4", "accepted"));
+    session?.onLifecycleData(performance("sess_1", "g5", "accepted"));
+    session?.onLifecycleData(performance("sess_2", "g6", "accepted"));
+  });
+  assert.deepEqual(seen.slice(2), ["sess_2/g6:accepted"]);
+
+  // The worker's own `ended` is final: nothing after it reaches the app, and end() adds nothing.
+  await act(async () => {
+    session?.onLifecycleData({ kind: "ended", reason: "session_cap" });
+    session?.onLifecycleData(performance("sess_2", "g7", "accepted"));
+  });
+  await act(async () => session?.end());
+  assert.deepEqual(seen.slice(2), ["sess_2/g6:accepted"]);
+  assert.deepEqual(invalidations, ["connection_lost", "binding_changed", "ended"]);
+  await act(async () => renderer?.unmount());
+});
+
+test("a call without externalPerformance is unchanged: no observer, no bridge hook", async () => {
+  const errors: VoiceError[] = [];
+  let session: RealtimeSessionApi | undefined;
+  function Call(): null {
+    session = sdk.useRealtimeSession({
+      client, session: { avatarId: "ava_test", mode: "voice" }, onVoiceError: (error) => errors.push(error),
+    });
+    return null;
+  }
+  let renderer: ReturnType<typeof create> | undefined;
+  await act(async () => { renderer = create(createElement(Call)); });
+  assert.equal(session?.invalidateExternalPerformance, undefined);
+  await act(async () => {
+    session?.onLifecycleData(performance("sess_1", "g1", "accepted"));
+    session?.onLifecycleData(FRAME);
+  });
+  assert.equal(errors.length, 1);
   await act(async () => renderer?.unmount());
 });
 
@@ -261,4 +360,21 @@ test("AvatarCall hands voice errors to onVoiceError and exposes the last one on 
   assert.deepEqual(call.voiceError, last);
   fixture.input?.onVoiceError?.(last);
   assert.deepEqual(seen, [last], "AvatarCall did not pass onVoiceError to the session");
+});
+
+test("AvatarCall hands externalPerformance to the session unchanged, and omits it when not given", () => {
+  const fixture: { input?: { externalPerformance?: ExternalPerformanceObserver }; session: unknown } = {
+    session: {
+      phase: { kind: "live" }, clocks: { sessionRemainingMs: null },
+      microphone: { status: "on" }, audioPlayback: "allowed",
+      startAudio: async () => true, setMicrophoneEnabled: async () => {}, microphoneMuted: false, voiceError: null,
+    },
+  };
+  const module: { exports: { render?: (props: AvatarCallProps) => { call: AvatarCallHandle } } } = { exports: {} };
+  runInNewContext(bundle.outputFiles[0]!.text, { fixture, module, exports: module.exports, require: createRequire(import.meta.url) });
+  const externalPerformance: ExternalPerformanceObserver = { onFrame: () => {}, onInvalidated: () => {} };
+  module.exports.render!({ client, avatarId: "ava_test", externalPerformance });
+  assert.equal(fixture.input?.externalPerformance, externalPerformance);
+  module.exports.render!({ client, avatarId: "ava_test" });
+  assert.equal(fixture.input?.externalPerformance, undefined);
 });

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "base_url": {
+      "type": "string",
+      "maxLength": 500,
+      "format": "uri"
+    },
+    "token": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 4096
+    },
+    "fail_closed": {
+      "description": "Refuse a failed external turn instead of falling back to the platform model. Absent preserves existing fallback.",
+      "type": "boolean"
+    },
+    "visible_character": {
+      "description": "An application renders a visible character independently of RTA audio/video transport.",
+      "type": "object",
+      "properties": {
+        "renderer": {
+          "type": "string",
+          "const": "external"
+        }
+      },
+      "required": [
+        "renderer"
+      ],
+      "additionalProperties": false
+    },
+    "performance": {
+      "description": "Opt in to generation identity and admission/cancellation producer events. Receiver playout synchronization is unsupported.",
+      "type": "string",
+      "const": "v1"
+    }
+  },
+  "required": [
+    "base_url",
+    "token"
+  ],
+  "additionalProperties": false,
+  "serverAuthoritative": true
+}

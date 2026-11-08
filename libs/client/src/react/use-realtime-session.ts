@@ -424,6 +424,8 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
 
   // ── inbound rta.lifecycle frames ──
   const onLifecycleData = useCallback((frame: unknown) => {
+    // Set only for `externalPerformance`, which the inner hook observes per grant.
+    lifecycle.onLifecycleData?.(frame);
     const parsed = lifecycleServerFrameSchema.safeParse(frame);
     if (!parsed.success) return;
     const f = parsed.data;
@@ -483,7 +485,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
         break;
       }
     }
-  }, []);
+  }, [lifecycle.onLifecycleData]);
 
   const registerDataPublisher = useCallback((publish: ((frame: unknown) => void) | null) => {
     dataPublisherRef.current = publish;

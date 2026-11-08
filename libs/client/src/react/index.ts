@@ -107,6 +107,13 @@ export {
   type VoiceError,
   type VoiceErrorCode,
 } from "./use-realtime-session";
+// `externalPerformance`: an external-LLM call's admission/cancellation, for an app-drawn character.
+export {
+  EXTERNAL_PERFORMANCE_TIMING,
+  type ExternalPerformanceFrame,
+  type ExternalPerformanceInvalidation,
+  type ExternalPerformanceObserver,
+} from "../external-performance";
 export type { DeclaredInputSource } from "../input-source";
 // Tab-global mic single-flight — the CROSS-call ghost-mic guard (a rapid redial
 // must not acquire getUserMedia before the prior room released it). `useMicLease`

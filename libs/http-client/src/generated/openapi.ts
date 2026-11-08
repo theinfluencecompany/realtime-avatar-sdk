@@ -1280,6 +1280,12 @@ export interface components {
             type: "voice.synthesize";
             /** @constant */
             version: 1;
+            performance?: {
+                session_id: string;
+                generation_id: string;
+                /** @description Logical sentence identity, unchanged across HTTP retries; not request_id. */
+                utterance_id: string;
+            };
             /** @description Unique per POST; also sent as the x-rta-request-id header. */
             request_id: string;
             /** @description The same session id the transcript webhook payload carries. */
@@ -1303,6 +1309,46 @@ export interface components {
             client_metadata: {
                 [key: string]: string;
             };
+        };
+        ExternalTurnContext: {
+            session_id: string;
+            generation_id: string;
+            /** @constant */
+            version: 1;
+            /** @enum {string} */
+            purpose: "respond" | "recovery" | "initiative";
+            /** @enum {string} */
+            admission: "draft" | "accepted";
+            visible_character?: {
+                /** @constant */
+                renderer: "external";
+            };
+        };
+        ExternalUtterance: {
+            session_id: string;
+            generation_id: string;
+            /** @description Logical sentence identity, unchanged across HTTP retries; not request_id. */
+            utterance_id: string;
+        };
+        ExternalPerformanceFrame: {
+            session_id: string;
+            generation_id: string;
+            /** @constant */
+            kind: "external_performance";
+            /** @constant */
+            version: 1;
+            /** @enum {string} */
+            status: "accepted" | "dropped" | "cancelled" | "audio_released";
+            /**
+             * @description No receiver audible position or heard-text receipt exists in this producer version.
+             * @constant
+             */
+            audible_checkpoint: "unavailable";
+            /**
+             * @description No utterance-to-receiver sample mapping exists. Release is permission, not playout.
+             * @constant
+             */
+            audio_mapping: "unavailable";
         };
         /** @enum {string} */
         VoiceWebhookErrorCode: "voice_webhook_url_not_allowed" | "voice_webhook_unauthorized" | "voice_webhook_unreachable" | "voice_webhook_timeout" | "voice_webhook_http_error" | "voice_webhook_unsupported_audio" | "voice_webhook_empty_audio";
