@@ -22,6 +22,7 @@ import { SessionLifecycleRoomBridge, type SessionLifecycleRoomBridgeProps } from
 import { useRealtimeSession, type RealtimeSessionApi, type VoiceError } from "./use-realtime-session";
 import type { CallAudioPlayback, CallMicrophone, CallMicrophoneProblem } from "./call-media";
 import type { AvatarSessionClient } from "../session-client";
+import type { ExternalPerformanceObserver } from "../external-performance";
 
 /**
  * What the app renders a banner for. Deliberately NOT the internal phase union: those arms
@@ -144,6 +145,13 @@ export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectio
    */
   onVoiceError?: (error: VoiceError) => void;
   /**
+   * For a call your server minted with `llm.performance: "v1"`: each generation's admission and
+   * cancellation, for a character you draw yourself. Not a playback clock.
+   */
+  externalPerformance?: ExternalPerformanceObserver;
+  /** Opt in to SDK-owned correlated PCM; disables this component's ordinary audio renderer. */
+  correlatedAudio?: import("../../../browser/src/correlated-audio.ts").CorrelatedAudioObserver;
+  /**
    * What to show while `audio` is `blocked` (the browser is muting her until a gesture):
    * - `true` (default): a "Tap to turn on sound" button, top-centre over the video.
    * - a function: your own affordance, with your own words; wire it to `call.startAudio()`.
@@ -242,6 +250,8 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
     onCreditsLow: props.onLowBalance ? ({ secondsLeft }) => props.onLowBalance?.({ secondsLeft }) : undefined,
     onEnded: props.onEnded ? ({ reason }) => props.onEnded?.({ reason }) : undefined,
     onVoiceError: props.onVoiceError ? (error) => props.onVoiceError?.(error) : undefined,
+    externalPerformance: props.externalPerformance,
+    correlatedAudio: props.correlatedAudio,
   });
   sessionRef.current = session;
 
@@ -296,6 +306,7 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
     RealtimeAvatarLiveKitRoom,
     {
       grant: session.grant,
+      renderRoomAudio: props.correlatedAudio === undefined,
       // LiveKit captures the microphone on connect from this value, so a mute chosen while
       // waiting is honoured rather than overridden when the call goes live.
       audio: props.listen !== false && !session.microphoneMuted,

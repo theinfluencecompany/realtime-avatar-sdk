@@ -27,7 +27,7 @@ const specBytes = pull ? await fetchBytes(specUrl) : await readFile(sync
 const spec = JSON.parse(specBytes.toString("utf8"));
 async function readContract(key, ownerPath, targetPath) {
   const reference = spec[key];
-  if (!reference || typeof reference.source !== "string" || !/^\/[\w./-]+\.ts$/.test(reference.source)
+  if (!reference || typeof reference.source !== "string" || !/^\/[\w./-]+\.(?:ts|json)$/.test(reference.source)
     || reference.source.startsWith("//") || reference.source.split("/").some(part => part === "." || part === "..")
     || typeof reference.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(reference.sha256)) {
     throw new Error(`Missing or invalid ${key} source/sha256`);
@@ -63,9 +63,14 @@ const supported = new Set([
   "$schema", "type", "properties", "required", "additionalProperties",
   "anyOf", "oneOf", "enum", "format", "pattern", "minLength", "maxLength", "minimum", "maximum",
   "items", "minItems", "maxItems", "const", "description", "readOnly", "default", "propertyNames", "exclusiveMinimum", "exclusiveMaximum",
-  "writeOnly", "maxProperties", "deprecated",
+  "writeOnly", "maxProperties", "deprecated", "dependentSchemas",
 ]);
 const definitions = [];
+// The public mint document redacts this server-owned policy; its shape alone is published under
+// `x-external-llm-contract`, whose sha256 sits inside the spec, so `spec:check` sees it drift.
+const externalPolicyTarget = new URL("../spec/external-llm.schema.json", import.meta.url);
+const externalPolicyContract = await readContract("x-external-llm-contract", "packages/realtime-avatar-contracts/openapi/external-llm.schema.json", externalPolicyTarget);
+const externalPolicy = JSON.parse(externalPolicyContract.bytes.toString("utf8"));
 const behavior = JSON.stringify(spec.components.schemas.ListAvatarClipsResponse.properties.behavior);
 if (behavior !== JSON.stringify(spec.components.schemas.PutAvatarClipsResponse.properties.behavior)) {
   throw new Error("Clip response behavior schemas disagree");
@@ -193,6 +198,12 @@ function expression(schema, open = false) {
       default: throw new Error(`Unsupported clip schema type: ${schema.type}`);
     }
   }
+  if (schema.dependentSchemas) {
+    for (const [field, dependency] of Object.entries(schema.dependentSchemas)) {
+      const dependent = expression(dependency, true);
+      result += `.superRefine((value, ctx) => { if (value[${JSON.stringify(field)}] !== undefined) { const result = ${dependent}.safeParse(value); if (!result.success) for (const issue of result.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path }); } })`;
+    }
+  }
   const name = `schema${definitions.length}`;
   definitions.push(`const ${name} = ${result};`);
   names.set(key, name);
@@ -240,6 +251,32 @@ ${definitions.join("\n\n")}
 ${roots.join("\n\n")}
 `;
 
+definitions.length = 0;
+names.clear();
+// The helper curates creation's explicit voice, never its automatic casting or source controls.
+const createAvatarProperties = spec.components.schemas.CreateAvatarRequest.properties;
+const live2dFields = ["displayName", "settings", "metadata"].map((field) =>
+  `  ${field}: ${expression(createAvatarProperties[field])}${field === "displayName" ? "" : ".optional()"},`);
+const explicitAvatarVoiceRoot = expression(createAvatarProperties.voice.properties.voice);
+const avatarRoot = expression(spec.components.schemas.Avatar);
+const avatarTarget = new URL("../libs/http-client/src/generated/avatar.ts", import.meta.url);
+const avatarOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
+// Do not edit; the platform owns avatar creation and response contracts.
+import { z } from "zod";
+import type { components } from "./openapi.ts";
+
+type Wire = components["schemas"];
+${definitions.join("\n\n")}
+
+// OpenAPI's required-only voice union becomes unknown in openapi-typescript. Derive the
+// explicit selector from its generated executable schema, not that lossy union.
+export const explicitAvatarVoiceSchema = ${explicitAvatarVoiceRoot};
+export const createLive2dAvatarInputSchema = z.strictObject({
+${live2dFields.join("\n")}
+  voice: ${explicitAvatarVoiceRoot},
+});
+export const avatarResponseSchema = ${avatarRoot};
+`;
 definitions.length = 0;
 names.clear();
 const { description: _transcriptionDescription, ...transcriptionSchema } = spec.components.schemas.LiveKitSessionRequest.properties.transcription;
@@ -394,10 +431,77 @@ type AssertTrue<Value extends true> = Value;
 type _FishTtsModelCoversWire = AssertTrue<[FishVoice["model"]] extends [FishTtsModel] ? true : false>;
 type _EveryDeliveryNamesItsModels = AssertTrue<[FishDelivery] extends [keyof typeof FISH_DELIVERY_MODELS] ? true : false>;
 `;
+definitions.length = 0;
+names.clear();
+// Every one of these is sent by the worker, so each is generated open: a newer worker's field is
+// dropped, never refused.
+const performanceRoots = ["ExternalTurnContext", "ExternalUtterance", "ExternalPerformanceFrame"].map((name) => {
+  const identifier = name[0].toLowerCase() + name.slice(1) + "Schema";
+  return `export const ${identifier} = ${expression(spec.components.schemas[name], true)} satisfies z.ZodType<Wire["${name}"], Wire["${name}"]>;\nexport type ${name} = z.infer<typeof ${identifier}>;`;
+});
+const performanceTarget = new URL("../libs/http-client/src/generated/external-performance.ts", import.meta.url);
+const performanceOutput = `// Generated by scripts/generate-clip-schema.mjs from the platform canonical contract.
+import { z } from "zod";
+import type { components } from "./openapi.ts";
+type Wire = components["schemas"];
+${definitions.join("\n\n")}
+${performanceRoots.join("\n\n")}
+`;
+definitions.length = 0;
+names.clear();
+const correlatedRoots = ["CorrelatedAudioHeader", "CorrelatedAudioReceipt", "CorrelatedAudioCancel", "ExternalLlmErrorFrame"].map((name) => {
+  const identifier = name[0].toLowerCase() + name.slice(1) + "Schema";
+  return `export const ${identifier} = ${expression(spec.components.schemas[name], true)};\nexport type ${name} = z.infer<typeof ${identifier}>;\ntype _${name}Parity = AssertTrue<[${name}] extends [Wire["${name}"]] ? [Wire["${name}"]] extends [${name}] ? true : false : false>;`;
+});
+const transport = spec["x-correlated-audio-contract"];
+if (!transport || !["topic", "receiptMethod", "cancelMethod"].every(key => typeof transport[key] === "string") ||
+  !["maxSamples", "maxChunkBytes", "maxBufferedSamples"].every(key => Number.isSafeInteger(transport[key]) && transport[key] > 0)) {
+  throw new Error("Missing or invalid x-correlated-audio-contract");
+}
+const correlatedTarget = new URL("../libs/http-client/src/generated/correlated-audio.ts", import.meta.url);
+const correlatedOutput = `// Generated by scripts/generate-clip-schema.mjs from the platform canonical contract.
+import { z } from "zod";
+import type { components } from "./openapi.ts";
+type Wire = components["schemas"];
+type AssertTrue<Value extends true> = Value;
+${definitions.join("\n\n")}
+${correlatedRoots.join("\n\n")}
+export const CORRELATED_AUDIO_CONTRACT = ${JSON.stringify(transport, null, 2)} as const;
+`;
+definitions.length = 0;
+names.clear();
+const { serverAuthoritative: _serverAuthoritative, ...policySchema } = externalPolicy;
+const externalPolicyRoot = expression(policySchema);
+const externalPolicyFields = Object.keys(policySchema.properties).map((field) => ({
+  field, option: camelCase(field), required: (policySchema.required ?? []).includes(field),
+}));
+const policyTarget = new URL("../libs/http-client/src/generated/external-llm.ts", import.meta.url);
+const policyOutput = `// Generated by scripts/generate-clip-schema.mjs from spec/external-llm.schema.json.
+// The platform's canonical server-only policy is redacted from its public mint schema and
+// published on its own, sha256-pinned by the spec's x-external-llm-contract.
+import { z } from "zod";
+${definitions.join("\n\n")}
+export const externalLlmWireSchema = ${externalPolicyRoot};
+export const externalLlmOptionsSchema = z.strictObject({
+${externalPolicyFields.map(({ field, option }) => `  ${option}: externalLlmWireSchema.shape.${field},`).join("\n")}
+});
+export function externalLlmToWire(input: z.input<typeof externalLlmOptionsSchema>): z.output<typeof externalLlmWireSchema> {
+  const options = externalLlmOptionsSchema.parse(input);
+  return externalLlmWireSchema.parse({
+${externalPolicyFields.map(({ field, option, required }) => required
+    ? `    ${field}: options.${option},`
+    : `    ...(options.${option} !== undefined ? { ${field}: options.${option} } : {}),`).join("\n")}
+  });
+}
+`;
 if (check) {
+  if (await readFile(correlatedTarget, "utf8") !== correlatedOutput) throw new Error("Correlated audio schemas are stale; run npm run spec:types");
+  if (await readFile(performanceTarget, "utf8") !== performanceOutput) throw new Error("External performance schemas are stale; run npm run spec:types");
+  if (await readFile(policyTarget, "utf8") !== policyOutput) throw new Error("External LLM policy is stale; run npm run spec:types");
   if (await readFile(fishTtsModelTarget, "utf8") !== fishTtsModelOutput) throw new Error("Fish model schema is stale; run npm run spec:types");
   if (await readFile(usageSessionsTarget, "utf8") !== usageSessionsOutput) throw new Error("Usage sessions schema is stale; run npm run spec:types");
   if (await readFile(contentPolicyTarget, "utf8") !== contentPolicyOutput) throw new Error("Content policy schema is stale; run npm run spec:types");
+  if (await readFile(avatarTarget, "utf8") !== avatarOutput) throw new Error("Avatar schemas are stale; run npm run spec:types");
   if (await readFile(target, "utf8") !== output) throw new Error("Clip schemas are stale; run npm run spec:types");
   if (await readFile(transcriptionTarget, "utf8") !== transcriptionOutput) throw new Error("Transcription schemas are stale; run npm run spec:types");
   if (await readFile(voiceWebhookTarget, "utf8") !== voiceWebhookOutput) throw new Error("Voice webhook schemas are stale; run npm run spec:types");
@@ -408,8 +512,10 @@ if (check) {
     await writeFile(vendorTarget, vendorBytes);
     await writeFile(recordingTarget, recording.bytes);
     await writeFile(renderTarget, render.bytes);
+    await writeFile(externalPolicyTarget, externalPolicyContract.bytes);
     await writeFile(specTarget, specBytes);
   }
+  await writeFile(avatarTarget, avatarOutput);
   await writeFile(target, output);
   await writeFile(transcriptionTarget, transcriptionOutput);
   await writeFile(contentPolicyTarget, contentPolicyOutput);
@@ -417,5 +523,8 @@ if (check) {
   await writeFile(voiceWebhookTarget, voiceWebhookOutput);
   await writeFile(voiceErrorFrameTarget, voiceErrorFrameOutput);
   await writeFile(fishTtsModelTarget, fishTtsModelOutput);
+  await writeFile(correlatedTarget, correlatedOutput);
+  await writeFile(performanceTarget, performanceOutput);
+  await writeFile(policyTarget, policyOutput);
 }
 console.log(`Clip contract SHA-256 ${hash}; response schemas ${check ? "verified" : "generated"}`);

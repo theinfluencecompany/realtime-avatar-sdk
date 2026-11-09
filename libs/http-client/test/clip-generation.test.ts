@@ -19,11 +19,17 @@ const files = [
   "libs/http-client/src/generated/transcription.ts",
   "libs/http-client/src/generated/usage-sessions.ts",
   "libs/http-client/src/generated/render.ts",
+  "spec/external-llm.schema.json",
+  "libs/http-client/src/generated/external-llm.ts",
+  "libs/http-client/src/generated/external-performance.ts",
+  "libs/http-client/src/generated/avatar.ts",
+  "libs/http-client/src/generated/correlated-audio.ts",
 ] as const;
 const specBytes = await readFile(new URL(files[0], root));
 const vendorBytes = await readFile(new URL(files[1], root));
 const recordingBytes = await readFile(new URL(files[3], root));
 const renderBytes = await readFile(new URL(files[7], root));
+const externalLlmBytes = await readFile(new URL(files[8], root));
 const script = "scripts/generate-clip-schema.mjs";
 
 async function fixture() {
@@ -57,15 +63,17 @@ function mockPull(spec: Buffer = specBytes, artifact: Buffer = vendorBytes) {
       assert.deepEqual(calls, ['https://realtimeavatar.ai/openapi.json',
         ${JSON.stringify(`https://realtimeavatar.ai${source}`)},
         'https://realtimeavatar.ai/recording.contract.ts',
-        'https://realtimeavatar.ai/render.contract.ts'].slice(0, calls.length));
-      assert.ok(calls.length <= 4);
+        'https://realtimeavatar.ai/render.contract.ts',
+        'https://realtimeavatar.ai/external-llm.schema.json'].slice(0, calls.length));
+      assert.ok(calls.length <= 5);
       return new Response(Buffer.from(calls.length === 1
         ? ${JSON.stringify(spec.toString("base64"))}
         : calls.length === 2 ? ${JSON.stringify(artifact.toString("base64"))}
         : calls.length === 3 ? ${JSON.stringify(recordingBytes.toString("base64"))}
-        : ${JSON.stringify(renderBytes.toString("base64"))}, 'base64'));
+        : calls.length === 4 ? ${JSON.stringify(renderBytes.toString("base64"))}
+        : ${JSON.stringify(externalLlmBytes.toString("base64"))}, 'base64'));
     };
-    process.on('exit', code => { if (code === 0) assert.equal(calls.length, 4); });
+    process.on('exit', code => { if (code === 0) assert.equal(calls.length, 5); });
   `;
 }
 
@@ -76,12 +84,19 @@ test("generation and --check verify the committed executable offline and reject 
     await f.run([]);
     await f.run(["--check"]);
     assert.deepEqual(await f.snapshot(), before);
+    await writeFile(join(f.dir, "libs/http-client/src/generated/correlated-audio.ts"), "export const correlatedAudioHeaderSchema = z.any();");
+    await assert.rejects(f.run(["--check"]), /Correlated audio schemas are stale/);
+    await f.run([]);
     await writeFile(join(f.dir, files[4]), "export const contentPolicySchema = z.any();");
     await assert.rejects(f.run(["--check"]), /Content policy schema is stale/);
     await f.run([]);
     assert.deepEqual(await f.snapshot(), before);
     await writeFile(join(f.dir, files[6]), "stale usage sessions schema");
     await assert.rejects(f.run(["--check"]), /Usage sessions schema is stale/);
+    await f.run([]);
+    assert.deepEqual(await f.snapshot(), before);
+    await writeFile(join(f.dir, "libs/http-client/src/generated/avatar.ts"), "export const avatarResponseSchema = z.any();");
+    await assert.rejects(f.run(["--check"]), /Avatar schemas are stale/);
     await f.run([]);
     assert.deepEqual(await f.snapshot(), before);
     await writeFile(join(f.dir, files[2]), "stale response schema");
@@ -102,6 +117,10 @@ test("canonical numeric field mutations fail generated mapping and public consum
     await writeFile(join(f.dir, "consumer.ts"), `
       import { RealtimeAvatar } from "./libs/http-client/src/index.ts";
       async function report(client: RealtimeAvatar) {
+        const avatar = await client.createLive2dAvatar({ displayName: "Rin", voice: { provider: "fish", voice_id: "voice_123" } });
+        const avatarId: string = avatar.id;
+        const renderer: "video" | "live2d" = avatar.renderer;
+        void [avatarId, renderer];
         const page = await client.listSessions();
         for (const session of page.sessions) {
           const seconds: number | null = session.activeSeconds;
@@ -132,6 +151,20 @@ test("canonical numeric field mutations fail generated mapping and public consum
     await compile();
     const safeConsumer = await readFile(join(f.dir, "consumer.ts"), "utf8");
     for (const unsafe of [
+      `import type { CorrelatedAudioHeader } from "./libs/http-client/src/generated/correlated-audio.ts";
+       declare const decoded: unknown;
+       const header: CorrelatedAudioHeader = decoded;`,
+      `import type { ExternalLlm } from "./libs/http-client/src/index.ts";
+       const output: ExternalLlm["audioOutput"] = "mp3";`,
+      `import type { CreateLive2dAvatarInput, RegisteredAvatar } from "./libs/http-client/src/index.ts";
+       declare const decoded: unknown;
+       const request: CreateLive2dAvatarInput = decoded;
+       const response: RegisteredAvatar = decoded;`,
+      `import type { ExternalLlm } from "./libs/http-client/src/index.ts";
+       declare const decoded: unknown;
+       const policy: ExternalLlm = decoded;`,
+      `import type { KnownExternalPerformanceStatus } from "./libs/client/src/external-performance.ts";
+       const status: KnownExternalPerformanceStatus = "played";`,
       `import type { UsageSession } from "./libs/http-client/src/index.ts";
        declare const decoded: unknown;
        const row: UsageSession = decoded;`,
@@ -155,6 +188,21 @@ test("canonical numeric field mutations fail generated mapping and public consum
       });
     }
     await writeFile(join(f.dir, "consumer.ts"), safeConsumer);
+    await compile();
+    const avatarSpec = JSON.parse(specBytes.toString("utf8"));
+    avatarSpec.components.schemas.CreateAvatarRequest.properties.voice.properties.voice.properties.voice_id = { type: "number" };
+    await writeFile(join(f.dir, files[0]), JSON.stringify(avatarSpec));
+    await regenerateTypes();
+    await f.run([]);
+    await assert.rejects(compile(), (error: unknown) => {
+      assert.ok(error instanceof Error && "stdout" in error && typeof error.stdout === "string");
+      assert.match(error.stdout, /consumer\.ts/);
+      assert.match(error.stdout, /string.*not assignable.*number/);
+      return true;
+    });
+    await writeFile(join(f.dir, files[0]), specBytes);
+    await regenerateTypes();
+    await f.run([]);
     await compile();
     for (const [field, originalType] of [["activeSeconds", "number"], ["billedCreditMicros", "integer"], ["p50", "number"]] as const) {
       const spec = JSON.parse(specBytes.toString("utf8"));
@@ -248,6 +296,21 @@ test("offline generation and --check fail on executable tampering before any wri
   } finally { await rm(f.dir, { recursive: true, force: true }); }
 });
 
+test("the vendored external LLM policy is pinned by the served spec, so an edited or stale copy fails", async () => {
+  // The policy is redacted from the mint schema, so without the spec's pin nothing compares it.
+  const f = await fixture();
+  try {
+    const policy = JSON.parse(externalLlmBytes.toString("utf8"));
+    policy.properties.token.maxLength = 8192;
+    await writeFile(join(f.dir, files[8]), `${JSON.stringify(policy, null, 2)}\n`);
+    const before = await f.snapshot();
+    for (const args of [[], ["--check"]]) {
+      await assert.rejects(f.run(args), /x-external-llm-contract SHA-256 mismatch/);
+      assert.deepEqual(await f.snapshot(), before);
+    }
+  } finally { await rm(f.dir, { recursive: true, force: true }); }
+});
+
 test("--pull fetches the spec before its executable from the same trusted origin", async () => {
   const f = await fixture();
   try {
@@ -302,6 +365,8 @@ test("--sync requires an absolute platform root and verifies published bytes aga
       ["apps/web/public/render.contract.ts", renderBytes],
       ["packages/realtime-avatar-contracts/src/product/render.ts", renderBytes],
       ["packages/realtime-avatar-contracts/openapi/realtime-avatar.openapi.json", specBytes],
+      ["apps/web/public/external-llm.schema.json", externalLlmBytes],
+      ["packages/realtime-avatar-contracts/openapi/external-llm.schema.json", externalLlmBytes],
     ] as const) {
       const target = join(platform, file);
       await mkdir(join(target, ".."), { recursive: true });

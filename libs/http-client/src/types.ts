@@ -28,10 +28,13 @@
  * Verified by mutation: renaming `participant_token` in the generated file fails the typecheck.
  */
 
+import type { z } from "zod";
+import type { avatarResponseSchema, createLive2dAvatarInputSchema } from "./generated/avatar.ts";
 import type { components, operations } from "./generated/openapi.ts";
 import type { toSessionsPage } from "./generated/usage-sessions.ts";
 import type { RecordingMode, RecordingArtifact } from "./generated/recording.ts";
 import type { voiceWebhookToWire } from "./generated/voice-webhook.ts";
+import type { externalLlmToWire } from "./generated/external-llm.ts";
 export type { RecordingMode, RecordingArtifactStatus, RecordingArtifact, ListRecordingsQuery, ListRecordingsResponse, RecordingAccessResponse } from "./generated/recording.ts";
 export type { RenderStatus, RenderFailureCode, RenderPlayback, ShotTiming, Render, ListRendersQuery, ListRendersResponse, RenderAccessResponse } from "./generated/render.ts";
 
@@ -145,31 +148,33 @@ export type VideoPolicy =
 type WireLlm = NonNullable<Wire["LiveKitSessionRequest"]["llm"]>;
 
 /**
- * DERIVATION: `backend` and `model` index the contract's `llm`. `baseUrl` and `token` are sent as
+ * DERIVATION: `backend` and `model` index the contract's `llm`. The endpoint fields are sent as
  * `external_llm`, which the platform marks server-authoritative and therefore REDACTS from the
- * published document, so they cannot be derived from it; they are written here, like
- * `clientTools` → `capabilities`.
+ * published document; they are generated from the platform's canonical `ExternalLLMEndpoint`
+ * JSON Schema, vendored as `spec/external-llm.schema.json` (see `generate-clip-schema.mjs`).
  *
  * Answer this call's turns from an OpenAI-compatible endpoint YOUR SERVER hosts. The platform
  * keeps listening, turn-taking, interruption, her voice and her face; each reply is streamed
- * from `POST {baseUrl}/chat/completions` instead of the platform's model.
+ * from `POST {baseUrl}/chat/completions` (https only, `stream: true`) instead of the platform's
+ * model. `token` is sent as `Authorization: Bearer <token>` on every turn of this call: mint it
+ * per call and short-lived, 16–4096 characters.
  *
  * Enabled per workspace: a workspace without it, or an endpoint host it has not allowlisted, is
  * refused with 403. A failure before the first token of a reply (an error, a stall, an empty
- * answer) speaks that reply from the platform's model instead, so the call never goes silent.
+ * answer) speaks that reply from the platform's model instead, so the call never goes silent —
+ * unless `failClosed: true`: then that reply fails and no other model speaks for your character.
+ *
+ * `visibleCharacter: { renderer: "external" }` says YOUR app draws her, independent of `mode`:
+ * a `voice` call stays audio-only, and its model is no longer told the caller cannot see her.
+ * `performance: "v1"` adds `rta_context` (session, generation, purpose, draft/accepted) to each
+ * request, the same identity on each voice-webhook sentence, and admission/cancellation frames
+ * for `externalPerformance` on the client. It reports no playout timing.
  */
-export interface ExternalLlm {
+export type ExternalLlm = Parameters<typeof externalLlmToWire>[0] & {
   backend: Extract<NonNullable<WireLlm["backend"]>, "external">;
-  /** https only. The worker POSTs `{baseUrl}/chat/completions` with `stream: true`. */
-  baseUrl: string;
-  /**
-   * Sent as `Authorization: Bearer <token>` on every turn of this call. Mint it per call and
-   * short-lived: it outlives nothing but the call. 16–4096 characters.
-   */
-  token: string;
   /** Sent as `model`. Omit it to let your endpoint choose. */
   model?: NonNullable<WireLlm["model"]>;
-}
+};
 
 /**
  * Speak this call with your own voice. Each sentence she is about to say is POSTed to `url`,
@@ -367,10 +372,16 @@ export type Asset = Pick<Wire["Asset"], "id" | "kind"> & {
   status: Wire["Asset"]["status"] | (string & {});
 };
 
+/** DERIVATION: the generated creation schema curates an explicit voice for an app-owned Live2D rig. */
+export type CreateLive2dAvatarInput = z.input<typeof createLive2dAvatarInputSchema>;
+/** DERIVATION: the complete generated platform response, validated by createLive2dAvatar. */
+export type RegisteredAvatar = z.output<typeof avatarResponseSchema>;
+
 export type Avatar = Pick<
   Wire["Avatar"],
   | "id"
   | "displayName"
+  | "renderer"
   | "sourceKind"
   | "status"
   | "defaultVoiceId"

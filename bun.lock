@@ -5,20 +5,20 @@
     "": {
       "name": "realtime-avatar-sdk",
       "devDependencies": {
-        "@types/node": "^22.10.0",
+        "@types/node": "22.20.1",
         "esbuild": "0.27.7",
-        "openapi-typescript": "^7.13.0",
+        "openapi-typescript": "7.13.0",
         "playwright": "1.60.0",
-        "typescript": "^5.9.2",
+        "typescript": "5.9.3",
       },
     },
     "libs/browser": {
       "name": "@realtime-avatar/internal-browser",
-      "version": "0.25.0",
+      "version": "0.33.0",
     },
     "libs/client": {
       "name": "@realtime-avatar/internal-client",
-      "version": "0.25.0",
+      "version": "0.33.0",
       "devDependencies": {
         "@livekit/components-react": "2.9.21",
         "@livekit/react-native": "3.0.0",
@@ -31,20 +31,20 @@
         "react-dom": "19.2.7",
         "react-native": "0.81.5",
         "react-test-renderer": "19.2.7",
-        "typescript": "^5.9.2",
+        "typescript": "5.9.3",
       },
     },
     "libs/examples": {
       "name": "realtime-avatar-examples",
-      "version": "0.25.0",
+      "version": "0.33.0",
     },
     "libs/http-client": {
       "name": "@realtime-avatar/internal-http-client",
-      "version": "0.25.0",
+      "version": "0.33.0",
     },
     "libs/mcp": {
       "name": "realtime-avatar-mcp",
-      "version": "0.25.0",
+      "version": "0.33.0",
       "bin": {
         "realtime-avatar-mcp": "./dist/bin.js",
       },
@@ -56,14 +56,14 @@
     },
     "libs/proxy": {
       "name": "@realtime-avatar/internal-proxy",
-      "version": "0.25.0",
+      "version": "0.33.0",
       "dependencies": {
         "realtime-avatar": "0.24.0",
       },
     },
     "libs/sdk-server": {
       "name": "realtime-avatar",
-      "version": "0.25.0",
+      "version": "0.33.0",
       "devDependencies": {
         "@livekit/components-react": "2.9.21",
         "@livekit/react-native": "3.0.0",
@@ -73,8 +73,8 @@
         "react": "19.2.7",
         "react-dom": "19.2.7",
         "react-native": "0.81.5",
-        "tsup": "^8.5.0",
-        "typescript": "^5.9.2",
+        "tsup": "8.5.1",
+        "typescript": "5.9.3",
         "zod": "4.4.3",
       },
       "peerDependencies": {
@@ -99,7 +99,7 @@
     },
     "libs/tools": {
       "name": "@realtime-avatar/internal-tools",
-      "version": "0.25.0",
+      "version": "0.33.0",
     },
   },
   "packages": {

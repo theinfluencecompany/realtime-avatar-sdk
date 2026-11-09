@@ -6,6 +6,8 @@ import { build } from "esbuild";
 import { ConnectionQuality, ConnectionState, RoomEvent, Track } from "livekit-client";
 import type { AvatarCallProps, AvatarConnectionDetails, SessionLifecycleRoomBridgeProps } from "../src/react/index.ts";
 import type { AvatarConnectionDetails as NativeDetails, SessionLifecycleRoomBridgeProps as NativeBridgeProps } from "../src/react-native/index.ts";
+import { createExternalPerformanceObserver } from "../src/external-performance.ts";
+import { lifecycleServerFrameSchema } from "../src/wire.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Assert<T extends true> = T;
@@ -30,12 +32,12 @@ const bundle = await build({
       export const render = () => SessionLifecycleRoomBridge({lifecycle: globalThis.fixture.lifecycle,
         onConnectionDetailsChange: globalThis.fixture.callback, onMediaModeChange: globalThis.fixture.mediaModeCallback});
       export const renderAvatar = () => useAvatarCall({client: {}, avatarId: 'avatar',
-        onConnectionDetailsChange: globalThis.fixture.callback});`,
+        onConnectionDetailsChange: globalThis.fixture.callback, correlatedAudio: globalThis.fixture.lifecycle.correlatedAudio});`,
     resolveDir: new URL("../src/react", import.meta.url).pathname,
   },
   bundle: true, write: false, platform: "node", format: "cjs", packages: "external",
   plugins: [{ name: "controlled-connection", setup(builder) {
-    builder.onResolve({ filter: /^(react|\.\/livekit|\.\/avatar-video-surface|\.\/use-realtime-session|\.\/call-media)$/ }, ({ path }) => ({ path, namespace: "controlled" }));
+    builder.onResolve({ filter: /^(react|\.\/livekit|\.\/avatar-video-surface|\.\/use-realtime-session|\.\/call-media|.*browser\/src\/correlated-audio\.ts)$/ }, ({ path }) => ({ path, namespace: "controlled" }));
     builder.onLoad({ filter: /.*/, namespace: "controlled" }, ({ path }) => ({ contents: path === "react"
       ? `export const useRef = (v) => globalThis.fixture.useRef(v);
          export const useEffect = (fn, deps) => globalThis.fixture.useEffect(fn, deps);
@@ -56,6 +58,8 @@ const bundle = await build({
           ? "export const AvatarVideoSurface = () => null;"
           : path === "./call-media"
             ? "export const useCallMedia = () => {};"
+          : path.endsWith("/correlated-audio.ts")
+            ? "export const attachCorrelatedAudio = (room, options) => { globalThis.audioBindings.push(options); return { startAudio: async () => {}, dispose: async () => { globalThis.audioDisposals.push(options); } }; };"
           : "export const useRealtimeSession = () => globalThis.fixture.session;" }));
   } }],
 });
@@ -76,6 +80,124 @@ function room() {
   };
 }
 
+test("the real room bridge refuses spoofed performance and synchronously invalidates recovery", () => {
+  const f = fixture();
+  const frames: unknown[] = [];
+  const invalidations: string[] = [];
+  f.controlled.lifecycle.onLifecycleData = frame => { frames.push(frame); };
+  f.controlled.lifecycle.invalidateExternalPerformance = reason => { invalidations.push(reason); };
+  f.render();
+  const payload = new TextEncoder().encode(JSON.stringify({ kind: "external_performance" }));
+  f.controlled.room.emit(RoomEvent.DataReceived, payload, {}, undefined, "rta.lifecycle");
+  assert.equal(frames.length, 0);
+  f.controlled.room.emit(RoomEvent.DataReceived, payload, f.controlled.assistant.agent, undefined, "rta.lifecycle");
+  assert.equal(frames.length, 1);
+  f.controlled.room.emit(RoomEvent.SignalReconnecting);
+  assert.deepEqual(invalidations, ["connection_lost"]);
+  f.controlled.room.state = ConnectionState.Reconnecting;
+  f.controlled.room.emit(RoomEvent.DataReceived, payload, f.controlled.assistant.agent, undefined, "rta.lifecycle");
+  assert.equal(frames.length, 1);
+  f.dispose();
+});
+
+test("ended frames authenticate the bound agent and held room before invalidating performance", () => {
+  const f = fixture();
+  const frames: unknown[] = [];
+  f.controlled.lifecycle.onLifecycleData = frame => { frames.push(frame); };
+  f.render();
+  const payload = new TextEncoder().encode(JSON.stringify({ kind: "ended", reason: "session_cap" }));
+  for (const sender of [undefined, {}, { ...f.controlled.assistant.agent }]) {
+    f.controlled.room.emit(RoomEvent.DataReceived, payload, sender, undefined, "rta.lifecycle");
+  }
+  assert.equal(frames.length, 0);
+  f.controlled.room.emit(RoomEvent.DataReceived, payload, f.controlled.assistant.agent, undefined, "rta.lifecycle");
+  assert.equal(frames.length, 1);
+  f.controlled.lifecycle.grant = { session_id: "second", room_name: "second-room" };
+  f.render();
+  f.controlled.room.emit(RoomEvent.DataReceived, payload, f.controlled.assistant.agent, undefined, "rta.lifecycle");
+  assert.equal(frames.length, 1);
+  f.dispose();
+});
+
+test("initial connection does not retire the external observer before its first frame", () => {
+  const f = fixture();
+  const invalidations: string[] = [];
+  f.controlled.room.state = ConnectionState.Disconnected;
+  f.controlled.lifecycle.onLifecycleData = () => {};
+  f.controlled.lifecycle.invalidateExternalPerformance = reason => { invalidations.push(reason); };
+  f.render();
+  f.controlled.room.state = ConnectionState.Connecting;
+  f.controlled.room.emit(RoomEvent.ConnectionStateChanged);
+  f.controlled.room.state = ConnectionState.Connected;
+  f.controlled.room.emit(RoomEvent.ConnectionStateChanged);
+  assert.deepEqual(invalidations, []);
+  f.controlled.room.state = ConnectionState.Reconnecting;
+  f.controlled.room.emit(RoomEvent.ConnectionStateChanged);
+  assert.deepEqual(invalidations, ["connection_lost"]);
+  f.dispose();
+});
+
+test("losing the bound agent (a full LiveKit restart re-creates it) pauses observation, it does not end it", () => {
+  const f = fixture();
+  const invalidations: string[] = [];
+  f.controlled.lifecycle.onLifecycleData = () => {};
+  f.controlled.lifecycle.invalidateExternalPerformance = reason => { invalidations.push(reason); };
+  f.render();
+  f.controlled.assistant.agent = { ...f.controlled.assistant.agent };
+  f.render();
+  assert.deepEqual(invalidations, ["connection_lost"]);
+  f.render();
+  assert.deepEqual(invalidations, ["connection_lost"]);
+  f.dispose();
+});
+
+// The real observer behind the real bridge: what the app's onFrame/onInvalidated actually see.
+function observed(f: ReturnType<typeof fixture>) {
+  const seen: string[] = [];
+  const observer = createExternalPerformanceObserver("first", {
+    onFrame: (frame) => { seen.push(`${frame.generation_id}:${frame.status}`); },
+    onInvalidated: (reason) => { seen.push(reason); },
+  });
+  f.controlled.lifecycle.onLifecycleData = (frame) => {
+    const parsed = lifecycleServerFrameSchema.safeParse(frame);
+    if (parsed.success && parsed.data.kind === "external_performance") observer.receive(parsed.data);
+  };
+  f.controlled.lifecycle.invalidateExternalPerformance = (reason) => observer.invalidate(reason);
+  f.controlled.lifecycle.resumeExternalPerformance = () => observer.resume();
+  const send = (generation_id: string) => f.controlled.room.emit(RoomEvent.DataReceived, new TextEncoder().encode(JSON.stringify({
+    kind: "external_performance", version: 1, session_id: "first", generation_id, status: "accepted",
+    audible_checkpoint: "unavailable", audio_mapping: "unavailable",
+  })), f.controlled.assistant.agent, undefined, "rta.lifecycle");
+  return { seen, send };
+}
+
+test("an agent replaced within one render is observed again, not paused for the rest of the call", () => {
+  const f = fixture();
+  const { seen, send } = observed(f);
+  f.render();
+  send("g1");
+  f.controlled.assistant.agent = { ...f.controlled.assistant.agent };
+  f.render();
+  send("g2");
+  assert.deepEqual(seen, ["g1:accepted", "connection_lost", "g2:accepted"]);
+  f.dispose();
+});
+
+test("a reconnect whose intermediate state never renders resumes on the room's own event", () => {
+  const f = fixture();
+  const { seen, send } = observed(f);
+  f.render();
+  f.controlled.room.state = ConnectionState.SignalReconnecting;
+  f.controlled.room.emit(RoomEvent.SignalReconnecting);
+  f.controlled.room.emit(RoomEvent.ConnectionStateChanged, ConnectionState.SignalReconnecting);
+  f.controlled.room.state = ConnectionState.Connected;
+  send("g1"); // still paused: nothing has said the call is back
+  f.controlled.room.emit(RoomEvent.Reconnected);
+  send("g2");
+  assert.deepEqual(seen, ["connection_lost", "g2:accepted"]);
+  f.dispose();
+});
+
 function source(quality: ConnectionQuality) {
   const publication: { track?: { streamState: Track.StreamState } } = { track: { streamState: Track.StreamState.Active } };
   return {
@@ -87,6 +209,8 @@ function source(quality: ConnectionQuality) {
 function fixture(windowValue?: object) {
   const callbacks: (() => void)[] = [];
   const uploads: Request[] = [];
+  const audioBindings: unknown[] = [];
+  const audioDisposals: unknown[] = [];
   const refs: { current: unknown }[] = [];
   const effects: { deps: unknown[]; cleanup?: void | (() => void) }[] = [];
   let refIndex = 0, effectIndex = 0;
@@ -94,7 +218,7 @@ function fixture(windowValue?: object) {
   const record: Callback = (details) => { received.push(details); };
   const controlled: {
     room: ReturnType<typeof room>;
-    assistant: { agent: ReturnType<typeof source>["participant"] & { attributes?: Record<string, string> }; state: string; audioTrack?: ReturnType<typeof source>; videoTrack?: ReturnType<typeof source> };
+    assistant: { agent: ReturnType<typeof source>["participant"] & { identity?: string; attributes?: Record<string, string> }; state: string; audioTrack?: ReturnType<typeof source>; videoTrack?: ReturnType<typeof source> };
     lifecycle: Omit<typeof legacyBridge.lifecycle, "grant"> & {
       grant?: Pick<NonNullable<SessionLifecycleRoomBridgeProps["lifecycle"]["grant"]>, "session_id" | "connection_history"> & { room_name?: string } | null;
     };
@@ -106,7 +230,7 @@ function fixture(windowValue?: object) {
     useEffect: (setup: () => void | (() => void), deps: unknown[]) => void;
   } = {
     room: room(),
-    assistant: { agent: { connectionQuality: ConnectionQuality.Lost }, state: "listening",
+    assistant: { agent: { identity: "bound-agent", connectionQuality: ConnectionQuality.Lost }, state: "listening",
       audioTrack: source(ConnectionQuality.Excellent), videoTrack: source(ConnectionQuality.Poor) },
     lifecycle: { ...legacyBridge.lifecycle, grant: { session_id: "first", room_name: "first-room" } },
     callback: record, elements: [],
@@ -125,8 +249,8 @@ function fixture(windowValue?: object) {
   };
   const module: { exports: { render?: () => void; renderAvatar?: () => void; bridge?: unknown } } = { exports: {} };
   runInNewContext(bundle.outputFiles[0].text, {
-    fixture: controlled, module, exports: module.exports, require: createRequire(import.meta.url),
-    window: windowValue, AbortSignal,
+    fixture: controlled, audioBindings, audioDisposals, module, exports: module.exports, require: createRequire(import.meta.url),
+    window: windowValue, AbortSignal, TextDecoder,
     fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
       uploads.push(new Request(input, init));
       return new Response(null, { status: 204 });
@@ -135,7 +259,7 @@ function fixture(windowValue?: object) {
     setInterval() { throw new Error("connection details must not poll"); },
   });
   return {
-    controlled, received, record, uploads,
+    controlled, received, record, uploads, audioBindings, audioDisposals,
     render(callback = controlled.callback) { controlled.callback = callback; refIndex = effectIndex = 0; module.exports.render?.(); },
     renderAvatar() { module.exports.renderAvatar?.(); return controlled.elements.filter((node) => node.type === module.exports.bridge); },
     pending() { return callbacks.length; },
@@ -144,6 +268,37 @@ function fixture(windowValue?: object) {
     dispose() { for (const effect of effects) effect.cleanup?.(); },
   };
 }
+
+test("AvatarCall disables ordinary room audio only for the correlated observer", () => {
+  const f = fixture();
+  f.renderAvatar();
+  assert.ok(f.controlled.elements.some(node => node.props?.renderRoomAudio === true));
+  f.controlled.elements.length = 0;
+  f.controlled.lifecycle.correlatedAudio = { onPosition() {}, onInvalidated() {} };
+  f.renderAvatar();
+  assert.ok(f.controlled.elements.some(node => node.props?.renderRoomAudio === false));
+  assert.ok(!f.controlled.elements.some(node => node.props?.renderRoomAudio === true));
+  f.dispose();
+});
+
+test("correlated bridge is opt-in, bound to agent and grant, and never duplicates on observer rerender", () => {
+  const f = fixture();
+  f.render(); assert.equal(f.audioBindings.length, 0);
+  f.controlled.lifecycle.correlatedAudio = { onPosition() {}, onInvalidated() {} };
+  f.render(); assert.equal(f.audioBindings.length, 1);
+  f.controlled.lifecycle.onLifecycleData = () => {};
+  f.render();
+  f.controlled.room.emit(RoomEvent.DataReceived, new TextEncoder().encode(JSON.stringify({ kind: "ended" })), f.controlled.assistant.agent, undefined, "rta.lifecycle");
+  assert.equal(f.audioDisposals.length, 0, "malformed ended must not dispose audio");
+  f.controlled.lifecycle.correlatedAudio = { onPosition() {}, onInvalidated() {} };
+  f.render(); assert.equal(f.audioBindings.length, 1);
+  f.controlled.lifecycle.grant = { session_id: "second", room_name: "second-room" };
+  f.render(); assert.equal(f.audioBindings.length, 1); assert.equal(f.audioDisposals.length, 1);
+  f.controlled.room.name = "second-room";
+  f.render(); assert.equal(f.audioBindings.length, 2);
+  assert.ok(typeof f.audioBindings[1] === "object" && f.audioBindings[1] !== null && "sessionId" in f.audioBindings[1] && f.audioBindings[1].sessionId === "second");
+  f.dispose(); assert.equal(f.audioDisposals.length, 2);
+});
 
 const historyGrant: NonNullable<NonNullable<SessionLifecycleRoomBridgeProps["lifecycle"]["grant"]>["connection_history"]> = {
   endpoint: "https://rta.example.invalid/v1/connection-history",

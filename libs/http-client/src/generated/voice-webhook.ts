@@ -32,46 +32,56 @@ const schema8 = z.literal(1);
 
 const schema9 = z.string().min(1).max(200);
 
-const schema10 = z.string();
+const schema10 = z.string().min(1).max(200);
 
-const schema11 = z.string().min(1).max(5000);
+const schema11 = z.object({
+  "generation_id": schema9,
+  "utterance_id": schema10,
+});
 
-const schema12 = z.string();
+const schema12 = z.string().min(1).max(200);
 
-const schema13 = z.null();
+const schema13 = z.string();
 
-const schema14 = z.union([schema12, schema13]);
+const schema14 = z.string().min(1).max(5000);
 
 const schema15 = z.string();
 
-const schema16 = z.union([schema15, schema13]);
+const schema16 = z.null();
 
-const schema17 = z.literal("pcm_s16le");
+const schema17 = z.union([schema15, schema16]);
 
-const schema18 = z.literal([8000,16000,22050,24000,44100,48000]);
+const schema18 = z.string();
 
-const schema19 = z.object({
-  "encoding": schema17,
-  "sample_rate": schema18,
+const schema19 = z.union([schema18, schema16]);
+
+const schema20 = z.literal("pcm_s16le");
+
+const schema21 = z.literal([8000,16000,22050,24000,44100,48000]);
+
+const schema22 = z.object({
+  "encoding": schema20,
+  "sample_rate": schema21,
   "channels": schema8,
 });
 
-const schema20 = z.string().min(1).max(64);
+const schema23 = z.string().min(1).max(64);
 
-const schema21 = z.string().max(200);
+const schema24 = z.string().max(200);
 
-const schema22 = z.record(schema20, schema21).refine((value) => Object.keys(value).length <= 16, { message: "Too many keys: at most 16" });
+const schema25 = z.record(schema23, schema24).refine((value) => Object.keys(value).length <= 16, { message: "Too many keys: at most 16" });
 
-const schema23 = z.object({
+const schema26 = z.object({
   "type": schema7,
   "version": schema8,
-  "request_id": schema9,
-  "session_id": schema10,
-  "text": schema11,
-  "voice_id": schema14,
-  "language": schema16,
-  "output": schema19,
-  "client_metadata": schema22,
+  "performance": schema11.optional(),
+  "request_id": schema12,
+  "session_id": schema13,
+  "text": schema14,
+  "voice_id": schema17,
+  "language": schema19,
+  "output": schema22,
+  "client_metadata": schema25,
 });
 
 export const voiceWebhookWireSchema = schema6 satisfies z.ZodType<NonNullable<Wire["LiveKitSessionRequest"]["voice_webhook"]>>;
@@ -96,4 +106,4 @@ export function voiceWebhookToWire(input: z.input<typeof voiceWebhookOptionsSche
   };
 }
 
-export const voiceWebhookRequestSchema = schema23 satisfies z.ZodType<Wire["VoiceWebhookRequest"], Wire["VoiceWebhookRequest"]>;
+export const voiceWebhookRequestSchema = schema26 satisfies z.ZodType<Wire["VoiceWebhookRequest"], Wire["VoiceWebhookRequest"]>;

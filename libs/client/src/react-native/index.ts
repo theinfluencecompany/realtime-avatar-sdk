@@ -155,6 +155,15 @@ export {
   type VoiceError,
   type VoiceErrorCode,
 } from "../react/use-realtime-session";
+export {
+  EXTERNAL_PERFORMANCE_TIMING,
+  KNOWN_EXTERNAL_PERFORMANCE_STATUSES,
+  type ExternalPerformanceFrame,
+  type ExternalPerformanceInvalidation,
+  type ExternalPerformanceObserver,
+  type KnownExternalPerformanceStatus,
+  type ObservedExternalPerformanceFrame,
+} from "../external-performance";
 export type { DeclaredInputSource } from "../input-source";
 export {
   mapTurnState,

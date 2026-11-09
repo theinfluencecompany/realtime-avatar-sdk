@@ -141,6 +141,8 @@ export type VoiceError = {
  * billing/GPU safety). The app wires only the NARRATIVE callbacks + copy.
  */
 export type UseRealtimeSessionInput<T extends LLMProvider = LLMProvider> = UseSessionLifecycleInput<T> & {
+  /** Browser-only PCM player. With this observer, do not render RoomAudioRenderer. */
+  correlatedAudio?: import("../../../browser/src/correlated-audio.ts").CorrelatedAudioObserver;
   // ── attribution ──
   /** Echoed by the app on its own events; the SDK never inspects it. */
   clientMetadata?: Record<string, unknown>;
@@ -208,6 +210,7 @@ export type UseRealtimeSessionInput<T extends LLMProvider = LLMProvider> = UseSe
  * are filled by {@link SessionLifecycleRoomBridge} — the app just mounts the bridge.
  */
 export type RealtimeSessionApi = SessionLifecycleApi & {
+  correlatedAudio?: import("../../../browser/src/correlated-audio.ts").CorrelatedAudioObserver;
   /** Live turn micro-state, mapped from `useVoiceAssistant().state`. */
   turn: TurnState;
   /** The three DISTINCT clocks (session/idle/credit), never conflated. */
@@ -328,6 +331,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
     onBehaviorChange,
     onClipResult,
     onVoiceError,
+    correlatedAudio,
     // everything else (client/active/idleSeconds/idleWarnLeadSeconds/reconnect/requestOptions…)
     // flows straight into the inner SSOT hook.
     ...inner
@@ -424,6 +428,8 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
 
   // ── inbound rta.lifecycle frames ──
   const onLifecycleData = useCallback((frame: unknown) => {
+    // Set only for `externalPerformance`, which the inner hook observes per grant.
+    lifecycle.onLifecycleData?.(frame);
     const parsed = lifecycleServerFrameSchema.safeParse(frame);
     if (!parsed.success) return;
     const f = parsed.data;
@@ -483,7 +489,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
         break;
       }
     }
-  }, []);
+  }, [lifecycle.onLifecycleData]);
 
   const registerDataPublisher = useCallback((publish: ((frame: unknown) => void) | null) => {
     dataPublisherRef.current = publish;
@@ -809,6 +815,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
       // stayConnected/reconnect/markActivity/the sinks) → a true drop-in superset, then
       // add the realtime-session surface. `reset` + `lifecycle` come AFTER so ours win.
       ...lifecycle,
+      correlatedAudio,
       turn,
       clocks,
       endsAt,
@@ -842,7 +849,7 @@ export function useRealtimeSession<T extends LLMProvider = LLMProvider>(
       reset,
     }),
     [
-      lifecycle, turn, clocks, endsAt, graceWindow, media, microphone, callAudioPlayback, startAudio,
+      lifecycle, correlatedAudio, turn, clocks, endsAt, graceWindow, media, microphone, callAudioPlayback, startAudio,
       setMicrophoneEnabled, microphoneMuted, reconnect, sendClosingTurn, requestGracefulClose,
       extend, sendTurn, createTranscriptSender, retryTurn, end, behavior, voiceError, performAction, onLifecycleData, registerDataPublisher,
       registerTurnSender, setTurnState, setMedia, setMicrophoneFacts, setAudioPlayback, registerMediaControls, reset,

@@ -2717,6 +2717,26 @@
             "type": "number",
             "const": 1
           },
+          "performance": {
+            "type": "object",
+            "properties": {
+              "generation_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "utterance_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Logical sentence identity, unchanged across HTTP retries; not request_id."
+              }
+            },
+            "required": [
+              "generation_id",
+              "utterance_id"
+            ]
+          },
           "request_id": {
             "type": "string",
             "minLength": 1,
@@ -2805,6 +2825,331 @@
         ],
         "description": "One sentence to synthesize, signed with voice_webhook.secret. Reply 200 with streamed audio."
       },
+      "ExternalTurnContext": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "generation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "respond",
+                  "recovery",
+                  "initiative"
+                ]
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              }
+            ],
+            "description": "Why this turn is generated. Open: answer a purpose you do not know as you would respond."
+          },
+          "admission": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "accepted"
+            ]
+          },
+          "visible_character": {
+            "type": "object",
+            "properties": {
+              "renderer": {
+                "type": "string",
+                "const": "external"
+              }
+            },
+            "required": [
+              "renderer"
+            ]
+          }
+        },
+        "required": [
+          "session_id",
+          "generation_id",
+          "version",
+          "purpose",
+          "admission"
+        ]
+      },
+      "ExternalUtterance": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "generation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "utterance_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Logical sentence identity, unchanged across HTTP retries; not request_id."
+          }
+        },
+        "required": [
+          "generation_id",
+          "utterance_id"
+        ]
+      },
+      "ExternalPerformanceFrame": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "generation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "kind": {
+            "type": "string",
+            "const": "external_performance"
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "accepted",
+                  "dropped",
+                  "cancelled",
+                  "audio_released"
+                ]
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              }
+            ],
+            "description": "Open: ignore a status you do not know."
+          },
+          "audible_checkpoint": {
+            "type": "string",
+            "const": "unavailable",
+            "description": "No receiver audible position or heard-text receipt exists in this producer version."
+          },
+          "audio_mapping": {
+            "type": "string",
+            "const": "unavailable",
+            "description": "No utterance-to-receiver sample mapping exists. Release is permission, not playout."
+          }
+        },
+        "required": [
+          "session_id",
+          "generation_id",
+          "kind",
+          "version",
+          "status",
+          "audible_checkpoint",
+          "audio_mapping"
+        ]
+      },
+      "ExternalLlmErrorCode": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "enum": [
+          "external_llm_refused",
+          "external_llm_failed"
+        ]
+      },
+      "ExternalLlmErrorFrame": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "external_llm_error"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "external_llm_refused",
+              "external_llm_failed"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "fatal": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "kind",
+          "code",
+          "message",
+          "fatal"
+        ]
+      },
+      "CorrelatedAudioHeader": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "generation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "utterance_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Logical sentence identity, unchanged across HTTP retries; not request_id."
+          },
+          "stream_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "sample_rate": {
+            "type": "number",
+            "const": 24000
+          },
+          "channels": {
+            "type": "number",
+            "const": 1
+          },
+          "encoding": {
+            "type": "string",
+            "const": "pcm_s16le"
+          }
+        },
+        "required": [
+          "session_id",
+          "generation_id",
+          "version",
+          "utterance_id",
+          "stream_id",
+          "epoch",
+          "sample_rate",
+          "channels",
+          "encoding"
+        ]
+      },
+      "CorrelatedAudioReceipt": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "generation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "utterance_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Logical sentence identity, unchanged across HTTP retries; not request_id."
+          },
+          "stream_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "started",
+              "progress",
+              "finished",
+              "cancelled"
+            ]
+          },
+          "samples": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440000
+          }
+        },
+        "required": [
+          "session_id",
+          "generation_id",
+          "utterance_id",
+          "stream_id",
+          "epoch",
+          "status",
+          "samples"
+        ],
+        "additionalProperties": false
+      },
+      "CorrelatedAudioCancel": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "epoch": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "version",
+          "session_id",
+          "epoch"
+        ]
+      },
       "VoiceWebhookErrorCode": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "string",
@@ -2876,6 +3221,13 @@
           },
           "displayName": {
             "type": "string"
+          },
+          "renderer": {
+            "type": "string",
+            "enum": [
+              "video",
+              "live2d"
+            ]
           },
           "sourceKind": {
             "type": "string",
@@ -2982,6 +3334,7 @@
           "id",
           "tenantId",
           "displayName",
+          "renderer",
           "sourceKind",
           "modelId",
           "sourceAssetId",
@@ -3003,6 +3356,15 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 160
+          },
+          "renderer": {
+            "default": "video",
+            "type": "string",
+            "enum": [
+              "video",
+              "live2d"
+            ],
+            "description": "Defaults to video. live2d allocates a ready avatar identity for voice sessions with an app-owned rig. It requires defaultVoiceId or an explicit voice.voice selector; automatic casting is refused. Keep sourceKind image, omit sourceAssetId and motionPrompt, and omit modelId or use realtime-avatar-live-v1. No assets, clips, cache or manufacturing charge are created. Mint with mode voice; video rendering is refused. Session billing, authorization and external-LLM gates are unchanged."
           },
           "sourceKind": {
             "default": "image",
@@ -3190,7 +3552,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "For Live2D avatars, must remain a ready shared or tenant-owned platform voice. Null, missing and foreign voices are refused with 404; this does not change video-avatar PATCH behavior."
           },
           "llm": {
             "anyOf": [
@@ -6118,6 +6481,13 @@
                 "displayName": {
                   "type": "string"
                 },
+                "renderer": {
+                  "type": "string",
+                  "enum": [
+                    "video",
+                    "live2d"
+                  ]
+                },
                 "sourceKind": {
                   "type": "string",
                   "enum": [
@@ -6223,6 +6593,7 @@
                 "id",
                 "tenantId",
                 "displayName",
+                "renderer",
                 "sourceKind",
                 "modelId",
                 "sourceAssetId",
@@ -10184,6 +10555,18 @@
         ]
       }
     }
+  },
+  "x-correlated-audio-contract": {
+    "topic": "rta.audio.v1",
+    "receiptMethod": "rta.audio.receipt.v1",
+    "cancelMethod": "rta.audio.cancel.v1",
+    "maxSamples": 1440000,
+    "maxChunkBytes": 48000,
+    "maxBufferedSamples": 48000
+  },
+  "x-external-llm-contract": {
+    "source": "/external-llm.schema.json",
+    "sha256": "cb224d6a6b42cb190dad7ce31bb33c3f26bca8a2574d2c5dd1c3613e8a256912"
   },
   "x-clip-contract": {
     "source": "/character-motion.ts",

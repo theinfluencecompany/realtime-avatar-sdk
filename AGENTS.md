@@ -599,10 +599,23 @@ const call = await rta.startCall({
 - **A failure before the first token is not silence.** An error, an empty answer, or no first
   token within about 3.5 s speaks that reply from the platform's model instead. Your endpoint
   should answer its status before any slow work, so a refusal is fast. After the first token the
-  reply is yours: a later failure ends it.
+  reply is yours: a later failure ends it. `failClosed: true` turns the fallback off: that reply
+  fails, and no other model speaks for your character.
 - **Do not combine it with `clientTools`.** Tool calls need the platform's own model, so a
   session granted client tools takes that model and does not reach your endpoint. Run your tools
   inside your endpoint instead.
+- **When your app draws her, say so; do not invent a mode.** `visibleCharacter: { renderer:
+  "external" }` keeps `mode: "voice"` audio-only and stops telling the model the caller cannot see
+  her. `performance: "v1"` adds `rta_context` (`session_id`, `generation_id`, `purpose`,
+  `admission: "draft" | "accepted"`) to each request — validate it with
+  `externalTurnContextSchema` — puts the `generation_id` plus a retry-stable `utterance_id` on each
+  voice-webhook sentence, and lets the client pass `externalPerformance: { onFrame,
+  onInvalidated }` to `useRealtimeSession`. SDK 0.34.0 and the hosted platform support these
+  fields; the README section "Drawing the character yourself" has the whole flow.
+- **Those frames are admission and cancellation, never playback.** `accepted`, `dropped`,
+  `audio_released` and `cancelled` say what the worker decided, not what the caller heard:
+  `audible_checkpoint` and `audio_mapping` are literally `"unavailable"`. Never start an animation
+  or mark text heard from a frame's arrival, and discard everything pending on `onInvalidated`.
 
 ### 15. Custom voice (webhook): your endpoint speaks every sentence, and it holds a secret
 
