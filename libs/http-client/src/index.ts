@@ -2,8 +2,8 @@ export { RealtimeAvatar, type RealtimeAvatarOptions, type StartCallOptions } fro
 export { RealtimeAvatarError, RealtimeAvatarHttpError, RealtimeAvatarWebhookError, type WebhookVerificationErrorCode } from "./errors.ts";
 export { verifyTranscript, verifyVoiceWebhook } from "./webhook.ts";
 export {
-  externalTurnContextSchema, externalUtteranceSchema,
-  type ExternalTurnContext, type ExternalUtterance,
+  externalTurnContextSchema, externalUtteranceSchema, externalSpeechSegmentSchema,
+  type ExternalTurnContext, type ExternalUtterance, type ExternalSpeechSegment,
 } from "./generated/external-performance.ts";
 export { isQueued } from "./types.ts";
 export { clipLibraryDeclarationSchema } from "./generated/clip-library-schema.ts";

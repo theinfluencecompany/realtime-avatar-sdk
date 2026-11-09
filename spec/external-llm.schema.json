@@ -40,6 +40,11 @@
       "description": "Deliver correlated 24 kHz mono PCM instead of the ordinary audio track. Requires performance v1, fail_closed true, mode voice and voice_webhook.",
       "type": "string",
       "const": "correlated_pcm_v1"
+    },
+    "text_output": {
+      "description": "Receive complete ExternalSpeechSegment values in SSE rta_speech events, preserving caller utterance identity and text. Requires correlated PCM, performance v1 and fail_closed true.",
+      "type": "string",
+      "const": "speech_segments_v1"
     }
   },
   "required": [
@@ -65,6 +70,29 @@
       "required": [
         "performance",
         "fail_closed"
+      ]
+    },
+    "text_output": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "performance": {
+          "type": "string",
+          "const": "v1"
+        },
+        "fail_closed": {
+          "type": "boolean",
+          "const": true
+        },
+        "audio_output": {
+          "type": "string",
+          "const": "correlated_pcm_v1"
+        }
+      },
+      "required": [
+        "performance",
+        "fail_closed",
+        "audio_output"
       ]
     }
   }

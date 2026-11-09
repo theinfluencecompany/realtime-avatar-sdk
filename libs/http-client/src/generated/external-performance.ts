@@ -2,6 +2,7 @@
 import { z } from "zod";
 import type { components } from "./openapi.ts";
 type Wire = components["schemas"];
+type AssertTrue<Value extends true> = Value;
 const schema0 = z.string().min(1).max(200);
 
 const schema1 = z.literal(1);
@@ -14,52 +15,71 @@ const schema4 = z.union([schema2, schema3]);
 
 const schema5 = z.enum(["draft","accepted"]);
 
-const schema6 = z.literal("external");
+const schema6 = z.literal("speech_segments_v1");
 
-const schema7 = z.object({
-  "renderer": schema6,
-});
+const schema7 = z.literal("external");
 
 const schema8 = z.object({
+  "renderer": schema7,
+});
+
+const schema9 = z.object({
   "session_id": schema0,
   "generation_id": schema0,
   "version": schema1,
   "purpose": schema4,
   "admission": schema5,
-  "visible_character": schema7.optional(),
+  "text_output": schema6.optional(),
+  "visible_character": schema8.optional(),
 });
 
-const schema9 = z.string().min(1).max(200);
+const schema10 = z.string().min(1).max(200);
 
-const schema10 = z.object({
+const schema11 = z.object({
   "generation_id": schema0,
-  "utterance_id": schema9,
+  "utterance_id": schema10,
 });
 
-const schema11 = z.literal("external_performance");
+const schema12 = z.literal("external_performance");
 
-const schema12 = z.enum(["accepted","dropped","cancelled","audio_released"]);
+const schema13 = z.enum(["accepted","dropped","cancelled","audio_released"]);
 
-const schema13 = z.union([schema12, schema3]);
-
-const schema14 = z.literal("unavailable");
+const schema14 = z.union([schema13, schema3]);
 
 const schema15 = z.literal("unavailable");
 
-const schema16 = z.object({
+const schema16 = z.literal("unavailable");
+
+const schema17 = z.object({
   "session_id": schema0,
   "generation_id": schema0,
-  "kind": schema11,
+  "kind": schema12,
   "version": schema1,
-  "status": schema13,
-  "audible_checkpoint": schema14,
-  "audio_mapping": schema15,
+  "status": schema14,
+  "audible_checkpoint": schema15,
+  "audio_mapping": schema16,
 });
-export const externalTurnContextSchema = schema8 satisfies z.ZodType<Wire["ExternalTurnContext"], Wire["ExternalTurnContext"]>;
+
+const schema18 = z.string().regex(new RegExp("^(?:[^\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])*$")).min(1).max(5000);
+
+const schema19 = z.strictObject({
+  "version": schema1,
+  "generation_id": schema0,
+  "utterance_id": schema10,
+  "text": schema18,
+});
+export const externalTurnContextSchema = schema9;
 export type ExternalTurnContext = z.infer<typeof externalTurnContextSchema>;
+type _ExternalTurnContextParity = AssertTrue<[ExternalTurnContext] extends [Wire["ExternalTurnContext"]] ? [Wire["ExternalTurnContext"]] extends [ExternalTurnContext] ? true : false : false>;
 
-export const externalUtteranceSchema = schema10 satisfies z.ZodType<Wire["ExternalUtterance"], Wire["ExternalUtterance"]>;
+export const externalUtteranceSchema = schema11;
 export type ExternalUtterance = z.infer<typeof externalUtteranceSchema>;
+type _ExternalUtteranceParity = AssertTrue<[ExternalUtterance] extends [Wire["ExternalUtterance"]] ? [Wire["ExternalUtterance"]] extends [ExternalUtterance] ? true : false : false>;
 
-export const externalPerformanceFrameSchema = schema16 satisfies z.ZodType<Wire["ExternalPerformanceFrame"], Wire["ExternalPerformanceFrame"]>;
+export const externalPerformanceFrameSchema = schema17;
 export type ExternalPerformanceFrame = z.infer<typeof externalPerformanceFrameSchema>;
+type _ExternalPerformanceFrameParity = AssertTrue<[ExternalPerformanceFrame] extends [Wire["ExternalPerformanceFrame"]] ? [Wire["ExternalPerformanceFrame"]] extends [ExternalPerformanceFrame] ? true : false : false>;
+
+export const externalSpeechSegmentSchema = schema19;
+export type ExternalSpeechSegment = z.infer<typeof externalSpeechSegmentSchema>;
+type _ExternalSpeechSegmentParity = AssertTrue<[ExternalSpeechSegment] extends [Wire["ExternalSpeechSegment"]] ? [Wire["ExternalSpeechSegment"]] extends [ExternalSpeechSegment] ? true : false : false>;

@@ -18,24 +18,35 @@ const schema5 = z.literal("v1");
 
 const schema6 = z.literal("correlated_pcm_v1");
 
-const schema7 = z.literal("v1");
+const schema7 = z.literal("speech_segments_v1");
 
-const schema8 = z.literal(true);
+const schema8 = z.literal("v1");
 
-const schema9 = z.object({
-  "performance": schema7,
-  "fail_closed": schema8,
+const schema9 = z.literal(true);
+
+const schema10 = z.object({
+  "performance": schema8,
+  "fail_closed": schema9,
 });
 
-const schema10 = z.strictObject({
+const schema11 = z.literal("correlated_pcm_v1");
+
+const schema12 = z.object({
+  "performance": schema8,
+  "fail_closed": schema9,
+  "audio_output": schema11,
+});
+
+const schema13 = z.strictObject({
   "base_url": schema0,
   "token": schema1,
   "fail_closed": schema2.optional(),
   "visible_character": schema4.optional(),
   "performance": schema5.optional(),
   "audio_output": schema6.optional(),
-}).superRefine((value, ctx) => { if (value["audio_output"] !== undefined) { const result = schema9.safeParse(value); if (!result.success) for (const issue of result.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path }); } });
-export const externalLlmWireSchema = schema10;
+  "text_output": schema7.optional(),
+}).superRefine((value, ctx) => { if (value["audio_output"] !== undefined) { const result = schema10.safeParse(value); if (!result.success) for (const issue of result.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path }); } }).superRefine((value, ctx) => { if (value["text_output"] !== undefined) { const result = schema12.safeParse(value); if (!result.success) for (const issue of result.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path }); } });
+export const externalLlmWireSchema = schema13;
 export const externalLlmOptionsSchema = z.strictObject({
   baseUrl: externalLlmWireSchema.shape.base_url,
   token: externalLlmWireSchema.shape.token,
@@ -43,6 +54,7 @@ export const externalLlmOptionsSchema = z.strictObject({
   visibleCharacter: externalLlmWireSchema.shape.visible_character,
   performance: externalLlmWireSchema.shape.performance,
   audioOutput: externalLlmWireSchema.shape.audio_output,
+  textOutput: externalLlmWireSchema.shape.text_output,
 });
 export function externalLlmToWire(input: z.input<typeof externalLlmOptionsSchema>): z.output<typeof externalLlmWireSchema> {
   const options = externalLlmOptionsSchema.parse(input);
@@ -53,5 +65,6 @@ export function externalLlmToWire(input: z.input<typeof externalLlmOptionsSchema
     ...(options.visibleCharacter !== undefined ? { visible_character: options.visibleCharacter } : {}),
     ...(options.performance !== undefined ? { performance: options.performance } : {}),
     ...(options.audioOutput !== undefined ? { audio_output: options.audioOutput } : {}),
+    ...(options.textOutput !== undefined ? { text_output: options.textOutput } : {}),
   });
 }
