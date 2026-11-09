@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.36.0
+
+- Server-only `createSpeech(voiceId, input, { signal }?)` wraps the existing HTTP speech endpoint without LiveKit. Returns completed, bounded WAV/MP3 bytes and validated nullable billing/correlation metadata, not streaming audio. Existing RTA authorization and billing apply.
+- `createSpeechRequestSchema` and `CreateSpeechInput` derive from canonical OpenAPI. Invalid requests fail before fetching. Caller cancellation and request deadlines also bound binary reads.
+- Speech never retries automatically, even with client retries enabled: this billable operation is not idempotent and an ambiguous failure can already be charged. Other methods retain their existing retry policy.
+
 ## 0.35.0
 
 - Generated `llm.textOutput: "speech_segments_v1"` and server-only `externalSpeechSegmentSchema` preserve caller-owned utterance identity through compatible external-model receivers. Requires correlated PCM, performance v1 and fail-closed behavior; the format is echoed in the external turn context. Private performance payloads remain outside the SDK. Deploy the new receiver and platform before using this candidate.

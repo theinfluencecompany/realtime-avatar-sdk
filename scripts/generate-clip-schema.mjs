@@ -470,6 +470,53 @@ export const CORRELATED_AUDIO_CONTRACT = ${JSON.stringify(transport, null, 2)} a
 `;
 definitions.length = 0;
 names.clear();
+const speechOperation = Object.values(spec.paths).map(path => path.post).find(operation => operation?.operationId === "createSpeech");
+if (!speechOperation) throw new Error("Missing createSpeech operation");
+const speechRequest = spec.components.schemas.CreateSpeechRequest;
+const speechText = expression(speechRequest.properties.text);
+// The canonical description specifies trimming, which JSON Schema cannot encode.
+names.set(JSON.stringify(speechRequest.properties.text), `z.string().trim().pipe(${speechText})`);
+const speechRequestRoot = expression(speechRequest);
+const speechVoiceId = expression(speechOperation.parameters.find(parameter => parameter.in === "path" && parameter.name === "voiceId").schema);
+const speechResponse = speechOperation.responses[200];
+const speechHeaders = Object.entries(speechResponse.headers).map(([name, header]) => ({
+  name, schema: expression(header.schema),
+  field: name.replace(/^X-RTA-/, "").replace(/-([A-Z])/g, (_, letter) => letter).replace(/^./, letter => letter.toLowerCase()),
+}));
+const speechDefaultFormat = speechRequest.properties.format.default;
+if (!speechRequest.properties.format.enum.includes(speechDefaultFormat)) throw new Error("Invalid speech default format");
+const speechTarget = new URL("../libs/http-client/src/generated/speech.ts", import.meta.url);
+const speechOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
+// Do not edit; the platform owns the speech request and response metadata.
+import { z } from "zod";
+import type { operations } from "./openapi.ts";
+type AssertTrue<Value extends true> = Value;
+${definitions.join("\n\n")}
+export const createSpeechRequestSchema = ${speechRequestRoot}.extend({
+  format: ${speechRequestRoot}.shape.format.unwrap().default(${JSON.stringify(speechDefaultFormat)}),
+});
+export type CreateSpeechInput = z.input<typeof createSpeechRequestSchema>;
+type WireRequest = operations["createSpeech"]["requestBody"]["content"]["application/json"];
+type SpeechRequest = z.output<typeof createSpeechRequestSchema>;
+type _SpeechRequestParity = AssertTrue<[SpeechRequest] extends [WireRequest] ? [WireRequest] extends [SpeechRequest] ? true : false : false>;
+export const speechVoiceIdSchema = ${speechVoiceId};
+export const speechContentTypeSchema = z.enum(${JSON.stringify(Object.keys(speechResponse.content))});
+export type SpeechContentType = z.infer<typeof speechContentTypeSchema>;
+type _SpeechContentTypeParity = AssertTrue<SpeechContentType extends keyof operations["createSpeech"]["responses"][200]["content"] ? keyof operations["createSpeech"]["responses"][200]["content"] extends SpeechContentType ? true : false : false>;
+const speechResponseHeadersSchema = z.strictObject({
+${speechHeaders.map(({ name, schema }) => `  ${JSON.stringify(name)}: z.string().regex(/^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$/).transform(Number).pipe(${schema}).nullable(),`).join("\n")}
+});
+export function readSpeechHeaders(headers: Headers) {
+  const parsed = speechResponseHeadersSchema.parse({
+${speechHeaders.map(({ name }) => `    ${JSON.stringify(name)}: headers.get(${JSON.stringify(name)}),`).join("\n")}
+  });
+  return {
+${speechHeaders.map(({ name, field }) => `    ${field}: parsed[${JSON.stringify(name)}],`).join("\n")}
+  };
+}
+`;
+definitions.length = 0;
+names.clear();
 const { serverAuthoritative: _serverAuthoritative, ...policySchema } = externalPolicy;
 const externalPolicyRoot = expression(policySchema);
 const externalPolicyFields = Object.keys(policySchema.properties).map((field) => ({
@@ -495,6 +542,7 @@ ${externalPolicyFields.map(({ field, option, required }) => required
 }
 `;
 if (check) {
+  if (await readFile(speechTarget, "utf8") !== speechOutput) throw new Error("Speech schemas are stale; run npm run spec:types");
   if (await readFile(correlatedTarget, "utf8") !== correlatedOutput) throw new Error("Correlated audio schemas are stale; run npm run spec:types");
   if (await readFile(performanceTarget, "utf8") !== performanceOutput) throw new Error("External performance schemas are stale; run npm run spec:types");
   if (await readFile(policyTarget, "utf8") !== policyOutput) throw new Error("External LLM policy is stale; run npm run spec:types");
@@ -515,6 +563,7 @@ if (check) {
     await writeFile(externalPolicyTarget, externalPolicyContract.bytes);
     await writeFile(specTarget, specBytes);
   }
+  await writeFile(speechTarget, speechOutput);
   await writeFile(avatarTarget, avatarOutput);
   await writeFile(target, output);
   await writeFile(transcriptionTarget, transcriptionOutput);

@@ -10,7 +10,7 @@ import {
   type PollOptions,
 } from "./retry.ts";
 import type { z } from "zod";
-import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
+import { RealtimeAvatarError, RealtimeAvatarHttpError, isRequestId } from "./errors.ts";
 import { clipLibraryResponseSchema, clipLibraryUpdateSchema } from "./generated/clip-library-schema.ts";
 import { avatarResponseSchema, createLive2dAvatarInputSchema } from "./generated/avatar.ts";
 import { recordingModeSchema, recordingArtifactSchema, listRecordingsQuerySchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
@@ -20,6 +20,7 @@ import type { components, operations } from "./generated/openapi.ts";
 import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 import { transcriptionToWire } from "./generated/transcription.ts";
 import { contentPolicySchema } from "./generated/content-policy.ts";
+import { createSpeechRequestSchema, speechVoiceIdSchema, speechContentTypeSchema, readSpeechHeaders } from "./generated/speech.ts";
 import { voiceWebhookToWire } from "./generated/voice-webhook.ts";
 import { externalLlmToWire } from "./generated/external-llm.ts";
 import { listUsageSessionsResponseSchema, toSessionsPage } from "./generated/usage-sessions.ts";
@@ -49,6 +50,8 @@ import type {
   RecordingArtifact,
   RecordingAccessResponse,
   CreateRenderInput,
+  CreateSpeechInput,
+  SpeechResult,
   ListRendersQuery,
   ListRendersResponse,
   Render,
@@ -57,9 +60,13 @@ import type {
 
 const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 const RENDER_MISMATCH = "Render response did not match the SDK contract";
+const SPEECH_MISMATCH = "Speech response did not match the SDK contract";
+// SDK receive budget, matching the platform's current 24 MiB speech response cap.
+// This is a local safety bound, not a generated promise about future platform limits.
+const MAX_SPEECH_RESPONSE_BYTES = 24 * 1024 * 1024;
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.35.0";
+export const SDK_VERSION = "0.36.0";
 
 
 
@@ -776,6 +783,48 @@ export class RealtimeAvatar {
     return (await this.#json(await this.#request("GET", "/credits/balance"))) as CreditBalance;
   }
 
+  /** Completed speech audio, without a call or LiveKit. Never automatically retried. */
+  async createSpeech(
+    voiceId: operations["createSpeech"]["parameters"]["path"]["voiceId"],
+    input: CreateSpeechInput,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<SpeechResult> {
+    const id = speechVoiceIdSchema.parse(voiceId);
+    const json = createSpeechRequestSchema.parse(input);
+    // Unlike JSON calls, the bounded binary read must share the request's entire deadline.
+    const timeout = AbortSignal.timeout(Math.max(0, Math.min(this.#timeoutMs, this.#totalTimeoutMs ?? Infinity)));
+    const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+    const response = await this.#request("POST", `/voices/${encodeURIComponent(id)}/speech`, {
+      json, signal, maxRetries: 0,
+    });
+    if (!response.ok) {
+      try {
+        await this.#json(response);
+      } finally {
+        signal.throwIfAborted();
+      }
+      throw new RealtimeAvatarError(SPEECH_MISMATCH);
+    }
+    let metadata;
+    try {
+      const contentType = speechContentTypeSchema.parse(response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase());
+      const expected: Record<typeof json.format, SpeechResult["contentType"]> = { wav: "audio/wav", mp3: "audio/mpeg" };
+      if (contentType !== expected[json.format]) throw new RealtimeAvatarError(SPEECH_MISMATCH);
+      const requestId = response.headers.get("x-request-id");
+      if (requestId !== null && !isRequestId(requestId)) throw new RealtimeAvatarError(SPEECH_MISMATCH);
+      metadata = { contentType, ...readSpeechHeaders(response.headers), requestId };
+      const length = response.headers.get("content-length");
+      if (length !== null && (!/^[0-9]+$/.test(length) || Number(length) > MAX_SPEECH_RESPONSE_BYTES)) {
+        throw new RealtimeAvatarError(SPEECH_MISMATCH);
+      }
+    } catch {
+      await response.body?.cancel().catch(() => {});
+      throw new RealtimeAvatarError(SPEECH_MISMATCH);
+    }
+    const bytes = await readSpeechBytes(response, signal, metadata.contentType);
+    return { bytes, ...metadata };
+  }
+
   // ── internals ────────────────────────────────────────────────────────────
 
   async #request(
@@ -784,6 +833,8 @@ export class RealtimeAvatar {
     init: {
       json?: unknown;
       body?: BodyInit;
+      signal?: AbortSignal;
+      maxRetries?: 0;
       headers?: Pick<NonNullable<operations["listUsageSessions"]["parameters"]["header"]>, "X-RTA-Speech-Diagnostics">;
     } = {},
   ): Promise<Response> {
@@ -804,27 +855,31 @@ export class RealtimeAvatar {
     // again on the retry.
     if (MUTATING.has(method)) headers["idempotency-key"] = newIdempotencyKey();
 
+    const maxRetries = init.maxRetries ?? this.#maxRetries;
     const deadline = this.#totalTimeoutMs === undefined ? Infinity : Date.now() + this.#totalTimeoutMs;
     let lastError: unknown;
     for (let attempt = 0; ; attempt++) {
       const startedAt = Date.now();
       try {
         // A fresh timeout per attempt, cut short by whatever is left of the total budget.
-        const signal = AbortSignal.timeout(Math.max(0, Math.min(this.#timeoutMs, deadline - startedAt)));
+        const timeout = AbortSignal.timeout(Math.max(0, Math.min(this.#timeoutMs, deadline - startedAt)));
+        const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+        signal.throwIfAborted();
         const response = await this.#fetch(`${this.#baseUrl}${path}`, { method, headers, body, signal });
-        if (attempt >= this.#maxRetries || !RETRYABLE_STATUS.has(response.status)) return response;
+        if (attempt >= maxRetries || !RETRYABLE_STATUS.has(response.status)) return response;
         const wait = backoffMs(attempt, response.headers.get("retry-after"));
         if (!retryFits(startedAt, wait, deadline)) return response;
         // Discard the body we are not going to read, or the socket can be held open.
         await response.body?.cancel().catch(() => {});
         await sleep(wait);
       } catch (cause) {
+        init.signal?.throwIfAborted();
         lastError = cause;
         const wait = backoffMs(attempt, null);
         // A retry is only safe if the request can be replayed. Streaming bodies cannot be.
-        if (attempt >= this.#maxRetries || !isTransient(cause) || isStream(body) || !retryFits(startedAt, wait, deadline)) {
+        if (attempt >= maxRetries || !isTransient(cause) || isStream(body) || !retryFits(startedAt, wait, deadline)) {
           throw new RealtimeAvatarError(
-            `${method} ${path} failed after ${attempt + 1} attempt(s): ${(cause as Error).message}`,
+            `${method} ${path} failed after ${attempt + 1} attempt(s): ${cause instanceof Error ? cause.message : String(cause)}`,
             { cause: lastError },
           );
         }
@@ -861,6 +916,47 @@ export class RealtimeAvatar {
     const parsed = schema.safeParse(raw);
     if (!parsed.success) throw new RealtimeAvatarError(mismatch);
     return parsed.data;
+  }
+}
+
+async function readSpeechBytes(response: Response, signal: AbortSignal, contentType: SpeechResult["contentType"]): Promise<Uint8Array<ArrayBuffer>> {
+  if (!response.body) throw new RealtimeAvatarError(SPEECH_MISMATCH);
+  const reader = response.body.getReader();
+  const cancel = () => { void reader.cancel().catch(() => {}); };
+  signal.addEventListener("abort", cancel, { once: true });
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    signal.throwIfAborted();
+    for (;;) {
+      const { done, value } = await reader.read();
+      signal.throwIfAborted();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_SPEECH_RESPONSE_BYTES) throw new RealtimeAvatarError(SPEECH_MISMATCH);
+      chunks.push(value);
+    }
+    if (size === 0) throw new RealtimeAvatarError(SPEECH_MISMATCH);
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    // Container signatures reject mislabeled error bodies; codec validity remains the platform's job.
+    const matches = (offset: number, text: string) => [...text].every((character, index) => bytes[offset + index] === character.charCodeAt(0));
+    const valid = contentType === "audio/wav"
+      ? size >= 44 && matches(0, "RIFF") && matches(8, "WAVE")
+      : (size >= 10 && matches(0, "ID3")) || (size >= 4 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0);
+    if (!valid) throw new RealtimeAvatarError(SPEECH_MISMATCH);
+    return bytes;
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    signal.throwIfAborted();
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    reader.releaseLock();
   }
 }
 
