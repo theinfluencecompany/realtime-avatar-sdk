@@ -204,6 +204,36 @@ Two facts follow from that picture and drive everything else:
 
 ---
 
+## Speech without a live call
+
+```ts
+const speech = await rta.createSpeech(voiceId, { text: "Hello!", format: "wav" }, { signal });
+return new Response(speech.bytes, { headers: { "content-type": speech.contentType } });
+```
+
+Available only from the server entries, `createSpeech` wraps the existing HTTP speech endpoint.
+It returns completed audio, **not streaming audio**, and uses **no LiveKit** or live call.
+It does not listen or provide full-duplex conversation; live calls remain full duplex.
+
+The exported `createSpeechRequestSchema` owns `CreateSpeechInput`: text is trimmed and must
+contain 1–2,000 characters; `format` defaults to `mp3` (or choose `wav`); optional `speed` is
+0.5–2 and `language` is a BCP-47 tag. Unknown fields reject. Use a real workspace-accessible
+`vce_…` or `voice_…` ID. `SpeechResult` contains `Uint8Array<ArrayBuffer>` bytes, validated
+`audio/mpeg` or `audio/wav` content type, and nullable `billedBytes`, `billedCredits`, `requestId`.
+Missing metadata stays null; invalid metadata, mismatched media, empty audio or more than
+24 MiB rejects. Container signatures are checked, not the full audio codec.
+
+Existing RTA authorization and billing apply: `speech:write`, a paid workspace or purchased
+credits, and an accessible voice. Billing counts UTF-8 bytes of trimmed text (one credit per
+90 bytes, rounded up, minimum one). The endpoint stores neither text nor audio; callers may
+save and replay bytes. Limits are 20 requests per minute and one in progress per workspace.
+
+**No automatic retries**, regardless of client `maxRetries`: the endpoint is not idempotent,
+and an ambiguous failure may already be billed. `signal`, `timeoutMs` and `totalTimeoutMs`
+cover the request and binary body; an abort does not guarantee that upstream billing stopped.
+Caller aborts propagate, timeout aborts are `TimeoutError`, and HTTP errors use the existing
+`RealtimeAvatarHttpError` class.
+
 ## Custom voice (webhook)
 
 Speak a call in your own voice. Each sentence she is about to say is POSTed, signed, to an
@@ -422,6 +452,9 @@ rta.listRecordings({ sessionId, limit?, cursor? })
 rta.getRecording(recordingId)
 rta.getRecordingAccess(recordingId)
 rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires usage:read
+
+// completed speech audio; server only, no LiveKit, never retried; requires speech:write
+rta.createSpeech(voiceId, { text, format?, speed?, language? }, { signal? })
 
 // pre-rendered video (MP4, no live call); server only, requires renders:write / renders:read
 rta.createRender({ avatarId, voiceId? | voice?, lipGain?, shots })  // 202 queued; one Idempotency-Key across retries

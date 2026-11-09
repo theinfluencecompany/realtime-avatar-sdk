@@ -373,6 +373,9 @@ rta.getRecording(recordingId)          // durable metadata and processing state
 rta.getRecordingAccess(recordingId)    // { recordingId, url, expiresAt }; renew when needed
 rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires usage:read
 
+// completed speech audio; server only, no LiveKit, never retried; requires speech:write
+rta.createSpeech(voiceId, { text, format?, speed?, language? }, { signal? })
+
 // pre-rendered video (MP4, no live call); server only, requires renders:write / renders:read
 rta.createRender({ avatarId, voiceId? | voice?, lipGain?, shots })  // 202 queued; one Idempotency-Key across retries
 rta.waitForRender(renderId)            // block until ready | failed; RETURNS a failed render, throws only on timeout
@@ -594,6 +597,41 @@ at most 100 relevant vocabulary terms; the limit is 1,000 terms, 160 characters
 each. Hints bias recognition rather than guaranteeing a spelling or faster
 response. They do not change character instructions. This configuration is set
 when the call starts; changing the object does not update an active call.
+
+## Speech without a live call
+
+`createSpeech` is a server-only wrapper for the existing `POST /voices/{voiceId}/speech` endpoint.
+It returns **completed audio**, not a stream. It does not start a call, use LiveKit, listen,
+or provide full-duplex turn-taking. Live calls remain full duplex in both voice and avatar modes.
+
+```ts
+import { RealtimeAvatar } from "realtime-avatar/server";
+
+const rta = new RealtimeAvatar({ apiKey: process.env.REALTIME_AVATAR_API_KEY! });
+const speech = await rta.createSpeech(voiceId, { text: "Hello!", format: "wav" }, { signal });
+return new Response(speech.bytes, { headers: { "content-type": speech.contentType } });
+```
+
+Use a real workspace-accessible voice ID (`vce_…` or `voice_…`). Input is validated with the
+exported `createSpeechRequestSchema`: trimmed text of 1–2,000 characters, `format` (`mp3` by
+default or `wav`), optional `speed` (0.5–2) and `language` (BCP-47 tag). Unknown fields reject.
+`CreateSpeechInput` derives from that schema. `SpeechResult` contains `bytes` as
+`Uint8Array<ArrayBuffer>`, `contentType` (`audio/mpeg` or `audio/wav`), and nullable
+`billedBytes`, `billedCredits` and `requestId`. Missing metadata remains null. Invalid present
+metadata, a mismatched content type, an empty response or audio over the SDK's 24 MiB receive
+budget rejects. Container signatures are checked; the SDK is not an audio codec validator.
+
+Existing RTA authorization and billing apply: a `speech:write` key, a paid workspace or purchased
+credits, and a voice that workspace may use. Billing is per UTF-8 byte of trimmed text (one
+credit per 90 bytes, rounded up, minimum one); the response headers report the actual charge.
+Text and audio are not stored by the endpoint. You may store and replay returned bytes.
+
+**This method never retries**, even when the client has `maxRetries > 0`. Speech is not
+idempotent: a timeout or lost response may already have incurred a charge, and another request
+can charge again. Caller cancellation and the configured timeout cover fetching and body reading;
+cancellation is not proof that upstream work or billing stopped. HTTP failures retain the existing
+`RealtimeAvatarHttpError` semantics. Caller aborts propagate; timeout aborts are `TimeoutError`.
+The service limits speech to 20 requests per minute and one in progress per workspace.
 
 ## Custom voice (webhook)
 

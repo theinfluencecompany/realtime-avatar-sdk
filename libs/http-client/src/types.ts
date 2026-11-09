@@ -35,6 +35,14 @@ import type { toSessionsPage } from "./generated/usage-sessions.ts";
 import type { RecordingMode, RecordingArtifact } from "./generated/recording.ts";
 import type { voiceWebhookToWire } from "./generated/voice-webhook.ts";
 import type { externalLlmToWire } from "./generated/external-llm.ts";
+import type { readSpeechHeaders, SpeechContentType } from "./generated/speech.ts";
+export type { CreateSpeechInput } from "./generated/speech.ts";
+/** DERIVATION: binary bytes are SDK-owned; media types and billing derive from createSpeech's operation. */
+export type SpeechResult = ReturnType<typeof readSpeechHeaders> & {
+  bytes: Uint8Array<ArrayBuffer>;
+  contentType: SpeechContentType;
+  requestId: string | null;
+};
 export type { RecordingMode, RecordingArtifactStatus, RecordingArtifact, ListRecordingsQuery, ListRecordingsResponse, RecordingAccessResponse } from "./generated/recording.ts";
 export type { RenderStatus, RenderFailureCode, RenderPlayback, ShotTiming, Render, ListRendersQuery, ListRendersResponse, RenderAccessResponse } from "./generated/render.ts";
 

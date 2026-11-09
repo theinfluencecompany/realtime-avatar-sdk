@@ -24,6 +24,7 @@ const files = [
   "libs/http-client/src/generated/external-performance.ts",
   "libs/http-client/src/generated/avatar.ts",
   "libs/http-client/src/generated/correlated-audio.ts",
+  "libs/http-client/src/generated/speech.ts",
 ] as const;
 const specBytes = await readFile(new URL(files[0], root));
 const vendorBytes = await readFile(new URL(files[1], root));
@@ -84,6 +85,9 @@ test("generation and --check verify the committed executable offline and reject 
     await f.run([]);
     await f.run(["--check"]);
     assert.deepEqual(await f.snapshot(), before);
+    await writeFile(join(f.dir, "libs/http-client/src/generated/speech.ts"), "export const createSpeechRequestSchema = z.any();");
+    await assert.rejects(f.run(["--check"]), /Speech schemas are stale/);
+    await f.run([]);
     await writeFile(join(f.dir, "libs/http-client/src/generated/correlated-audio.ts"), "export const correlatedAudioHeaderSchema = z.any();");
     await assert.rejects(f.run(["--check"]), /Correlated audio schemas are stale/);
     await f.run([]);
@@ -151,6 +155,12 @@ test("canonical numeric field mutations fail generated mapping and public consum
     await compile();
     const safeConsumer = await readFile(join(f.dir, "consumer.ts"), "utf8");
     for (const unsafe of [
+      `import type { CreateSpeechInput, SpeechResult } from "./libs/http-client/src/index.ts";
+       declare const decoded: unknown;
+       const input: CreateSpeechInput = decoded;
+       const result: SpeechResult = decoded;`,
+      `import type { CreateSpeechInput } from "./libs/http-client/src/index.ts";
+       const input: CreateSpeechInput = { text: "Hello", format: "pcm" };`,
       `import type { CorrelatedAudioHeader } from "./libs/http-client/src/generated/correlated-audio.ts";
        declare const decoded: unknown;
        const header: CorrelatedAudioHeader = decoded;`,
