@@ -610,8 +610,8 @@ const call = await rta.startCall({
   `admission: "draft" | "accepted"`) to each request — validate it with
   `externalTurnContextSchema` — puts the `generation_id` plus a retry-stable `utterance_id` on each
   voice-webhook sentence, and lets the client pass `externalPerformance: { onFrame,
-  onInvalidated }` to `useRealtimeSession`. These fields are unreleased until the platform ships
-  them; the README section "Drawing the character yourself" has the whole flow.
+  onInvalidated }` to `useRealtimeSession`. SDK 0.34.0 and the hosted platform support these
+  fields; the README section "Drawing the character yourself" has the whole flow.
 - **Those frames are admission and cancellation, never playback.** `accepted`, `dropped`,
   `audio_released` and `cancelled` say what the worker decided, not what the caller heard:
   `audible_checkpoint` and `audio_mapping` are literally `"unavailable"`. Never start an animation

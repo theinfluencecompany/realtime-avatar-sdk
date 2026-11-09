@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.34.0
 
-Needs a platform and worker that accept these fields; until they ship, the mint refuses them.
+Requires platform and worker support for external performance, Live2D identity and correlated PCM. These capabilities are deployed on the hosted service; application integration and live playback acceptance remain the consumer's responsibility.
 
 ### Added
 

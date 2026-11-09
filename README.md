@@ -161,8 +161,9 @@ and the exact verified dependency tuple are documented in the [package README](.
 
 For an app that renders its own character (a Live2D rig, a sprite, anything) and answers her
 turns from its own model, while the platform keeps listening, turn-taking, interruption and her
-voice. **Unreleased:** it needs a platform and worker that accept these fields, which have not
-shipped yet; until they do, the mint refuses them.
+voice. Available in SDK 0.34.0 with compatible platform and worker deployments. The hosted
+service supports these fields; deploying the SDK does not itself validate an application's
+model latency, performance synchronization or live playback.
 
 There is no new mode. `mode: "voice"` is the audio transport, as always; that YOUR app shows her
 is a separate, server-owned fact. A call that sets none of the fields below behaves exactly as
