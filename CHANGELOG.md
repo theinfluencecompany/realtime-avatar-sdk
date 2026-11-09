@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.37.0
+
+- Server-only `createSpeechStream` lazily yields generated typed SSE events: mono 24 kHz signed 16-bit PCM, replaceable absolute alignment and explicit completed/failed terminals. Existing completed-file `createSpeech` is unchanged. Requires the platform streaming endpoint.
+- Strict correlation, contiguous sequence/sample offsets, whole samples, duration and receive budgets reject malformed or truncated streams. Failed terminals remain typed events, not success or implicit retries.
+- Caller abort, early iterator return and total deadlines cancel fetch and body reading. This paid operation is never automatically retried. The maintained SSE parser is pinned to `eventsource-parser` 3.1.1.
+- Speech request/event schemas and types are generated from canonical OpenAPI, including the platform-owned cross-field alignment and binary limits extension.
+
 ## 0.36.0
 
 - Server-only `createSpeech(voiceId, input, { signal }?)` wraps the existing HTTP speech endpoint without LiveKit. Returns completed, bounded WAV/MP3 bytes and validated nullable billing/correlation metadata, not streaming audio. Existing RTA authorization and billing apply.

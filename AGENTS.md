@@ -996,6 +996,37 @@ they retry. The three casts in `errors.ts` were replaced with a single `readReco
 
 ---
 
+## Streaming speech without a live call
+
+`createSpeechStream(voiceId, { text, speed?, language? }, { signal? })` is a server-only,
+unreleased candidate returning an async generator. Iterate it to start the paid request.
+It shares `createSpeech` authentication and HTTP errors, not its completed-file response:
+there is no `format`, no LiveKit and no full-duplex session. Do not put the API key or this
+method in browser or React entries. Existing `createSpeech` stays unchanged.
+
+Forward or consume PCM incrementally; never gather the whole response before forwarding it.
+The generated `SpeechStreamEvent` union owns `started`, `audio`, `alignment`, `completed` and
+`failed`. Validate external input through the generated schemas, not a handwritten mirror.
+The generator reads `CreateSpeechStreamRequest`, `SpeechStreamEvent`, `SpeechAlignedText`
+and `x-speech-stream-contract` from platform OpenAPI. The extension preserves canonical
+cross-field alignment ordering and exact decoded audio limits that JSON Schema cannot express.
+Run `generate-clip-schema.mjs --sync <absolute platform root>` and `npm run spec:types` after
+platform generation, then `npm run spec:verify`; do not edit generated files. A missing extension
+fails generation. No source-only metadata or handwritten replacement may ship.
+
+All events share one UUID; one `started` precedes contiguous PCM audio (`pcm_s16le`, 24 kHz,
+mono, whole samples, at most 16 KiB per audio event and 180 seconds total). Alignment uses
+absolute seconds and updates replace by `chunkSeq`; absence stays unknown. Do not derive
+current-word timing or audible playback from delivery timestamps. One terminal ends the
+sequence: completed sample count must match delivered PCM; failed is a typed event, including
+after partial audio. Read to EOF to verify there are no events after the terminal.
+
+The SDK rejects malformed/truncated streams and bounds event and total receive work. It uses
+pinned `eventsource-parser`, not an ad-hoc SSE decoder. Caller abort, `break` or `return()` cancels
+fetch and reader even during an outstanding `next()`. Timeout covers the entire body. Never
+retry this paid operation automatically, even if `maxRetries` is configured or a failed event
+says retryable: an ambiguous request may already have cost money. Cancellation is not a refund.
+
 ## Working in this repo
 
 ```bash

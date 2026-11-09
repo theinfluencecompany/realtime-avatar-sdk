@@ -20,7 +20,8 @@ import type { components, operations } from "./generated/openapi.ts";
 import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 import { transcriptionToWire } from "./generated/transcription.ts";
 import { contentPolicySchema } from "./generated/content-policy.ts";
-import { createSpeechRequestSchema, speechVoiceIdSchema, speechContentTypeSchema, readSpeechHeaders } from "./generated/speech.ts";
+import { createSpeechRequestSchema, createSpeechStreamRequestSchema, speechVoiceIdSchema, speechContentTypeSchema, readSpeechHeaders } from "./generated/speech.ts";
+import { speechStreamIterator, boundedSpeechErrorResponse } from "./speech-stream.ts";
 import { voiceWebhookToWire } from "./generated/voice-webhook.ts";
 import { externalLlmToWire } from "./generated/external-llm.ts";
 import { listUsageSessionsResponseSchema, toSessionsPage } from "./generated/usage-sessions.ts";
@@ -51,6 +52,8 @@ import type {
   RecordingAccessResponse,
   CreateRenderInput,
   CreateSpeechInput,
+  CreateSpeechStreamRequest,
+  SpeechStreamEvent,
   SpeechResult,
   ListRendersQuery,
   ListRendersResponse,
@@ -66,7 +69,7 @@ const SPEECH_MISMATCH = "Speech response did not match the SDK contract";
 const MAX_SPEECH_RESPONSE_BYTES = 24 * 1024 * 1024;
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.36.0";
+export const SDK_VERSION = "0.37.0";
 
 
 
@@ -110,9 +113,9 @@ export interface StartCallOptions extends CallPolicy {
 /**
  * The server-side client.
  *
- * Deliberately zero-dependency and small enough to read in one sitting. It owns the two
- * things that are easy to get wrong and impossible to discover from a 4xx: the camelCase →
- * snake_case translation, and keeping the connection payload intact for relay.
+ * Owns authentication, retry policy and the camelCase → snake_case translation, while
+ * keeping connection payloads intact for relay. Streaming speech uses a maintained SSE
+ * parser and the same generated boundary contracts as completed requests.
  *
  * This class must only ever run on a server. A browser holding the key could start unlimited
  * calls on your account; the constructor refuses to build in a browser-like runtime so that
@@ -823,6 +826,29 @@ export class RealtimeAvatar {
     }
     const bytes = await readSpeechBytes(response, signal, metadata.contentType);
     return { bytes, ...metadata };
+  }
+
+  /**
+   * Incremental mono PCM and absolute alignment, without a call or LiveKit. The first next()
+   * starts the paid request; break/return or signal abort cancels it. Never retried. A failed
+   * terminal is yielded, not thrown; malformed/truncated transport throws RealtimeAvatarError.
+   */
+  createSpeechStream(
+    voiceId: operations["createSpeechStream"]["parameters"]["path"]["voiceId"],
+    input: CreateSpeechStreamRequest,
+    options: { signal?: AbortSignal } = {},
+  ): AsyncGenerator<SpeechStreamEvent, void, unknown> {
+    return speechStreamIterator(async signal => {
+      const id = speechVoiceIdSchema.parse(voiceId);
+      const json = createSpeechStreamRequestSchema.parse(input);
+      const response = await this.#request("POST", `/voices/${encodeURIComponent(id)}/speech/stream`, {
+        json, signal, maxRetries: 0,
+      });
+      if (!response.ok) {
+        await this.#json(await boundedSpeechErrorResponse(response, signal));
+      }
+      return response;
+    }, Math.max(0, Math.min(this.#timeoutMs, this.#totalTimeoutMs ?? Infinity)), options.signal);
   }
 
   // ── internals ────────────────────────────────────────────────────────────

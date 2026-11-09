@@ -11,6 +11,11 @@ test("both published server entries expose the same canonical boundary validator
   for (const entry of [publicRoot, publicServer]) {
     assert.equal(typeof entry.RealtimeAvatar.prototype.createLive2dAvatar, "function");
     assert.equal(typeof entry.RealtimeAvatar.prototype.createSpeech, "function");
+    assert.equal(typeof entry.RealtimeAvatar.prototype.createSpeechStream, "function");
+    assert.equal(entry.createSpeechStreamRequestSchema.safeParse({ text: "Hello", format: "mp3" }).success, false);
+    assert.deepEqual(entry.createSpeechStreamRequestSchema.parse({ text: " Hello " }), { text: "Hello" });
+    assert.equal(entry.speechAlignedTextSchema.safeParse({ text: "Hello", start: 2, end: 1 }).success, false);
+    assert.equal(entry.speechStreamEventSchema.safeParse({ type: "audio" }).success, false);
     assert.equal(entry.createSpeechRequestSchema.safeParse({ text: "Hello", extra: true }).success, false);
     assert.deepEqual(entry.createSpeechRequestSchema.parse({ text: " Hello " }), { text: "Hello", format: "mp3" });
     assert.equal(entry.liveKitSessionGrantSchema.safeParse({ session_id: 123 }).success, false);

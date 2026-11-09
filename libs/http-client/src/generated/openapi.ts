@@ -134,6 +134,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/voices/{voiceId}/speech/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream speech with a voice
+         * @description Stream signed 16-bit little-endian PCM at 24000 Hz, mono, as SSE. Same paying-workspace eligibility, strict voice choice, rate/concurrency limits and per-text-byte price as createSpeech; format is not accepted. Each event has type and requestId, and the SSE event name matches type. started means authorized, admitted and credits reserved, not successful synthesis. audio sequence starts at zero; sampleOffset is contiguous. Append every audio payload. Replace alignment snapshots by chunkSeq; segment times are absolute seconds. completed is sent only after provider EOF, validation and credit settlement. A failed event carries the canonical Error envelope, including after partial audio; delivered bytes cannot be retracted. Missing completed is not success. Disconnect or a stalled consumer closes delivery but admitted work drains and settles within the provider timeout; never automatically retry an uncertain result. At most 180 seconds, 16 KiB PCM per audio event and 256 KiB queued delivery. Nothing is stored and no replay is available.
+         *
+         *     Requires an API key with the `speech:write` scope.
+         */
+        post: operations["createSpeechStream"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/avatars": {
         parameters: {
             query?: never;
@@ -1681,6 +1703,105 @@ export interface components {
             /** @description BCP-47 tag such as en-AU. Shapes how numbers, dates and units are read; it does not change the voice. */
             language?: string;
         };
+        CreateSpeechStreamRequest: {
+            /** @description What to say, at most 2,000 characters after trimming. Billed per UTF-8 byte: plain English is one byte per character, accented letters and other scripts use 2 to 4. Text in [square brackets] may be performed as a delivery cue rather than spoken. */
+            text: string;
+            /** @description Speaking rate, 0.5 to 2. Omit for the voice's natural pace. */
+            speed?: number;
+            /** @description BCP-47 tag such as en-AU. Shapes how numbers, dates and units are read; it does not change the voice. */
+            language?: string;
+        };
+        SpeechStreamEvent: {
+            /** Format: uuid */
+            requestId: string;
+            /** @constant */
+            type: "started";
+            /** @constant */
+            encoding: "pcm_s16le";
+            /** @constant */
+            sampleRate: 24000;
+            /** @constant */
+            channels: 1;
+        } | {
+            /** Format: uuid */
+            requestId: string;
+            /** @constant */
+            type: "audio";
+            sequence: number;
+            sampleOffset: number;
+            /** Format: base64 */
+            audioBase64: string;
+        } | {
+            /** Format: uuid */
+            requestId: string;
+            /** @constant */
+            type: "alignment";
+            chunkSeq: number;
+            segments: {
+                text: string;
+                start: number;
+                end: number;
+            }[];
+        } | {
+            /** Format: uuid */
+            requestId: string;
+            /** @constant */
+            type: "completed";
+            totalSamples: number;
+            billedCredits: number;
+            billedBytes: number;
+        } | {
+            /** Format: uuid */
+            requestId: string;
+            /** @constant */
+            type: "failed";
+            error: {
+                /** @description Human-readable message. Not a stable contract — switch on `code` or `status`. */
+                error: string;
+                /** @description Repeats the HTTP status in the body. Always present. */
+                status: number;
+                /** @description Machine-readable discriminator. ALWAYS present: a failure that names its own — billing, clip-library and loop refusals, `insufficient_scope` — carries that, and everything else carries the status's default (`unauthorized`, `not_found`, `rate_limited`, …). Switch on this rather than on `error`, whose wording is not a contract. The set is open and grows with the API; the codes a given endpoint can return are documented with that endpoint at https://realtimeavatar.ai/docs/api-reference. */
+                code: string;
+                /**
+                 * Format: uri
+                 * @description Where to read how to resolve a failure of this class — the authentication guide for 401/403, the API reference otherwise. Always present.
+                 */
+                documentation: string;
+                /** @description Set when the failure is worth retrying as-is. */
+                retryable?: boolean;
+                /**
+                 * Format: uuid
+                 * @description Server-generated correlation ID, also returned in X-Request-ID on correlated failures. Quote this when contacting support. Detailed diagnostics require separate operational access.
+                 */
+                requestId?: string;
+                /**
+                 * @description Present on `403 insufficient_scope` — the one scope this operation needed and the key did not carry. Repeated in the `WWW-Authenticate` challenge as `scope=`.
+                 * @enum {string}
+                 */
+                requiredScope?: "*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write" | "renders:read" | "renders:write";
+                /** @description Present alongside `requiredScope` — the scopes the presented key does carry. */
+                grantedScopes?: ("*" | "api_keys:write" | "credits:read" | "avatars:read" | "avatars:write" | "realtime:write" | "usage:read" | "recordings:read" | "usage:write" | "speech:write" | "renders:read" | "renders:write")[];
+                /** @description Present on 402 — where to send the user to top up. */
+                billingUrl?: string;
+                /** @description On concurrency_limit_reached: the workspace's concurrent session limit. */
+                maxConcurrentSessions?: number;
+                /** @description Legacy concurrency count: occupied reservations, including active, connecting and starting sessions. Not the number of active conversations. */
+                liveSessions?: number;
+                /** @description On concurrency_limit_reached: counted reservations with started media, observed at refusal. */
+                activeSessions?: number;
+                /** @description On concurrency_limit_reached: counted reservations with an attached session that has not started media. */
+                connectingSessions?: number;
+                /** @description On concurrency_limit_reached: counted in-flight starts with no attached session yet. */
+                pendingSessions?: number;
+            } & {
+                [key: string]: unknown;
+            };
+        };
+        SpeechAlignedText: {
+            text: string;
+            start: number;
+            end: number;
+        };
         CreditBalance: {
             tenantId: string;
             balanceCreditMicros: number;
@@ -2731,6 +2852,96 @@ export interface operations {
             429: {
                 headers: {
                     /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error. Route-dependent: 400 (a field this route cannot honour — see `portraitUrl` on `UpdateAvatarRequest`), 402 (insufficient credits or spend limit), 404 (no such avatar, voice, or key for this tenant — the message often reads "does not belong to this tenant", which is a missing id and not a permission failure), 408 (the request was cancelled), 409 (the resource is not in a state that accepts this write — a stale `expectedRevision`, a render already in flight, or a mint that asked for a clip library still building), 411 (`POST /v1/assets/remote` only — the origin serving `remoteUrl` sent no `content-length`, so the platform will not stream it), 422 (strict schema rejection, or a motion description the safety screen refused), 429 (rate limited), 502 (upstream render failed), 503 (a dependency this route needs is unavailable — retryable, and nothing was written), 504 (the upstream request budget expired), 500 (unhandled). Switch on `code` where present, else `status`. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createSpeechStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                voiceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSpeechStreamRequest"];
+            };
+        };
+        responses: {
+            /** @description SSE frames whose JSON data follows SpeechStreamEvent. Terminal completed confirms billing; failed is an explicit failure, including after partial audio. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["SpeechStreamEvent"];
+                };
+            };
+            /** @description Missing, malformed, revoked, or expired key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Insufficient scope, inactive workspace, or speech_requires_purchase. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description voice_not_found in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description voice_not_ready. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Invalid request or voice_unavailable. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description rate_limited or speech_busy; honour Retry-After. */
+            429: {
+                headers: {
                     "Retry-After"?: number;
                     [name: string]: unknown;
                 };

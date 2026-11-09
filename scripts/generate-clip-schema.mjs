@@ -63,7 +63,7 @@ const supported = new Set([
   "$schema", "type", "properties", "required", "additionalProperties",
   "anyOf", "oneOf", "enum", "format", "pattern", "minLength", "maxLength", "minimum", "maximum",
   "items", "minItems", "maxItems", "const", "description", "readOnly", "default", "propertyNames", "exclusiveMinimum", "exclusiveMaximum",
-  "writeOnly", "maxProperties", "deprecated", "dependentSchemas",
+  "writeOnly", "maxProperties", "deprecated", "dependentSchemas", "contentEncoding",
 ]);
 const definitions = [];
 // The public mint document redacts this server-owned policy; its shape alone is published under
@@ -165,9 +165,10 @@ function expression(schema, open = false) {
         }
         if (finiteKeys) throw new Error("Finite record keys cannot accompany explicit properties");
         const stripping = open && schema.additionalProperties === undefined;
-        if (schema.additionalProperties !== false && !stripping) throw new Error("Expected a closed response object");
+        const passthrough = schema.additionalProperties && typeof schema.additionalProperties === "object" && Object.keys(schema.additionalProperties).length === 0;
+        if (schema.additionalProperties !== false && !stripping && !passthrough) throw new Error("Expected a closed response object");
         const required = new Set(schema.required ?? []);
-        result = `${stripping ? "z.object" : "z.strictObject"}({\n${Object.entries(schema.properties).map(([field, value]) =>
+        result = `${passthrough ? "z.looseObject" : stripping ? "z.object" : "z.strictObject"}({\n${Object.entries(schema.properties).map(([field, value]) =>
           `  ${JSON.stringify(field)}: ${expression(value, open)}${required.has(field) ? "" : ".optional()"},`
         ).join("\n")}\n})`;
         break;
@@ -178,9 +179,12 @@ function expression(schema, open = false) {
         if (schema.maxItems !== undefined) result += `.max(${schema.maxItems})`;
         break;
       case "string":
-        if (schema.format && !["uri", "date-time"].includes(schema.format)) throw new Error(`Unsupported format: ${schema.format}`);
+        if (schema.format && !["uri", "date-time", "uuid", "base64"].includes(schema.format)) throw new Error(`Unsupported format: ${schema.format}`);
+        if (schema.contentEncoding !== undefined && schema.contentEncoding !== "base64") throw new Error(`Unsupported contentEncoding: ${schema.contentEncoding}`);
         result = schema.format === "uri" ? "z.url()"
-          : schema.format === "date-time" ? "z.iso.datetime({ offset: true })" : "z.string()";
+          : schema.format === "date-time" ? "z.iso.datetime({ offset: true })"
+          : schema.format === "uuid" ? "z.uuid()"
+          : schema.format === "base64" || schema.contentEncoding === "base64" ? "z.base64()" : "z.string()";
         if (schema.pattern) result += `.regex(new RegExp(${JSON.stringify(schema.pattern)}))`;
         if (schema.minLength !== undefined) result += `.min(${schema.minLength})`;
         if (schema.maxLength !== undefined) result += `.max(${schema.maxLength})`;
@@ -485,6 +489,18 @@ const speechHeaders = Object.entries(speechResponse.headers).map(([name, header]
 }));
 const speechDefaultFormat = speechRequest.properties.format.default;
 if (!speechRequest.properties.format.enum.includes(speechDefaultFormat)) throw new Error("Invalid speech default format");
+const speechStreamOperation = Object.values(spec.paths).map(path => path.post).find(operation => operation?.operationId === "createSpeechStream");
+if (!speechStreamOperation) throw new Error("Missing createSpeechStream operation; sync the platform OpenAPI first");
+const speechStreamContract = spec["x-speech-stream-contract"];
+if (!speechStreamContract || !["maxAudioEventBytes", "maxSamples"].every(key => Number.isSafeInteger(speechStreamContract[key]) && speechStreamContract[key] > 0)
+  || speechStreamContract.alignedTextEndNotBeforeStart !== true) throw new Error("Missing or invalid x-speech-stream-contract");
+const speechStreamRequestRoot = expression(spec.components.schemas.CreateSpeechStreamRequest);
+const { $schema: _alignedDialect, ...alignedSchema } = spec.components.schemas.SpeechAlignedText;
+const speechAlignedTextRoot = expression(alignedSchema);
+// Cross-field ordering cannot be represented in JSON Schema; its canonical extension owns it.
+definitions.push(`export const speechAlignedTextSchema = ${speechAlignedTextRoot}.refine(segment => segment.end >= segment.start);`);
+names.set(JSON.stringify(alignedSchema), "speechAlignedTextSchema");
+const speechStreamEventRoot = expression(spec.components.schemas.SpeechStreamEvent);
 const speechTarget = new URL("../libs/http-client/src/generated/speech.ts", import.meta.url);
 const speechOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
 // Do not edit; the platform owns the speech request and response metadata.
@@ -496,6 +512,16 @@ export const createSpeechRequestSchema = ${speechRequestRoot}.extend({
   format: ${speechRequestRoot}.shape.format.unwrap().default(${JSON.stringify(speechDefaultFormat)}),
 });
 export type CreateSpeechInput = z.input<typeof createSpeechRequestSchema>;
+export const createSpeechStreamRequestSchema = ${speechStreamRequestRoot};
+export type CreateSpeechStreamRequest = z.infer<typeof createSpeechStreamRequestSchema>;
+export type SpeechAlignedText = z.infer<typeof speechAlignedTextSchema>;
+export const speechStreamEventSchema = ${speechStreamEventRoot};
+export type SpeechStreamEvent = z.infer<typeof speechStreamEventSchema>;
+export const SPEECH_STREAM_CONTRACT = ${JSON.stringify(speechStreamContract)} as const;
+type StreamWireRequest = operations["createSpeechStream"]["requestBody"]["content"]["application/json"];
+type StreamWireEvent = operations["createSpeechStream"]["responses"][200]["content"]["text/event-stream"];
+type _SpeechStreamRequestParity = AssertTrue<[CreateSpeechStreamRequest] extends [StreamWireRequest] ? [StreamWireRequest] extends [CreateSpeechStreamRequest] ? true : false : false>;
+type _SpeechStreamEventParity = AssertTrue<[SpeechStreamEvent] extends [StreamWireEvent] ? [StreamWireEvent] extends [SpeechStreamEvent] ? true : false : false>;
 type WireRequest = operations["createSpeech"]["requestBody"]["content"]["application/json"];
 type SpeechRequest = z.output<typeof createSpeechRequestSchema>;
 type _SpeechRequestParity = AssertTrue<[SpeechRequest] extends [WireRequest] ? [WireRequest] extends [SpeechRequest] ? true : false : false>;
