@@ -375,6 +375,8 @@ rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires
 
 // completed speech audio; server only, no LiveKit, never retried; requires speech:write
 rta.createSpeech(voiceId, { text, format?, speed?, language? }, { signal? })
+// unreleased streaming candidate; generated SSE events, never retried
+rta.createSpeechStream(voiceId, { text, speed?, language? }, { signal? })
 
 // pre-rendered video (MP4, no live call); server only, requires renders:write / renders:read
 rta.createRender({ avatarId, voiceId? | voice?, lipGain?, shots })  // 202 queued; one Idempotency-Key across retries
@@ -632,6 +634,55 @@ can charge again. Caller cancellation and the configured timeout cover fetching 
 cancellation is not proof that upstream work or billing stopped. HTTP failures retain the existing
 `RealtimeAvatarHttpError` semantics. Caller aborts propagate; timeout aborts are `TimeoutError`.
 The service limits speech to 20 requests per minute and one in progress per workspace.
+
+### Streaming speech (unreleased)
+
+`createSpeechStream(voiceId, { text, speed?, language? }, { signal? })` returns an
+`AsyncGenerator<SpeechStreamEvent, void, unknown>`. It starts the paid
+`POST /voices/{voiceId}/speech/stream` request on the first iteration and delivers each event
+without collecting the entire audio. It uses the same server-only client, credentials and
+HTTP error handling as `createSpeech`; the completed-file method is unchanged. This candidate
+requires platform streaming support and is not yet a published SDK release.
+
+```ts
+for await (const event of rta.createSpeechStream(voiceId, { text: "Hello!" }, { signal })) {
+  if (event.type === "audio") {
+    await pcmSink.write(Buffer.from(event.audioBase64, "base64"));
+  } else if (event.type === "alignment") {
+    alignmentByChunk.set(event.chunkSeq, event.segments);
+  } else if (event.type === "failed") {
+    handleSpeechFailure(event.error.code, event.requestId);
+  }
+}
+```
+
+The event union and exported `createSpeechStreamRequestSchema`, `speechStreamEventSchema`,
+`speechAlignedTextSchema`, `CreateSpeechStreamRequest`, `SpeechStreamEvent` and
+`SpeechAlignedText` are generated from the platform contract. Streaming has no `format` option.
+
+- `started` fixes encoding to `pcm_s16le`, 24,000 samples per second, one channel. Every event
+  shares its UUID `requestId`.
+- `audio` carries at most 16 KiB of decoded PCM, a zero-based contiguous `sequence`, and
+  `sampleOffset` in mono samples. Chunks contain whole 16-bit samples; total audio is capped
+  at 180 seconds. The SDK validates these invariants, but does not play or resample audio.
+- `alignment` carries absolute-second `{ text, start, end }` segments. Replace an earlier update
+  with the same `chunkSeq`. These are provider alignment updates, not invented current-word
+  timings or a playback clock.
+- Exactly one `completed` or `failed` ends the event sequence. `completed.totalSamples` must
+  match the PCM received; `billedCredits` and `billedBytes` are authoritative only on completion.
+  `failed` is yielded as a typed canonical API error, including after partial audio, and is never
+  converted to success. Iterating to EOF verifies that no events follow the terminal.
+
+Malformed JSON, invalid events, mixed request IDs, offsets, missing terminals, extra events or
+truncated transport reject with `RealtimeAvatarError`. HTTP refusals before SSE retain
+`RealtimeAvatarHttpError`. The SDK bounds receive work to 24 MiB total, 256 KiB per event and
+64 KiB for HTTP error bodies. These are local safety budgets, not storage promises.
+
+**Streaming never retries**, regardless of `maxRetries`. Caller abort, `break`, or iterator
+`return()` cancels the reader and fetch, including an outstanding `next()`. The smaller of
+`timeoutMs` and `totalTimeoutMs` covers the request and the entire body, including time spent
+between iterations. A timeout or cancellation is not proof that billing stopped; do not retry
+an ambiguous paid request as a new operation.
 
 ## Custom voice (webhook)
 

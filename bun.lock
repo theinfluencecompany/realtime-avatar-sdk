@@ -14,11 +14,11 @@
     },
     "libs/browser": {
       "name": "@realtime-avatar/internal-browser",
-      "version": "0.33.0",
+      "version": "0.36.0",
     },
     "libs/client": {
       "name": "@realtime-avatar/internal-client",
-      "version": "0.33.0",
+      "version": "0.36.0",
       "devDependencies": {
         "@livekit/components-react": "2.9.21",
         "@livekit/react-native": "3.0.0",
@@ -36,15 +36,18 @@
     },
     "libs/examples": {
       "name": "realtime-avatar-examples",
-      "version": "0.33.0",
+      "version": "0.36.0",
     },
     "libs/http-client": {
       "name": "@realtime-avatar/internal-http-client",
-      "version": "0.33.0",
+      "version": "0.36.0",
+      "dependencies": {
+        "eventsource-parser": "3.1.1",
+      },
     },
     "libs/mcp": {
       "name": "realtime-avatar-mcp",
-      "version": "0.33.0",
+      "version": "0.36.0",
       "bin": {
         "realtime-avatar-mcp": "./dist/bin.js",
       },
@@ -56,14 +59,14 @@
     },
     "libs/proxy": {
       "name": "@realtime-avatar/internal-proxy",
-      "version": "0.33.0",
+      "version": "0.36.0",
       "dependencies": {
         "realtime-avatar": "0.24.0",
       },
     },
     "libs/sdk-server": {
       "name": "realtime-avatar",
-      "version": "0.33.0",
+      "version": "0.36.0",
       "devDependencies": {
         "@livekit/components-react": "2.9.21",
         "@livekit/react-native": "3.0.0",
@@ -99,7 +102,7 @@
     },
     "libs/tools": {
       "name": "@realtime-avatar/internal-tools",
-      "version": "0.33.0",
+      "version": "0.36.0",
     },
   },
   "packages": {

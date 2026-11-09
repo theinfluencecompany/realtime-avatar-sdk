@@ -125,6 +125,10 @@ test("canonical numeric field mutations fail generated mapping and public consum
         const avatarId: string = avatar.id;
         const renderer: "video" | "live2d" = avatar.renderer;
         void [avatarId, renderer];
+        for await (const event of client.createSpeechStream("voice_test", { text: "Hello" })) {
+          if (event.type === "audio") { const offset: number = event.sampleOffset; void offset; }
+          if (event.type === "alignment") { const seconds: number = event.segments[0].start; void seconds; }
+        }
         const page = await client.listSessions();
         for (const session of page.sessions) {
           const seconds: number | null = session.activeSeconds;
@@ -155,6 +159,12 @@ test("canonical numeric field mutations fail generated mapping and public consum
     await compile();
     const safeConsumer = await readFile(join(f.dir, "consumer.ts"), "utf8");
     for (const unsafe of [
+      `import type { CreateSpeechStreamRequest, SpeechStreamEvent } from "./libs/http-client/src/index.ts";
+       declare const decoded: unknown;
+       const input: CreateSpeechStreamRequest = decoded;
+       const event: SpeechStreamEvent = decoded;`,
+      `import type { SpeechStreamEvent } from "./libs/http-client/src/index.ts";
+       const event: SpeechStreamEvent = { type: "audio", requestId: "id", sequence: "0", sampleOffset: 0, audioBase64: "AAAA" };`,
       `import type { CreateSpeechInput, SpeechResult } from "./libs/http-client/src/index.ts";
        declare const decoded: unknown;
        const input: CreateSpeechInput = decoded;
@@ -198,6 +208,27 @@ test("canonical numeric field mutations fail generated mapping and public consum
       });
     }
     await writeFile(join(f.dir, "consumer.ts"), safeConsumer);
+    await compile();
+    const streamSpec = JSON.parse(specBytes.toString("utf8"));
+    const audioArm = streamSpec.components.schemas.SpeechStreamEvent.oneOf.find((arm: { properties: { type: { const: string } } }) => arm.properties.type.const === "audio");
+    audioArm.properties.sampleOffset = { type: "string" };
+    await writeFile(join(f.dir, files[0]), JSON.stringify(streamSpec));
+    await regenerateTypes();
+    await assert.rejects(compile(), (error: unknown) => {
+      assert.ok(error instanceof Error && "stdout" in error && typeof error.stdout === "string");
+      assert.match(error.stdout, /speech\.ts/);
+      return true;
+    });
+    await f.run([]);
+    await assert.rejects(compile(), (error: unknown) => {
+      assert.ok(error instanceof Error && "stdout" in error && typeof error.stdout === "string");
+      assert.match(error.stdout, /consumer\.ts/);
+      assert.match(error.stdout, /string.*not assignable.*number/);
+      return true;
+    });
+    await writeFile(join(f.dir, files[0]), specBytes);
+    await regenerateTypes();
+    await f.run([]);
     await compile();
     const avatarSpec = JSON.parse(specBytes.toString("utf8"));
     avatarSpec.components.schemas.CreateAvatarRequest.properties.voice.properties.voice.properties.voice_id = { type: "number" };

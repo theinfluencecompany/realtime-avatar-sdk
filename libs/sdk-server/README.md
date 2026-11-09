@@ -234,6 +234,31 @@ cover the request and binary body; an abort does not guarantee that upstream bil
 Caller aborts propagate, timeout aborts are `TimeoutError`, and HTTP errors use the existing
 `RealtimeAvatarHttpError` class.
 
+### Streaming speech (unreleased)
+
+`createSpeechStream(voiceId, { text, speed?, language? }, { signal? })` returns an async generator
+of `SpeechStreamEvent`, starting the paid request on first iteration. It is server-only, uses
+no LiveKit, and leaves `createSpeech` unchanged. Requires platform streaming support; not yet
+published. The root/server exports include canonical generated `createSpeechStreamRequestSchema`,
+`speechStreamEventSchema`, `speechAlignedTextSchema`, `CreateSpeechStreamRequest`,
+`SpeechStreamEvent` and `SpeechAlignedText`. There is no streaming `format` option.
+
+Consume incrementally with `for await`. `started` declares signed 16-bit little-endian PCM,
+24 kHz mono. `audio` carries base64 PCM, contiguous zero-based `sequence` and mono-sample
+`sampleOffset`; chunks contain whole samples and at most 16 KiB, with a 180-second total cap.
+`alignment` carries absolute-second text segments; replace earlier segments with the same
+`chunkSeq`, without inferring current-word timing. All events share one UUID `requestId`.
+Exactly one terminal follows: `completed` confirms matching `totalSamples`, `billedCredits`
+and `billedBytes`; `failed` yields a typed canonical API error even after partial audio.
+Read through EOF to reject trailing events. Malformed or truncated streams throw
+`RealtimeAvatarError`, while HTTP refusals retain `RealtimeAvatarHttpError`.
+
+The SDK never collects all audio and bounds receive work to 24 MiB total, 256 KiB per event,
+and 64 KiB for HTTP error text. `break`, iterator `return()` and caller abort cancel the reader
+and fetch, including a pending `next()`. The smaller of `timeoutMs` and `totalTimeoutMs`
+covers the entire request/body, including pauses between iterations. **Never automatically
+retry** an ambiguous paid request. Cancellation does not prove that billing stopped.
+
 ## Custom voice (webhook)
 
 Speak a call in your own voice. Each sentence she is about to say is POSTed, signed, to an
@@ -455,6 +480,8 @@ rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires
 
 // completed speech audio; server only, no LiveKit, never retried; requires speech:write
 rta.createSpeech(voiceId, { text, format?, speed?, language? }, { signal? })
+// unreleased streaming candidate; generated SSE events, never retried
+rta.createSpeechStream(voiceId, { text, speed?, language? }, { signal? })
 
 // pre-rendered video (MP4, no live call); server only, requires renders:write / renders:read
 rta.createRender({ avatarId, voiceId? | voice?, lipGain?, shots })  // 202 queued; one Idempotency-Key across retries
