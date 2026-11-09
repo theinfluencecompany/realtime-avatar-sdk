@@ -12,6 +12,7 @@ import {
 } from "../src/generated/clip-library-schema.ts";
 import { CLIP_DECLARATION, CLIP_LIBRARY, CLIP_UPDATE, INVALID_CLIP_DECLARATIONS } from "./clip-library.fixture.ts";
 import { listUsageSessionsResponseSchema } from "../src/generated/usage-sessions.ts";
+import { externalSpeechSegmentSchema } from "../src/index.ts";
 import type { ListSessionsOptions, UsageSession, UsageSessionPage } from "../src/types.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
@@ -428,10 +429,33 @@ test("correlated audio camelCase policy reaches the canonical mint wire", async 
   assert.deepEqual(on.seen.body?.external_llm, { base_url: "https://brain.example.test/v1", token: "per-call-token-0123456789", fail_closed: true, performance: "v1", audio_output: "correlated_pcm_v1" });
 });
 
+test("committed segments derive the strict public boundary from OpenAPI", () => {
+  const segment = { version: 1, generation_id: "generation", utterance_id: "utterance", text: "你好。\n世界！" } as const;
+  assert.deepEqual(externalSpeechSegmentSchema.parse(segment), segment);
+  const parity: Equal<z.output<typeof externalSpeechSegmentSchema>, components["schemas"]["ExternalSpeechSegment"]> = true;
+  assert.equal(parity, true);
+  for (const override of [{ text: "" }, { text: "x".repeat(5001) }, { text: "\ud800" }, { emotion: "smile" }, { utterance_id: "" }]) {
+    assert.equal(externalSpeechSegmentSchema.safeParse({ ...segment, ...override }).success, false);
+  }
+});
+
+test("committed speech format is generated and reaches the canonical mint wire", async () => {
+  const on = stub({ body: GRANT });
+  await new RealtimeAvatar({ apiKey: "k", fetch: on.fetchImpl }).startCall({
+    avatarId: "ava_1", mode: "voice",
+    llm: { backend: "external", baseUrl: "https://brain.example.test/v1", token: "per-call-token-0123456789", failClosed: true, performance: "v1", audioOutput: "correlated_pcm_v1", textOutput: "speech_segments_v1" },
+    voiceWebhook: { url: "https://voice.example.test/speak", secret: "voice-secret-0123456789" },
+  });
+  assert.deepEqual(on.seen.body?.external_llm, { base_url: "https://brain.example.test/v1", token: "per-call-token-0123456789", fail_closed: true, performance: "v1", audio_output: "correlated_pcm_v1", text_output: "speech_segments_v1" });
+});
+
 test("invalid external opt-ins are rejected before any HTTP request", async () => {
   for (const invalid of [
     { audioOutput: "correlated_pcm_v1" }, { audioOutput: "correlated_pcm_v1", performance: "v1", failClosed: false },
     { audioOutput: "unknown", performance: "v1", failClosed: true },
+    { textOutput: "speech_segments_v1" },
+    { textOutput: "speech_segments_v1", performance: "v1", failClosed: true },
+    { textOutput: "unknown", audioOutput: "correlated_pcm_v1", performance: "v1", failClosed: true },
     { failClosed: null }, { performance: "v2" }, { visibleCharacter: { renderer: "live2d" } },
     { visibleCharacter: { renderer: "external", emotion: "happy" } }, { epoch: 2 },
   ]) {

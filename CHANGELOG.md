@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.0
+
+- Generated `llm.textOutput: "speech_segments_v1"` and server-only `externalSpeechSegmentSchema` preserve caller-owned utterance identity through compatible external-model receivers. Requires correlated PCM, performance v1 and fail-closed behavior; the format is echoed in the external turn context. Private performance payloads remain outside the SDK. Deploy the new receiver and platform before using this candidate.
+
 ## 0.34.0
 
 Requires platform and worker support for external performance, Live2D identity and correlated PCM. These capabilities are deployed on the hosted service; application integration and live playback acceptance remain the consumer's responsibility.

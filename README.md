@@ -210,6 +210,18 @@ an `utterance_id` for that sentence; its session is the request's own `session_i
 changes `request_id`, so key sentences by `utterance_id`, never by `request_id` or by text. A Fish
 voice has no such callback.
 
+**Candidate, not part of 0.34.0:** `llm.textOutput: "speech_segments_v1"` preserves caller-owned
+segment identity. It requires `audioOutput: "correlated_pcm_v1"`, `performance: "v1"` and
+`failClosed: true`. The request echoes the format in `rta_context.text_output`. Stream each
+complete, validated segment as `data: {"rta_speech": {"version":1,"generation_id":"…",
+"utterance_id":"…","text":"…"}}`, then `[DONE]`; validate it with the generated server-only
+`externalSpeechSegmentSchema`. Reuse that utterance ID to find private performance data when
+the signed voice callback arrives. Do not send expression fields, insert spoken control tags,
+or match rewritten text. The receiver must preserve text and identity through synthesis;
+a retry keeps the same identity, and a cancellation retires the generation. This requires a
+new compatible receiver/platform deployment and SDK release. It does not imply incremental
+mouth calculation or measured browser latency.
+
 **3. Your client observes each generation.** `useRealtimeSession`, `useSessionLifecycle` and
 `AvatarCall` (and the same hooks on `realtime-avatar/react-native`) take an optional observer:
 

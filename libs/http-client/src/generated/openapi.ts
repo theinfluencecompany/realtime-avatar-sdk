@@ -1318,6 +1318,8 @@ export interface components {
             purpose: ("respond" | "recovery" | "initiative") | string;
             /** @enum {string} */
             admission: "draft" | "accepted";
+            /** @constant */
+            text_output?: "speech_segments_v1";
             visible_character?: {
                 /** @constant */
                 renderer: "external";
@@ -1327,6 +1329,15 @@ export interface components {
             generation_id: string;
             /** @description Logical sentence identity, unchanged across HTTP retries; not request_id. */
             utterance_id: string;
+        };
+        ExternalSpeechSegment: {
+            /** @constant */
+            version: 1;
+            generation_id: string;
+            /** @description Logical sentence identity, unchanged across HTTP retries; not request_id. */
+            utterance_id: string;
+            /** @description Complete committed speech, preserved verbatim; its utterance_id is reused by the signed voice callback and PCM stream. */
+            text: string;
         };
         ExternalPerformanceFrame: {
             session_id: string;

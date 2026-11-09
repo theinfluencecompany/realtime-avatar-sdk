@@ -2868,6 +2868,10 @@
               "accepted"
             ]
           },
+          "text_output": {
+            "type": "string",
+            "const": "speech_segments_v1"
+          },
           "visible_character": {
             "type": "object",
             "properties": {
@@ -2909,6 +2913,41 @@
           "generation_id",
           "utterance_id"
         ]
+      },
+      "ExternalSpeechSegment": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "generation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "utterance_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Logical sentence identity, unchanged across HTTP retries; not request_id."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "pattern": "^(?:[^\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])*$",
+            "description": "Complete committed speech, preserved verbatim; its utterance_id is reused by the signed voice callback and PCM stream."
+          }
+        },
+        "required": [
+          "version",
+          "generation_id",
+          "utterance_id",
+          "text"
+        ],
+        "additionalProperties": false
       },
       "ExternalPerformanceFrame": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -10566,7 +10605,7 @@
   },
   "x-external-llm-contract": {
     "source": "/external-llm.schema.json",
-    "sha256": "cb224d6a6b42cb190dad7ce31bb33c3f26bca8a2574d2c5dd1c3613e8a256912"
+    "sha256": "905b255736610c2a63fedcb0416be1dc4d17efd7b42a4697afb72d48b61ea56a"
   },
   "x-clip-contract": {
     "source": "/character-motion.ts",
