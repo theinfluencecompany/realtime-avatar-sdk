@@ -12,6 +12,7 @@ import {
 import type { z } from "zod";
 import { RealtimeAvatarError, RealtimeAvatarHttpError } from "./errors.ts";
 import { clipLibraryResponseSchema, clipLibraryUpdateSchema } from "./generated/clip-library-schema.ts";
+import { avatarResponseSchema, createLive2dAvatarInputSchema } from "./generated/avatar.ts";
 import { recordingModeSchema, recordingArtifactSchema, listRecordingsQuerySchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
 import { renderSchema, listRendersQuerySchema, listRendersResponseSchema, renderAccessResponseSchema } from "./generated/render.ts";
 import type { ConnectionHistoryResponse } from "./generated/connection-history.ts";
@@ -29,6 +30,8 @@ import type {
   UsageSessionPage,
   AssetKind,
   Avatar,
+  CreateLive2dAvatarInput,
+  RegisteredAvatar,
   AvatarSourceSwap,
   AvatarUpdate,
   CallMode,
@@ -56,7 +59,7 @@ const DEFAULT_BASE_URL = "https://realtimeavatar.ai/api/v1";
 const RENDER_MISMATCH = "Render response did not match the SDK contract";
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.33.0";
+export const SDK_VERSION = "0.34.0";
 
 
 
@@ -351,6 +354,26 @@ export class RealtimeAvatar {
       settings: input.settings,
       metadata: input.metadata,
     });
+  }
+
+  /**
+   * Register an app-owned Live2D rig for voice sessions. No assets, motion generation or
+   * automatic voice casting: supply an explicit provider and voice_id, then mint with mode voice.
+   */
+  async createLive2dAvatar(input: CreateLive2dAvatarInput): Promise<RegisteredAvatar> {
+    const { voice, ...identity } = createLive2dAvatarInputSchema.parse(input);
+    const body: Omit<components["schemas"]["CreateAvatarRequest"], "settings" | "metadata"> &
+      Partial<Pick<components["schemas"]["CreateAvatarRequest"], "settings" | "metadata">> = {
+      ...identity,
+      renderer: "live2d",
+      sourceKind: "image",
+      voice: { voice },
+    };
+    return this.#contract(
+      await this.#request("POST", "/avatars", { json: body }),
+      avatarResponseSchema,
+      "Avatar response did not match the SDK contract",
+    );
   }
 
   async createAvatar(input: {
@@ -877,6 +900,7 @@ function toAvatar(raw: unknown): Avatar {
   return {
     id: String(a.id),
     displayName: String(a.displayName ?? ""),
+    renderer: avatarResponseSchema.shape.renderer.default("video").parse(a.renderer),
     sourceKind: a.sourceKind === "video" ? "video" : "image",
     status: (a.status as Avatar["status"]) ?? "draft",
     defaultVoiceId: a.defaultVoiceId ? String(a.defaultVoiceId) : null,

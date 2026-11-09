@@ -243,13 +243,65 @@ since the SDK cannot know its transitions. `onFrame` therefore only ever sees
 `KNOWN_EXTERNAL_PERFORMANCE_STATUSES`, typed as `KnownExternalPerformanceStatus`, so a `switch`
 on it is exhaustive.
 
-**Nothing here says when she is heard.** The worker marks `audible_checkpoint` and
+**4. Opt in to correlated browser PCM when you need a source clock.** On your server,
+set `llm.audioOutput: "correlated_pcm_v1"` with `llm.performance: "v1"`,
+`llm.failClosed: true`, `mode: "voice"`, and `voiceWebhook`. Do not also set `voice`.
+This replaces the ordinary remote audio track; omission preserves existing media.
+The SDK generates `audioOutput` → `audio_output` and validates dependent endpoint
+fields from the platform contract. The platform validates the voice-mode/webhook requirements.
+
+```ts
+const session = useRealtimeSession({
+  client, session: { avatarId, mode: "voice" },
+  correlatedAudio: {
+    onPosition: ({ generation_id, utterance_id, stream_id, epoch, samples, sampleRate, state }) => {
+      performancePlayer.position({ generation_id, utterance_id, stream_id, epoch, samples, sampleRate, state });
+    },
+    onInvalidated: () => performancePlayer.discardAll(),
+  },
+});
+// Mount SessionLifecycleRoomBridge with lifecycle={session} inside the held grant's room.
+// Set RealtimeAvatarLiveKitRoom renderRoomAudio={false}; do not mount RoomAudioRenderer.
+// Call session.startAudio() inside a user gesture when session.audioPlayback === "blocked".
+```
+
+`AvatarCall` accepts the same `correlatedAudio` observer and disables its ordinary
+audio renderer automatically. Lower-level browser integrations use
+`attachCorrelatedAudio(room, { sessionId, agentIdentity, onPosition, onInvalidated,
+onPlaybackBlocked })` from `realtime-avatar/browser`. Use the held grant's session ID
+and the actual bound assistant identity, not a guessed name. The returned handle
+has `startAudio(): Promise<void>` and `dispose(): Promise<void>`. Call `startAudio`
+in a user gesture; `onPlaybackBlocked` receives that action or `null` when running.
+Never combine it with `attachRemoteAudio` or another player on the same call.
+
+A private renderer may provide `prepare(header, signal): Promise<void>` on the observer. The SDK awaits it after validating stream identity and before reading or scheduling PCM, so application-owned render data can arrive before sound. Rejecting preparation refuses that stream; cancellation aborts the signal and a late result cannot restart playback. Positions update on animation frames, while the independent 100 ms receipt timer bounds transport credit.
+
+The SDK validates the `rta.audio` stream header against the generated schema and
+accepts streams/cancellation RPC only from that bound agent and session. It schedules
+24 kHz mono signed little-endian PCM continuously with a two-second bounded queue.
+Positions contain header-derived `session_id`, `generation_id`, `utterance_id`,
+`stream_id`, `epoch`, integer consumed `samples`, `sampleRate`, and `state` (`playing`
+or `finished`). These are **source PCM output-clock positions, not physical audibility**.
+Suspension and underflow do not advance that clock. No PCM, waveform analysis, or rig
+vocabulary is exposed. Start receipts require actual running playback; progress
+receipts return consumed-sample credit every 100 ms while samples advance; completion
+requires EOF and the final scheduled sample. Browser timer throttling may delay receipts;
+credit then stops rather than inventing playback progress.
+
+Cancellation advances the minimum accepted epoch, clears every source, and wakes
+pending reads. `onInvalidated` reports `cancelled`, `connection_lost`, `invalid_stream`,
+or `disposed`. Reconnection or agent loss fails closed for the held session: redial
+for a fresh grant, rather than replaying possibly stale audio. Reattaching to the same
+Room/session preserves retired epochs and stream identities. This browser-only mode
+requires a compatible deployed worker; no worker deployment is implied by the SDK API.
+
+**Ordinary lifecycle frames still do not say when she is heard.** The worker marks `audible_checkpoint` and
 `audio_mapping` as `"unavailable"`, and public LiveKit APIs expose no receiver playout position
 for a generation or a sentence, so `EXTERNAL_PERFORMANCE_TIMING.receiverPlayout` is
 `"unsupported"`. A frame's arrival is not playback, and no frame may start an animation or mark
-text as heard. When a prepared performance becomes visible is your player's decision; the timing
-source available today is the received audio itself (render from its level, as for any
-`voice`-mode visuals). There is also no client interrupt command: she is cut by the caller
+text as heard. Use correlated PCM positions above when opting into that transport; ordinary
+media still has no generation-bound receiver clock. Do not fall back to waveform analysis to
+invent that mapping. There is also no client interrupt command: she is cut by the caller
 speaking or by ending the call, as before.
 
 The three frame and context schemas come from the platform's published contract. The endpoint
@@ -317,7 +369,8 @@ rta.iterateRenders({ limit? })         // every render, paging handled
 rta.getRenderAccess(renderId)          // { id, url, expiresAt }; signed for an hour, renew when needed
 
 // avatars
-rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // the only lane
+rta.createLive2dAvatar({ displayName, voice, settings?, metadata? })       // app-owned rig, explicit voice, no assets
+rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // platform-rendered video
 rta.createAvatarFromVideo({ displayName, videoUrl, voice? })                 // DEPRECATED — closed, 422
 rta.listAvatars()
 rta.getAvatar(avatarId)
@@ -351,6 +404,42 @@ fishTtsModelSchema.safeParse(storedModelId)     // a Fish model id you stored ->
 DEFAULT_FISH_TTS_MODEL                          // the platform's Fish default model
 FISH_DELIVERY_MODELS                            // which models can carry each voice `delivery`
 ```
+
+### Register an app-owned Live2D rig
+
+```ts
+import { RealtimeAvatar } from "realtime-avatar/server";
+
+const rta = new RealtimeAvatar({ apiKey: process.env.REALTIME_AVATAR_API_KEY! });
+const avatar = await rta.createLive2dAvatar({
+  displayName: "Rin",
+  voice: { provider: "fish", voice_id: "your-provider-voice-id", model: "s2-pro" },
+  metadata: { characterId: "your-character-id" },
+});
+// Persist avatar.id and avatar.renderer in your server-owned character mapping.
+const call = await rta.startCall({ avatarId: avatar.id, mode: "voice" });
+```
+
+Requires a platform with Live2D identity support. The helper sends one `POST /avatars` with
+`renderer: "live2d"`, `sourceKind: "image"` and the explicit voice selector. It does not upload
+assets, generate clips or a resting loop, or automatically cast a voice. Your app owns the rig.
+`sourceAssetId`, `imageUrl`, `motionPrompt`, renderer overrides and automatic voice descriptions
+are refused before any request. `settings` and `metadata` are optional records, sent only when
+provided. The existing `createAvatar` and `createAvatarFromImage` requests are unchanged.
+
+`CreateLive2dAvatarInput` and the complete returned `RegisteredAvatar` derive from generated
+platform schemas. The response is validated once; malformed successful responses throw
+`RealtimeAvatarError` without exposing the rejected body. Existing avatar reads also retain
+`renderer`, defaulting to `"video"` only when an older platform omits it.
+
+### Validate persisted grants and proxy requests
+
+`realtime-avatar` and `realtime-avatar/server` export the existing `liveKitSessionGrantSchema`,
+`capacityBusyResponseSchema`, `proxyConnectRequestSchema` and `proxyEndRequestSchema`. Use
+`safeParse` on unknown data at your storage or HTTP boundary instead of copying their shapes.
+A connect body selects only an avatar and mode; client-supplied policy is stripped. An end body
+must name a session or queue ticket. These parsers validate shape, not authorization: still bind
+the avatar, session and persisted grant to the authenticated user on your server.
 
 **A voice can always whisper: `delivery: "whisper"`.** It is how the voice speaks on every line,
 whatever a turn's emotion, and the worker renders it into every text it sends Fish. Only the models

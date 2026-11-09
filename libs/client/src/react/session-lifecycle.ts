@@ -36,6 +36,7 @@ import {
 import { nextBehaviorSnapshot, type BehaviorSnapshot } from "./behavior-snapshot";
 import { createConnectionHistoryCollector } from "./connection-history";
 import { useCallMedia, type CallMediaSinks } from "./call-media";
+import { attachCorrelatedAudio, type CorrelatedAudioObserver, type CorrelatedAudioAttachment } from "../../../browser/src/correlated-audio.ts";
 import {
   createExternalPerformanceObserver,
   EXTERNAL_PERFORMANCE_KIND,
@@ -1447,6 +1448,8 @@ export function useSessionLifecycle<T extends LLMProvider = LLMProvider>(
  * `useRealtimeSession`.
  */
 export type RealtimeSessionRoomSinks = Partial<{
+  /** Browser-only correlated PCM playback; omission leaves ordinary media unchanged. */
+  correlatedAudio: CorrelatedAudioObserver;
   /** Inbound `rta.lifecycle` data frames (DataReceived on the lifecycle topic). */
   onLifecycleData: (frame: unknown) => void;
   /** Publisher for client→worker frames (request_graceful_close / extend). */
@@ -1546,9 +1549,40 @@ export function SessionLifecycleRoomBridge({
   // attribute that room's existing agent to a replacement merely because the props changed.
   const roomMatchesGrant = lifecycle.grant === undefined ||
     (lifecycle.grant !== null && room.name === lifecycle.grant.room_name);
+  const correlatedRef = useRef<CorrelatedAudioAttachment | null>(null);
+  const correlatedObserver = useRef(lifecycle.correlatedAudio);
+  correlatedObserver.current = lifecycle.correlatedAudio;
+  const correlatedEnabled = lifecycle.correlatedAudio !== undefined;
+  const correlatedSessionId = lifecycle.grant?.session_id;
+  const startCorrelatedAudio = useCallback(async (): Promise<boolean> => {
+    const player = correlatedRef.current;
+    if (!player) return false;
+    try { await player.startAudio(); return true; } catch { return false; }
+  }, []);
+  useEffect(() => {
+    if (!correlatedEnabled || !correlatedSessionId || !roomMatchesGrant || !assistant.agent) return;
+    const player = attachCorrelatedAudio(room, {
+      sessionId: correlatedSessionId,
+      agentIdentity: assistant.agent.identity,
+      prepare: (header, signal) => correlatedObserver.current?.prepare?.(header, signal) ?? Promise.resolve(),
+      onPosition: position => correlatedObserver.current?.onPosition(position),
+      onInvalidated: reason => correlatedObserver.current?.onInvalidated(reason),
+      onPlaybackBlocked: unblock => {
+        setAudioPlayback?.(unblock ? "blocked" : "allowed");
+        correlatedObserver.current?.onPlaybackBlocked?.(unblock);
+      },
+    });
+    correlatedRef.current = player;
+    return () => {
+      correlatedRef.current = null;
+      void player.dispose();
+      setAudioPlayback?.("unknown");
+    };
+  }, [room, assistant.agent, correlatedEnabled, correlatedSessionId, roomMatchesGrant, setAudioPlayback]);
   useCallMedia(room, {
     setMicrophoneFacts,
-    setAudioPlayback,
+    setAudioPlayback: correlatedEnabled ? undefined : setAudioPlayback,
+    startAudioOverride: correlatedEnabled ? startCorrelatedAudio : undefined,
     registerMediaControls,
     microphoneWanted: microphone ?? publishesMicrophoneByDefault(lifecycle.grant),
     connectionState,
@@ -1777,8 +1811,12 @@ export function SessionLifecycleRoomBridge({
       if (topic !== RTA_LIFECYCLE_TOPIC) return;
       try {
         const frame: unknown = JSON.parse(decoder.decode(payload));
-        if (typeof frame === "object" && frame !== null && "kind" in frame && frame.kind === EXTERNAL_PERFORMANCE_KIND &&
+        if (typeof frame === "object" && frame !== null && "kind" in frame && (frame.kind === EXTERNAL_PERFORMANCE_KIND || frame.kind === "ended") &&
           (!assistant.agent || participant !== assistant.agent || !roomMatchesGrant || room.state !== "connected")) return;
+        if (typeof frame === "object" && frame !== null && "kind" in frame && frame.kind === "ended" && lifecycleServerFrameSchema.safeParse(frame).success) {
+          void correlatedRef.current?.dispose();
+          correlatedRef.current = null;
+        }
         onLifecycleData(frame);
       } catch {
         /* malformed frame — ignore (telemetry must never throw) */

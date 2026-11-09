@@ -6,6 +6,20 @@ Needs a platform and worker that accept these fields; until they ship, the mint 
 
 ### Added
 
+- `llm.audioOutput: "correlated_pcm_v1"`, `attachCorrelatedAudio` and the React `correlatedAudio` observer provide authenticated PCM playback, bounded buffering, source-sample receipts and cancellation without exposing private rig logic. Ordinary room-audio playback is disabled for this opt-in.
+
+- **`createLive2dAvatar({ displayName, voice, settings?, metadata? })`** registers an app-owned
+  rig using one `POST /avatars`, with `renderer: "live2d"`, `sourceKind: "image"` and an explicit
+  `{ provider, voice_id, model?, speed?, emotion?, language? }` voice. No asset upload, automatic
+  voice casting or motion generation occurs. Input and the complete returned `RegisteredAvatar`
+  are validated using schemas generated from the platform contract. Requires the platform's
+  Live2D identity support; start its sessions with `mode: "voice"`.
+- **Server-root schema exports:** `liveKitSessionGrantSchema`, `capacityBusyResponseSchema`,
+  `proxyConnectRequestSchema` and `proxyEndRequestSchema` are the existing SDK validators,
+  available from `realtime-avatar` and `realtime-avatar/server` for persistence and proxy boundaries.
+- **`Avatar.renderer`** is retained by existing avatar methods. Responses from older platforms
+  that omit it default to `"video"`; image/video creation requests remain unchanged.
+
 - **An app that draws the character itself, with its own model.** `llm` takes three optional,
   server-only fields, generated from the platform's `ExternalLLMEndpoint` definition rather than
   written here: `failClosed: true` (a failed reply is never answered by the platform's model),

@@ -32,9 +32,14 @@
       "additionalProperties": false
     },
     "performance": {
-      "description": "Opt in to generation identity and admission/cancellation producer events. Receiver playout synchronization is unsupported.",
+      "description": "Opt in to generation identity and admission/cancellation producer events. Receiver playout synchronization requires audio_output correlated_pcm_v1.",
       "type": "string",
       "const": "v1"
+    },
+    "audio_output": {
+      "description": "Deliver correlated 24 kHz mono PCM instead of the ordinary audio track. Requires performance v1, fail_closed true, mode voice and voice_webhook.",
+      "type": "string",
+      "const": "correlated_pcm_v1"
     }
   },
   "required": [
@@ -42,5 +47,25 @@
     "token"
   ],
   "additionalProperties": false,
-  "serverAuthoritative": true
+  "serverAuthoritative": true,
+  "dependentSchemas": {
+    "audio_output": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "performance": {
+          "type": "string",
+          "const": "v1"
+        },
+        "fail_closed": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "performance",
+        "fail_closed"
+      ]
+    }
+  }
 }

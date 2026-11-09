@@ -149,6 +149,8 @@ export type AvatarCallProps = Pick<SessionLifecycleRoomBridgeProps, "onConnectio
    * cancellation, for a character you draw yourself. Not a playback clock.
    */
   externalPerformance?: ExternalPerformanceObserver;
+  /** Opt in to SDK-owned correlated PCM; disables this component's ordinary audio renderer. */
+  correlatedAudio?: import("../../../browser/src/correlated-audio.ts").CorrelatedAudioObserver;
   /**
    * What to show while `audio` is `blocked` (the browser is muting her until a gesture):
    * - `true` (default): a "Tap to turn on sound" button, top-centre over the video.
@@ -249,6 +251,7 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
     onEnded: props.onEnded ? ({ reason }) => props.onEnded?.({ reason }) : undefined,
     onVoiceError: props.onVoiceError ? (error) => props.onVoiceError?.(error) : undefined,
     externalPerformance: props.externalPerformance,
+    correlatedAudio: props.correlatedAudio,
   });
   sessionRef.current = session;
 
@@ -303,6 +306,7 @@ export function useAvatarCall(props: AvatarCallProps): { call: AvatarCallHandle;
     RealtimeAvatarLiveKitRoom,
     {
       grant: session.grant,
+      renderRoomAudio: props.correlatedAudio === undefined,
       // LiveKit captures the microphone on connect from this value, so a mute chosen while
       // waiting is honoured rather than overridden when the call goes live.
       audio: props.listen !== false && !session.microphoneMuted,

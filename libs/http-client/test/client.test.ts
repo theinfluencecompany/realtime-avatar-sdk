@@ -418,8 +418,20 @@ test("external rendering is an opt-in server policy on a normal voice call", asy
   });
 });
 
+test("correlated audio camelCase policy reaches the canonical mint wire", async () => {
+  const on = stub({ body: GRANT });
+  await new RealtimeAvatar({ apiKey: "k", fetch: on.fetchImpl }).startCall({
+    avatarId: "ava_1", mode: "voice",
+    llm: { backend: "external", baseUrl: "https://brain.example.test/v1", token: "per-call-token-0123456789", failClosed: true, performance: "v1", audioOutput: "correlated_pcm_v1" },
+    voiceWebhook: { url: "https://voice.example.test/speak", secret: "voice-secret-0123456789" },
+  });
+  assert.deepEqual(on.seen.body?.external_llm, { base_url: "https://brain.example.test/v1", token: "per-call-token-0123456789", fail_closed: true, performance: "v1", audio_output: "correlated_pcm_v1" });
+});
+
 test("invalid external opt-ins are rejected before any HTTP request", async () => {
   for (const invalid of [
+    { audioOutput: "correlated_pcm_v1" }, { audioOutput: "correlated_pcm_v1", performance: "v1", failClosed: false },
+    { audioOutput: "unknown", performance: "v1", failClosed: true },
     { failClosed: null }, { performance: "v2" }, { visibleCharacter: { renderer: "live2d" } },
     { visibleCharacter: { renderer: "external", emotion: "happy" } }, { epoch: 2 },
   ]) {

@@ -30,6 +30,8 @@ export type {
   Asset,
   AssetKind,
   Avatar,
+  CreateLive2dAvatarInput,
+  RegisteredAvatar,
   AvatarClip,
   AvatarSourceSwap,
   AvatarUpdate,

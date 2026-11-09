@@ -1,3 +1,4 @@
+export { attachCorrelatedAudio, type AttachCorrelatedAudioOptions, type CorrelatedAudioAttachment, type CorrelatedAudioObserver, type CorrelatedAudioPosition, type CorrelatedAudioInvalidation } from "./correlated-audio.ts";
 export { checkVideoSupport, type VideoSupport } from "./video-support.ts";
 export {
   describeMicrophoneFailure,

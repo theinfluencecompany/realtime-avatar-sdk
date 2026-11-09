@@ -151,6 +151,7 @@ export function useCallMedia(room: Room, options: CallMediaSinks & {
   connectionState: ConnectionState;
   /** Identifies the call (its session id): a new value starts a new error scope. */
   callKey: string | undefined;
+  startAudioOverride?: CallMediaControls["startAudio"];
 }): void {
   const { setMicrophoneFacts, setAudioPlayback, registerMediaControls, microphoneWanted, connectionState, callKey } = options;
   const connected = connectionState === ConnectionState.Connected;
@@ -223,6 +224,7 @@ export function useCallMedia(room: Room, options: CallMediaSinks & {
 
   const controls = useMemo<CallMediaControls>(() => ({
     startAudio: async () => {
+      if (options.startAudioOverride) return options.startAudioOverride();
       try {
         await room.startAudio();
       } catch {
@@ -242,7 +244,7 @@ export function useCallMedia(room: Room, options: CallMediaSinks & {
         setVersion((value) => value + 1);
       }
     },
-  }), [room]);
+  }), [room, options.startAudioOverride]);
   useEffect(() => {
     if (!registerMediaControls) return;
     registerMediaControls(controls);

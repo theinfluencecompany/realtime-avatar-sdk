@@ -4,6 +4,22 @@ import { readFileSync } from "node:fs";
 
 import { RealtimeAvatar } from "../../http-client/src/client.ts";
 import { RealtimeAvatar as PublicRealtimeAvatar, RealtimeAvatarError as PublicRealtimeAvatarError } from "realtime-avatar";
+import * as publicRoot from "realtime-avatar";
+import * as publicServer from "realtime-avatar/server";
+
+test("both published server entries expose the same canonical boundary validators", () => {
+  for (const entry of [publicRoot, publicServer]) {
+    assert.equal(typeof entry.RealtimeAvatar.prototype.createLive2dAvatar, "function");
+    assert.equal(entry.liveKitSessionGrantSchema.safeParse({ session_id: 123 }).success, false);
+    assert.equal(entry.capacityBusyResponseSchema.safeParse({ queue_size: -1 }).success, false);
+    assert.equal(entry.proxyConnectRequestSchema.safeParse({ avatarId: 123 }).success, false);
+    assert.equal(entry.proxyEndRequestSchema.safeParse({}).success, false);
+    assert.equal(entry.liveKitSessionGrantSchema, publicRoot.liveKitSessionGrantSchema);
+    assert.equal(entry.proxyConnectRequestSchema, publicRoot.proxyConnectRequestSchema);
+    assert.equal(entry.proxyEndRequestSchema, publicRoot.proxyEndRequestSchema);
+    assert.equal(entry.capacityBusyResponseSchema, publicRoot.capacityBusyResponseSchema);
+  }
+});
 
 test("malformed session pages use the public server error hierarchy without response contents", async () => {
   const fetchImpl: typeof fetch = async () => new Response(JSON.stringify({

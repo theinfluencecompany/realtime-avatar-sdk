@@ -16,28 +16,42 @@ const schema4 = z.strictObject({
 
 const schema5 = z.literal("v1");
 
-const schema6 = z.strictObject({
+const schema6 = z.literal("correlated_pcm_v1");
+
+const schema7 = z.literal("v1");
+
+const schema8 = z.literal(true);
+
+const schema9 = z.object({
+  "performance": schema7,
+  "fail_closed": schema8,
+});
+
+const schema10 = z.strictObject({
   "base_url": schema0,
   "token": schema1,
   "fail_closed": schema2.optional(),
   "visible_character": schema4.optional(),
   "performance": schema5.optional(),
-});
-export const externalLlmWireSchema = schema6;
+  "audio_output": schema6.optional(),
+}).superRefine((value, ctx) => { if (value["audio_output"] !== undefined) { const result = schema9.safeParse(value); if (!result.success) for (const issue of result.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path }); } });
+export const externalLlmWireSchema = schema10;
 export const externalLlmOptionsSchema = z.strictObject({
   baseUrl: externalLlmWireSchema.shape.base_url,
   token: externalLlmWireSchema.shape.token,
   failClosed: externalLlmWireSchema.shape.fail_closed,
   visibleCharacter: externalLlmWireSchema.shape.visible_character,
   performance: externalLlmWireSchema.shape.performance,
+  audioOutput: externalLlmWireSchema.shape.audio_output,
 });
 export function externalLlmToWire(input: z.input<typeof externalLlmOptionsSchema>): z.output<typeof externalLlmWireSchema> {
   const options = externalLlmOptionsSchema.parse(input);
-  return {
+  return externalLlmWireSchema.parse({
     base_url: options.baseUrl,
     token: options.token,
     ...(options.failClosed !== undefined ? { fail_closed: options.failClosed } : {}),
     ...(options.visibleCharacter !== undefined ? { visible_character: options.visibleCharacter } : {}),
     ...(options.performance !== undefined ? { performance: options.performance } : {}),
-  };
+    ...(options.audioOutput !== undefined ? { audio_output: options.audioOutput } : {}),
+  });
 }

@@ -1349,6 +1349,50 @@ export interface components {
             audio_mapping: "unavailable";
         };
         /** @enum {string} */
+        ExternalLlmErrorCode: "external_llm_refused" | "external_llm_failed";
+        ExternalLlmErrorFrame: {
+            /** @constant */
+            kind: "external_llm_error";
+            /** @enum {string} */
+            code: "external_llm_refused" | "external_llm_failed";
+            message: string;
+            /** @constant */
+            fatal: true;
+        };
+        CorrelatedAudioHeader: {
+            session_id: string;
+            generation_id: string;
+            /** @constant */
+            version: 1;
+            /** @description Logical sentence identity, unchanged across HTTP retries; not request_id. */
+            utterance_id: string;
+            stream_id: string;
+            epoch: number;
+            /** @constant */
+            sample_rate: 24000;
+            /** @constant */
+            channels: 1;
+            /** @constant */
+            encoding: "pcm_s16le";
+        };
+        CorrelatedAudioReceipt: {
+            session_id: string;
+            generation_id: string;
+            /** @description Logical sentence identity, unchanged across HTTP retries; not request_id. */
+            utterance_id: string;
+            stream_id: string;
+            epoch: number;
+            /** @enum {string} */
+            status: "started" | "progress" | "finished" | "cancelled";
+            samples: number;
+        };
+        CorrelatedAudioCancel: {
+            /** @constant */
+            version: 1;
+            session_id: string;
+            epoch: number;
+        };
+        /** @enum {string} */
         VoiceWebhookErrorCode: "voice_webhook_url_not_allowed" | "voice_webhook_unauthorized" | "voice_webhook_unreachable" | "voice_webhook_timeout" | "voice_webhook_http_error" | "voice_webhook_unsupported_audio" | "voice_webhook_empty_audio";
         VoiceErrorFrame: {
             /** @constant */
@@ -1364,6 +1408,8 @@ export interface components {
             id: string;
             tenantId: string;
             displayName: string;
+            /** @enum {string} */
+            renderer: "video" | "live2d";
             /** @enum {string} */
             sourceKind: "image" | "video";
             /** @enum {string} */
@@ -1385,6 +1431,12 @@ export interface components {
         };
         CreateAvatarRequest: {
             displayName: string;
+            /**
+             * @description Defaults to video. live2d allocates a ready avatar identity for voice sessions with an app-owned rig. It requires defaultVoiceId or an explicit voice.voice selector; automatic casting is refused. Keep sourceKind image, omit sourceAssetId and motionPrompt, and omit modelId or use realtime-avatar-live-v1. No assets, clips, cache or manufacturing charge are created. Mint with mode voice; video rendering is refused. Session billing, authorization and external-LLM gates are unchanged.
+             * @default video
+             * @enum {string}
+             */
+            renderer: "video" | "live2d";
             /**
              * @description `image` is how avatars are created: upload a portrait, and the platform generates the looping source video and the motion library from it. `video` is CLOSED — it survives in this enum for a handful of grandfathered tenants, and `createAvatar` answers everyone else `422` ("Creating from a supplied video is closed"). The gate is a per-tenant flag that fails closed, so treat `video` as unavailable unless you already know yours is on.
              * @default image
@@ -1427,6 +1479,7 @@ export interface components {
         };
         UpdateAvatarRequest: {
             displayName?: string;
+            /** @description For Live2D avatars, must remain a ready shared or tenant-owned platform voice. Null, missing and foreign voices are refused with 404; this does not change video-avatar PATCH behavior. */
             defaultVoiceId?: string | null;
             llm?: {
                 /** @enum {string} */
@@ -2050,6 +2103,8 @@ export interface components {
                 id: string;
                 tenantId: string;
                 displayName: string;
+                /** @enum {string} */
+                renderer: "video" | "live2d";
                 /** @enum {string} */
                 sourceKind: "image" | "video";
                 /** @enum {string} */

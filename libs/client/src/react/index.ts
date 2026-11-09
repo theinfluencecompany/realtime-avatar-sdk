@@ -107,6 +107,7 @@ export {
   type VoiceError,
   type VoiceErrorCode,
 } from "./use-realtime-session";
+export type { CorrelatedAudioObserver, CorrelatedAudioPosition, CorrelatedAudioInvalidation } from "../../../browser/src/correlated-audio.ts";
 // `externalPerformance`: an external-LLM call's admission/cancellation, for an app-drawn character.
 export {
   EXTERNAL_PERFORMANCE_TIMING,

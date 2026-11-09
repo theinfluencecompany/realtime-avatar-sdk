@@ -367,6 +367,27 @@ The legacy `lk-chat-topic` compatibility path omits attributes. Automatic RTA se
 STT attribution and final transcript webhook provenance are separate work. Existing
 webhook types and behavior are unchanged.
 
+## Correlated browser audio (opt-in)
+
+For an application-owned character that needs a sentence clock, set server
+`llm.audioOutput: "correlated_pcm_v1"` with `performance: "v1"`, `failClosed: true`,
+`mode: "voice"`, and `voiceWebhook`; do not also set `voice`. The browser uses
+`attachCorrelatedAudio` from `realtime-avatar/browser`, or passes `correlatedAudio:
+{ onPosition, onInvalidated, onPlaybackBlocked? }` to `useRealtimeSession`/`AvatarCall`.
+The existing room bridge binds to the held grant and actual assistant. `AvatarCall`
+disables ordinary audio automatically; composed rooms must use `renderRoomAudio={false}`
+and must not mount `RoomAudioRenderer` or `attachRemoteAudio`.
+
+The attachment returns `startAudio(): Promise<void>` and `dispose(): Promise<void>`.
+Position callbacks contain header-derived `session_id`, `generation_id`, `utterance_id`,
+`stream_id`, `epoch`, consumed integer `samples`, `sampleRate`, and `state:
+"playing" | "finished"`. They report source PCM output-clock progress, not physical
+audibility. No PCM or analysis is exposed. The player bounds buffering to two seconds,
+returns consumed-sample credit, rejects unbound senders and stale epochs, and clears
+pending playback on cancellation. Reconnection/agent loss fails closed; obtain a fresh
+grant rather than replaying old audio. Default calls are unchanged. This requires the
+corresponding platform and worker release; see the root README for the full integration.
+
 ## API
 
 Everything is on one class. The full types are in
@@ -411,7 +432,8 @@ rta.iterateRenders({ limit? })         // every render, paging handled
 rta.getRenderAccess(renderId)          // { id, url, expiresAt }; signed for an hour, renew when needed
 
 // avatars
-rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // the only lane
+rta.createLive2dAvatar({ displayName, voice, settings?, metadata? })       // app-owned rig, explicit voice, no assets
+rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // platform-rendered video
 rta.createAvatarFromVideo({ displayName, videoUrl, voice? })                 // DEPRECATED — closed, 422
 rta.listAvatars()
 rta.getAvatar(avatarId)
@@ -461,6 +483,39 @@ const voice: VoiceSpecInput = {
   model: parsed.success ? parsed.data : DEFAULT_FISH_TTS_MODEL,
 };
 ```
+
+### Register an app-owned Live2D rig
+
+```ts
+const avatar = await rta.createLive2dAvatar({
+  displayName: "Rin",
+  voice: { provider: "fish", voice_id: "your-provider-voice-id", model: "s2-pro" },
+  metadata: { characterId: "your-character-id" },
+});
+// Persist avatar.id and avatar.renderer in your server-owned character mapping.
+const call = await rta.startCall({ avatarId: avatar.id, mode: "voice" });
+```
+
+Requires the platform's Live2D identity support. One `POST /avatars` sends `renderer: "live2d"`,
+`sourceKind: "image"` and an explicit voice selector; no assets, automatic casting, clips or
+resting-loop generation are requested. Your app owns the rig. Source fields, motion prompts,
+renderer overrides and automatic voice descriptions are refused before network I/O.
+`settings` and `metadata` are optional records and are omitted unless provided.
+
+The exported `CreateLive2dAvatarInput` and complete `RegisteredAvatar` response derive from
+canonical generated schemas. The response is parsed once; malformed successful responses throw
+`RealtimeAvatarError` without the rejected body. Existing image/video creation requests are
+unchanged. Existing avatar methods retain `renderer`, defaulting older responses that omit it to
+`"video"`.
+
+### Validate persisted grants and proxy requests
+
+The server root (`realtime-avatar` or `realtime-avatar/server`) exports the existing
+`liveKitSessionGrantSchema`, `capacityBusyResponseSchema`, `proxyConnectRequestSchema` and
+`proxyEndRequestSchema`. Use their `safeParse` at your unknown storage or HTTP boundary rather
+than writing mirror schemas. Connect parsing strips client policy; end parsing requires a
+session or queue ticket. Parsing does not authorize access: bind avatars, grants and sessions
+to the authenticated user on your server.
 
 ### Session page validation
 
