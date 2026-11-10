@@ -1,7 +1,7 @@
 // Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
 // Do not edit; the platform owns the speech request and response metadata.
 import { z } from "zod";
-import type { operations } from "./openapi.ts";
+import type { components, operations } from "./openapi.ts";
 type AssertTrue<Value extends true> = Value;
 const schema0 = z.string().min(1).max(2000);
 
@@ -165,6 +165,82 @@ const schema51 = z.strictObject({
 });
 
 const schema52 = z.union([schema20, schema25, schema29, schema33, schema51]);
+
+const schema53 = z.int().min(100).max(300);
+
+const schema54 = z.int().min(1).max(6000);
+
+const schema55 = z.literal("text");
+
+const schema56 = z.int().min(0).max(127);
+
+const schema57 = z.string().min(1).max(300);
+
+const schema58 = z.strictObject({
+  "type": schema55,
+  "utterance": schema56,
+  "text": schema57,
+});
+
+const schema59 = z.literal("flush");
+
+const schema60 = z.strictObject({
+  "type": schema59,
+  "utterance": schema27,
+});
+
+const schema61 = z.literal("end");
+
+const schema62 = z.strictObject({
+  "type": schema61,
+});
+
+const schema63 = z.literal("cancel");
+
+const schema64 = z.strictObject({
+  "type": schema63,
+});
+
+const schema65 = z.union([schema58, schema60, schema62, schema64]);
+
+const schema66 = z.int().min(0).max(4320000);
+
+const schema67 = z.strictObject({
+  "requestId": schema15,
+  "type": schema21,
+  "utterance": schema27,
+  "sampleOffset": schema66,
+  "audioBase64": schema24,
+});
+
+const schema68 = z.array(speechAlignedTextSchema).max(2048);
+
+const schema69 = z.strictObject({
+  "requestId": schema15,
+  "type": schema26,
+  "utterance": schema27,
+  "segments": schema68,
+});
+
+const schema70 = z.literal("utterance-end");
+
+const schema71 = z.strictObject({
+  "requestId": schema15,
+  "type": schema70,
+  "utterance": schema27,
+  "samples": schema31,
+});
+
+const schema72 = z.int().min(0).max(6000);
+
+const schema73 = z.strictObject({
+  "requestId": schema15,
+  "type": schema30,
+  "billedBytes": schema72,
+  "billedCredits": schema6,
+});
+
+const schema74 = z.union([schema20, schema67, schema69, schema71, schema73, schema51]);
 export const createSpeechRequestSchema = schema4.extend({
   format: schema4.shape.format.unwrap().default("mp3"),
 });
@@ -179,6 +255,23 @@ type StreamWireRequest = operations["createSpeechStream"]["requestBody"]["conten
 type StreamWireEvent = operations["createSpeechStream"]["responses"][200]["content"]["text/event-stream"];
 type _SpeechStreamRequestParity = AssertTrue<[CreateSpeechStreamRequest] extends [StreamWireRequest] ? [StreamWireRequest] extends [CreateSpeechStreamRequest] ? true : false : false>;
 type _SpeechStreamEventParity = AssertTrue<[SpeechStreamEvent] extends [StreamWireEvent] ? [StreamWireEvent] extends [SpeechStreamEvent] ? true : false : false>;
+export const speechLiveOpenSchema = z.strictObject({
+  "language": schema3.optional(),
+  "latency": schema8.optional(),
+  "chunkLength": schema53.optional(),
+  "maxTextBytes": schema54,
+});
+export type SpeechLiveOpen = z.infer<typeof speechLiveOpenSchema>;
+export const speechLiveClientMessageSchema = schema65;
+export type SpeechLiveClientMessage = z.infer<typeof speechLiveClientMessageSchema>;
+export const speechLiveServerMessageSchema = schema74;
+export type SpeechLiveServerMessage = z.infer<typeof speechLiveServerMessageSchema>;
+type LiveWireQuery = operations["openSpeechLive"]["parameters"]["query"];
+type LiveWireMessage = operations["openSpeechLive"]["responses"][101]["content"]["application/json"];
+type _SpeechLiveOpenParity = AssertTrue<[SpeechLiveOpen] extends [LiveWireQuery] ? [LiveWireQuery] extends [SpeechLiveOpen] ? true : false : false>;
+type _SpeechLiveClientParity = AssertTrue<[SpeechLiveClientMessage] extends [components["schemas"]["SpeechLiveClientMessage"]] ? [components["schemas"]["SpeechLiveClientMessage"]] extends [SpeechLiveClientMessage] ? true : false : false>;
+type _SpeechLiveServerParity = AssertTrue<[SpeechLiveServerMessage] extends [components["schemas"]["SpeechLiveServerMessage"]] ? [components["schemas"]["SpeechLiveServerMessage"]] extends [SpeechLiveServerMessage] ? true : false : false>;
+type _SpeechLiveMessageParity = AssertTrue<[SpeechLiveClientMessage | SpeechLiveServerMessage] extends [LiveWireMessage] ? [LiveWireMessage] extends [SpeechLiveClientMessage | SpeechLiveServerMessage] ? true : false : false>;
 type WireRequest = operations["createSpeech"]["requestBody"]["content"]["application/json"];
 type SpeechRequest = z.output<typeof createSpeechRequestSchema>;
 type _SpeechRequestParity = AssertTrue<[SpeechRequest] extends [WireRequest] ? [WireRequest] extends [SpeechRequest] ? true : false : false>;
