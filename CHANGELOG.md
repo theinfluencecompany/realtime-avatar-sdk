@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.39.0
+
+A minor release: a live speech session that takes text while it is written.
+
+### Added
+
+- **`openSpeechSession(voiceId, { maxTextBytes, latency?, chunkLength?, language? }, { signal? })`**
+  opens the platform's `GET /voices/{voiceId}/speech/live` WebSocket. It resolves once the session
+  is admitted (voice, slot, credit hold, provider connection), so every refusal rejects it. The
+  session sends `text`, `flush`, `end` and `cancel`, and iterates `started`, per-utterance `audio`,
+  `alignment` and `utterance-end`, then `completed` or `failed`.
+- `speechLiveOpenSchema`, `speechLiveClientMessageSchema`, `speechLiveServerMessageSchema` and
+  `SpeechLiveOpen`, `SpeechLiveClientMessage`, `SpeechLiveServerMessage`, `SpeechSession` are
+  generated from the re-synced platform spec. Frames are validated in both directions; audio that
+  is not contiguous per utterance, a skipped utterance or a wrong `utterance-end` fails the session.
+- Workers open the socket with a `fetch` upgrade carrying `Authorization`, so a refusal is a
+  `RealtimeAvatarHttpError`. Node 22 uses the global `WebSocket` with the same header; its refusals
+  carry no HTTP status. Never retried; cancel, disconnect and abort still bill the bytes sent.
+
+### Release order
+
+The method needs the platform's live speech endpoint. Until it is deployed, opening a session is
+refused and `spec:check` reports drift, because this release's spec already contains `openSpeechLive`.
+Nothing else changed, so publishing before the platform deploy is safe for every other method.
+
 ## 0.38.0
 
 A breaking minor release (the SDK is pre-1.0): the app-rendered avatar renderer is named `anima`.

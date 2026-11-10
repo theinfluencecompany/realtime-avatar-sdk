@@ -16,6 +16,10 @@ test("both published server entries expose the same canonical boundary validator
     assert.deepEqual(entry.createSpeechStreamRequestSchema.parse({ text: " Hello " }), { text: "Hello" });
     assert.equal(entry.speechAlignedTextSchema.safeParse({ text: "Hello", start: 2, end: 1 }).success, false);
     assert.equal(entry.speechStreamEventSchema.safeParse({ type: "audio" }).success, false);
+    assert.equal(typeof entry.RealtimeAvatar.prototype.openSpeechSession, "function");
+    assert.equal(entry.speechLiveOpenSchema.safeParse({ maxTextBytes: 6001 }).success, false);
+    assert.equal(entry.speechLiveClientMessageSchema.safeParse({ type: "text", utterance: 0, text: "x".repeat(301) }).success, false);
+    assert.equal(entry.speechLiveServerMessageSchema.safeParse({ type: "utterance-end", requestId: "3f8a1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d", utterance: 0, samples: 0 }).success, false);
     assert.equal(entry.createSpeechRequestSchema.safeParse({ text: "Hello", extra: true }).success, false);
     assert.deepEqual(entry.createSpeechRequestSchema.parse({ text: " Hello " }), { text: "Hello", format: "mp3" });
     assert.equal(entry.liveKitSessionGrantSchema.safeParse({ session_id: 123 }).success, false);
