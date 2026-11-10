@@ -121,9 +121,9 @@ test("canonical numeric field mutations fail generated mapping and public consum
     await writeFile(join(f.dir, "consumer.ts"), `
       import { RealtimeAvatar } from "./libs/http-client/src/index.ts";
       async function report(client: RealtimeAvatar) {
-        const avatar = await client.createLive2dAvatar({ displayName: "Rin", voice: { provider: "fish", voice_id: "voice_123" } });
+        const avatar = await client.createAnimaAvatar({ displayName: "Rin", voice: { provider: "fish", voice_id: "voice_123" } });
         const avatarId: string = avatar.id;
-        const renderer: "video" | "live2d" = avatar.renderer;
+        const renderer: "video" | "anima" = avatar.renderer;
         void [avatarId, renderer];
         for await (const event of client.createSpeechStream("voice_test", { text: "Hello" })) {
           if (event.type === "audio") { const offset: number = event.sampleOffset; void offset; }
@@ -176,9 +176,9 @@ test("canonical numeric field mutations fail generated mapping and public consum
        const header: CorrelatedAudioHeader = decoded;`,
       `import type { ExternalLlm } from "./libs/http-client/src/index.ts";
        const output: ExternalLlm["audioOutput"] = "mp3";`,
-      `import type { CreateLive2dAvatarInput, RegisteredAvatar } from "./libs/http-client/src/index.ts";
+      `import type { CreateAnimaAvatarInput, RegisteredAvatar } from "./libs/http-client/src/index.ts";
        declare const decoded: unknown;
-       const request: CreateLive2dAvatarInput = decoded;
+       const request: CreateAnimaAvatarInput = decoded;
        const response: RegisteredAvatar = decoded;`,
       `import type { ExternalLlm } from "./libs/http-client/src/index.ts";
        declare const decoded: unknown;

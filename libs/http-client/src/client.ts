@@ -12,7 +12,7 @@ import {
 import type { z } from "zod";
 import { RealtimeAvatarError, RealtimeAvatarHttpError, isRequestId } from "./errors.ts";
 import { clipLibraryResponseSchema, clipLibraryUpdateSchema } from "./generated/clip-library-schema.ts";
-import { avatarResponseSchema, createLive2dAvatarInputSchema } from "./generated/avatar.ts";
+import { avatarResponseSchema, createAnimaAvatarInputSchema } from "./generated/avatar.ts";
 import { recordingModeSchema, recordingArtifactSchema, listRecordingsQuerySchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";
 import { renderSchema, listRendersQuerySchema, listRendersResponseSchema, renderAccessResponseSchema } from "./generated/render.ts";
 import type { ConnectionHistoryResponse } from "./generated/connection-history.ts";
@@ -32,7 +32,7 @@ import type {
   UsageSessionPage,
   AssetKind,
   Avatar,
-  CreateLive2dAvatarInput,
+  CreateAnimaAvatarInput,
   RegisteredAvatar,
   AvatarSourceSwap,
   AvatarUpdate,
@@ -69,7 +69,7 @@ const SPEECH_MISMATCH = "Speech response did not match the SDK contract";
 const MAX_SPEECH_RESPONSE_BYTES = 24 * 1024 * 1024;
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.37.0";
+export const SDK_VERSION = "0.38.0";
 
 
 
@@ -367,15 +367,16 @@ export class RealtimeAvatar {
   }
 
   /**
-   * Register an app-owned Live2D rig for voice sessions. No assets, motion generation or
+   * Register an Anima avatar for voice sessions: your application owns the rig and the rendering,
+   * the platform owns identity, voice and sessions. No assets, motion generation or
    * automatic voice casting: supply an explicit provider and voice_id, then mint with mode voice.
    */
-  async createLive2dAvatar(input: CreateLive2dAvatarInput): Promise<RegisteredAvatar> {
-    const { voice, ...identity } = createLive2dAvatarInputSchema.parse(input);
+  async createAnimaAvatar(input: CreateAnimaAvatarInput): Promise<RegisteredAvatar> {
+    const { voice, ...identity } = createAnimaAvatarInputSchema.parse(input);
     const body: Omit<components["schemas"]["CreateAvatarRequest"], "settings" | "metadata"> &
       Partial<Pick<components["schemas"]["CreateAvatarRequest"], "settings" | "metadata">> = {
       ...identity,
-      renderer: "live2d",
+      renderer: "anima",
       sourceKind: "image",
       voice: { voice },
     };

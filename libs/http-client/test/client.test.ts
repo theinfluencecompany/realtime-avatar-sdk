@@ -456,7 +456,7 @@ test("invalid external opt-ins are rejected before any HTTP request", async () =
     { textOutput: "speech_segments_v1" },
     { textOutput: "speech_segments_v1", performance: "v1", failClosed: true },
     { textOutput: "unknown", audioOutput: "correlated_pcm_v1", performance: "v1", failClosed: true },
-    { failClosed: null }, { performance: "v2" }, { visibleCharacter: { renderer: "live2d" } },
+    { failClosed: null }, { performance: "v2" }, { visibleCharacter: { renderer: "anima" } },
     { visibleCharacter: { renderer: "external", emotion: "happy" } }, { epoch: 2 },
   ]) {
     const on = stub({ body: GRANT });

@@ -259,7 +259,7 @@ definitions.length = 0;
 names.clear();
 // The helper curates creation's explicit voice, never its automatic casting or source controls.
 const createAvatarProperties = spec.components.schemas.CreateAvatarRequest.properties;
-const live2dFields = ["displayName", "settings", "metadata"].map((field) =>
+const animaFields = ["displayName", "settings", "metadata"].map((field) =>
   `  ${field}: ${expression(createAvatarProperties[field])}${field === "displayName" ? "" : ".optional()"},`);
 const explicitAvatarVoiceRoot = expression(createAvatarProperties.voice.properties.voice);
 const avatarRoot = expression(spec.components.schemas.Avatar);
@@ -275,8 +275,8 @@ ${definitions.join("\n\n")}
 // OpenAPI's required-only voice union becomes unknown in openapi-typescript. Derive the
 // explicit selector from its generated executable schema, not that lossy union.
 export const explicitAvatarVoiceSchema = ${explicitAvatarVoiceRoot};
-export const createLive2dAvatarInputSchema = z.strictObject({
-${live2dFields.join("\n")}
+export const createAnimaAvatarInputSchema = z.strictObject({
+${animaFields.join("\n")}
   voice: ${explicitAvatarVoiceRoot},
 });
 export const avatarResponseSchema = ${avatarRoot};

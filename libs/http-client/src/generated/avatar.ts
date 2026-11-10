@@ -41,7 +41,7 @@ const schema13 = z.string().min(8).max(80);
 
 const schema14 = z.string();
 
-const schema15 = z.enum(["video","live2d"]);
+const schema15 = z.enum(["video","anima"]);
 
 const schema16 = z.enum(["image","video"]);
 
@@ -88,7 +88,7 @@ const schema27 = z.strictObject({
 // OpenAPI's required-only voice union becomes unknown in openapi-typescript. Derive the
 // explicit selector from its generated executable schema, not that lossy union.
 export const explicitAvatarVoiceSchema = schema12;
-export const createLive2dAvatarInputSchema = z.strictObject({
+export const createAnimaAvatarInputSchema = z.strictObject({
   displayName: schema0,
   settings: schema1.optional(),
   metadata: schema1.optional(),

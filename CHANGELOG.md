@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.38.0
+
+A breaking minor release (the SDK is pre-1.0): the app-rendered avatar renderer is named `anima`.
+
+### Changed
+
+- **`renderer: "live2d"` is now `renderer: "anima"`, with no alias.** `anima` means your application
+  owns the rig and the rendering; the platform owns identity, voice and sessions. `Avatar.renderer`
+  and `RegisteredAvatar.renderer` are `"video" | "anima"`, generated from the re-synced platform
+  spec. A response that still says `live2d` is refused by the generated schema instead of mapped.
+- **`createLive2dAvatar` is renamed `createAnimaAvatar`, and `CreateLive2dAvatarInput` is
+  `CreateAnimaAvatarInput`.** Same input, same single `POST /avatars`, now with `renderer: "anima"`.
+  Rename the call; nothing else about registration changed.
+
+### Release order
+
+The platform migration rewrites every stored `live2d` row to `anima` and its CHECK then refuses
+`live2d`. From that moment SDK 0.37.0 and earlier throw on reading such an avatar, and 0.38.0 throws
+on reading one from a platform that has not migrated. No SDK version reads both, by design. Publishing
+0.38.0 before the platform deploy is safe: it changes nothing for video avatars, and an app-rendered
+avatar's only consumer must stay pinned to 0.37.0 until the platform serves `anima`, then upgrade.
+
 ## 0.37.0
 
 - Server-only `createSpeechStream` lazily yields generated typed SSE events: mono 24 kHz signed 16-bit PCM, replaceable absolute alignment and explicit completed/failed terminals. Existing completed-file `createSpeech` is unchanged. Requires the platform streaming endpoint.

@@ -1442,7 +1442,7 @@ export interface components {
             tenantId: string;
             displayName: string;
             /** @enum {string} */
-            renderer: "video" | "live2d";
+            renderer: "video" | "anima";
             /** @enum {string} */
             sourceKind: "image" | "video";
             /** @enum {string} */
@@ -1465,11 +1465,11 @@ export interface components {
         CreateAvatarRequest: {
             displayName: string;
             /**
-             * @description Defaults to video. live2d allocates a ready avatar identity for voice sessions with an app-owned rig. It requires defaultVoiceId or an explicit voice.voice selector; automatic casting is refused. Keep sourceKind image, omit sourceAssetId and motionPrompt, and omit modelId or use realtime-avatar-live-v1. No assets, clips, cache or manufacturing charge are created. Mint with mode voice; video rendering is refused. Session billing, authorization and external-LLM gates are unchanged.
+             * @description Defaults to video. anima allocates a ready avatar identity for voice sessions; the application owns the rig and the rendering. It requires defaultVoiceId or an explicit voice.voice selector; automatic casting is refused. Keep sourceKind image, omit sourceAssetId and motionPrompt, and omit modelId or use realtime-avatar-live-v1. No assets, clips, cache or manufacturing charge are created. Mint with mode voice; video rendering is refused. Session billing, authorization and external-LLM gates are unchanged.
              * @default video
              * @enum {string}
              */
-            renderer: "video" | "live2d";
+            renderer: "video" | "anima";
             /**
              * @description `image` is how avatars are created: upload a portrait, and the platform generates the looping source video and the motion library from it. `video` is CLOSED — it survives in this enum for a handful of grandfathered tenants, and `createAvatar` answers everyone else `422` ("Creating from a supplied video is closed"). The gate is a per-tenant flag that fails closed, so treat `video` as unavailable unless you already know yours is on.
              * @default image
@@ -1512,7 +1512,7 @@ export interface components {
         };
         UpdateAvatarRequest: {
             displayName?: string;
-            /** @description For Live2D avatars, must remain a ready shared or tenant-owned platform voice. Null, missing and foreign voices are refused with 404; this does not change video-avatar PATCH behavior. */
+            /** @description For anima avatars, must remain a ready shared or tenant-owned platform voice. Null, missing and foreign voices are refused with 404; this does not change video-avatar PATCH behavior. */
             defaultVoiceId?: string | null;
             llm?: {
                 /** @enum {string} */
@@ -2236,7 +2236,7 @@ export interface components {
                 tenantId: string;
                 displayName: string;
                 /** @enum {string} */
-                renderer: "video" | "live2d";
+                renderer: "video" | "anima";
                 /** @enum {string} */
                 sourceKind: "image" | "video";
                 /** @enum {string} */

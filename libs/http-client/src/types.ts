@@ -29,7 +29,7 @@
  */
 
 import type { z } from "zod";
-import type { avatarResponseSchema, createLive2dAvatarInputSchema } from "./generated/avatar.ts";
+import type { avatarResponseSchema, createAnimaAvatarInputSchema } from "./generated/avatar.ts";
 import type { components, operations } from "./generated/openapi.ts";
 import type { toSessionsPage } from "./generated/usage-sessions.ts";
 import type { RecordingMode, RecordingArtifact } from "./generated/recording.ts";
@@ -380,9 +380,9 @@ export type Asset = Pick<Wire["Asset"], "id" | "kind"> & {
   status: Wire["Asset"]["status"] | (string & {});
 };
 
-/** DERIVATION: the generated creation schema curates an explicit voice for an app-owned Live2D rig. */
-export type CreateLive2dAvatarInput = z.input<typeof createLive2dAvatarInputSchema>;
-/** DERIVATION: the complete generated platform response, validated by createLive2dAvatar. */
+/** DERIVATION: the generated creation schema curates an explicit voice for an Anima avatar (app-owned rig and rendering). */
+export type CreateAnimaAvatarInput = z.input<typeof createAnimaAvatarInputSchema>;
+/** DERIVATION: the complete generated platform response, validated by createAnimaAvatar. */
 export type RegisteredAvatar = z.output<typeof avatarResponseSchema>;
 
 export type Avatar = Pick<
