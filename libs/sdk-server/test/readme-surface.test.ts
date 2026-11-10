@@ -9,7 +9,7 @@ import * as publicServer from "realtime-avatar/server";
 
 test("both published server entries expose the same canonical boundary validators", () => {
   for (const entry of [publicRoot, publicServer]) {
-    assert.equal(typeof entry.RealtimeAvatar.prototype.createLive2dAvatar, "function");
+    assert.equal(typeof entry.RealtimeAvatar.prototype.createAnimaAvatar, "function");
     assert.equal(typeof entry.RealtimeAvatar.prototype.createSpeech, "function");
     assert.equal(typeof entry.RealtimeAvatar.prototype.createSpeechStream, "function");
     assert.equal(entry.createSpeechStreamRequestSchema.safeParse({ text: "Hello", format: "mp3" }).success, false);

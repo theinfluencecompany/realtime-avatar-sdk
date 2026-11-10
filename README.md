@@ -387,7 +387,7 @@ rta.iterateRenders({ limit? })         // every render, paging handled
 rta.getRenderAccess(renderId)          // { id, url, expiresAt }; signed for an hour, renew when needed
 
 // avatars
-rta.createLive2dAvatar({ displayName, voice, settings?, metadata? })       // app-owned rig, explicit voice, no assets
+rta.createAnimaAvatar({ displayName, voice, settings?, metadata? })        // app-owned rig and rendering, explicit voice, no assets
 rta.createAvatarFromImage({ displayName, imageUrl, motionPrompt?, voice? })  // platform-rendered video
 rta.createAvatarFromVideo({ displayName, videoUrl, voice? })                 // DEPRECATED — closed, 422
 rta.listAvatars()
@@ -423,13 +423,13 @@ DEFAULT_FISH_TTS_MODEL                          // the platform's Fish default m
 FISH_DELIVERY_MODELS                            // which models can carry each voice `delivery`
 ```
 
-### Register an app-owned Live2D rig
+### Register an Anima avatar (your app owns the rig and the rendering)
 
 ```ts
 import { RealtimeAvatar } from "realtime-avatar/server";
 
 const rta = new RealtimeAvatar({ apiKey: process.env.REALTIME_AVATAR_API_KEY! });
-const avatar = await rta.createLive2dAvatar({
+const avatar = await rta.createAnimaAvatar({
   displayName: "Rin",
   voice: { provider: "fish", voice_id: "your-provider-voice-id", model: "s2-pro" },
   metadata: { characterId: "your-character-id" },
@@ -438,17 +438,21 @@ const avatar = await rta.createLive2dAvatar({
 const call = await rta.startCall({ avatarId: avatar.id, mode: "voice" });
 ```
 
-Requires a platform with Live2D identity support. The helper sends one `POST /avatars` with
-`renderer: "live2d"`, `sourceKind: "image"` and the explicit voice selector. It does not upload
-assets, generate clips or a resting loop, or automatically cast a voice. Your app owns the rig.
+Requires a platform with the `anima` renderer. The helper sends one `POST /avatars` with
+`renderer: "anima"`, `sourceKind: "image"` and the explicit voice selector. It does not upload
+assets, generate clips or a resting loop, or automatically cast a voice. Your app owns the rig
+and the rendering.
 `sourceAssetId`, `imageUrl`, `motionPrompt`, renderer overrides and automatic voice descriptions
 are refused before any request. `settings` and `metadata` are optional records, sent only when
 provided. The existing `createAvatar` and `createAvatarFromImage` requests are unchanged.
 
-`CreateLive2dAvatarInput` and the complete returned `RegisteredAvatar` derive from generated
+`CreateAnimaAvatarInput` and the complete returned `RegisteredAvatar` derive from generated
 platform schemas. The response is validated once; malformed successful responses throw
 `RealtimeAvatarError` without exposing the rejected body. Existing avatar reads also retain
 `renderer`, defaulting to `"video"` only when an older platform omits it.
+
+`renderer: "anima"` replaced `live2d` in 0.38.0 with no alias: the platform refuses `live2d` and
+SDK 0.37.0 and earlier cannot parse an `anima` avatar, so upgrade once the platform serves `anima`.
 
 ### Validate persisted grants and proxy requests
 

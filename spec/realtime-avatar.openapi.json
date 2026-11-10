@@ -3265,7 +3265,7 @@
             "type": "string",
             "enum": [
               "video",
-              "live2d"
+              "anima"
             ]
           },
           "sourceKind": {
@@ -3401,9 +3401,9 @@
             "type": "string",
             "enum": [
               "video",
-              "live2d"
+              "anima"
             ],
-            "description": "Defaults to video. live2d allocates a ready avatar identity for voice sessions with an app-owned rig. It requires defaultVoiceId or an explicit voice.voice selector; automatic casting is refused. Keep sourceKind image, omit sourceAssetId and motionPrompt, and omit modelId or use realtime-avatar-live-v1. No assets, clips, cache or manufacturing charge are created. Mint with mode voice; video rendering is refused. Session billing, authorization and external-LLM gates are unchanged."
+            "description": "Defaults to video. anima allocates a ready avatar identity for voice sessions; the application owns the rig and the rendering. It requires defaultVoiceId or an explicit voice.voice selector; automatic casting is refused. Keep sourceKind image, omit sourceAssetId and motionPrompt, and omit modelId or use realtime-avatar-live-v1. No assets, clips, cache or manufacturing charge are created. Mint with mode voice; video rendering is refused. Session billing, authorization and external-LLM gates are unchanged."
           },
           "sourceKind": {
             "default": "image",
@@ -3592,7 +3592,7 @@
                 "type": "null"
               }
             ],
-            "description": "For Live2D avatars, must remain a ready shared or tenant-owned platform voice. Null, missing and foreign voices are refused with 404; this does not change video-avatar PATCH behavior."
+            "description": "For anima avatars, must remain a ready shared or tenant-owned platform voice. Null, missing and foreign voices are refused with 404; this does not change video-avatar PATCH behavior."
           },
           "llm": {
             "anyOf": [
@@ -4361,6 +4361,21 @@
             "minLength": 2,
             "maxLength": 16,
             "pattern": "^[A-Za-z0-9-]+$"
+          },
+          "latency": {
+            "description": "normal (best quality), balanced (reduced latency, the default) or low (lowest latency, least stable).",
+            "type": "string",
+            "enum": [
+              "normal",
+              "balanced",
+              "low"
+            ]
+          },
+          "chunkLength": {
+            "description": "Characters the voice provider takes per text chunk, 100 to 300. Smaller starts audio sooner; useful on a conversation's first sentence. Omit for the provider's default.",
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 300
           }
         },
         "required": [
@@ -6883,7 +6898,7 @@
                   "type": "string",
                   "enum": [
                     "video",
-                    "live2d"
+                    "anima"
                   ]
                 },
                 "sourceKind": {
@@ -8975,7 +8990,7 @@
     "/v1/voices/{voiceId}/speech": {
       "post": {
         "operationId": "createSpeech",
-        "description": "Text in, an audio file out, in a voice this workspace can use: the shared presets, voices it designed, and voices it added from the public voice library. The voice is resolved strictly and never substituted. Billed per UTF-8 byte of the trimmed text: 1 credit per 90 bytes, rounded up, minimum 1 credit, taken from the workspace balance (plain English is one byte per character; accented letters and other scripts use 2 to 4). A request that fails is not charged. Nothing is stored: neither the text nor the audio. You may store and replay the audio in your own product. Retries are not replayed, because nothing is kept to replay: a retry after a timed-out success is billed again. Limited to 20 requests a minute and one request in progress at a time per workspace, and to 2,000 characters of text. Text in [square brackets] may be performed as a delivery cue rather than spoken.\n\nRequires an API key with the `speech:write` scope.",
+        "description": "Text in, an audio file out, in a voice this workspace can use: the shared presets, voices it designed, and voices it added from the public voice library. The voice is resolved strictly and never substituted. Billed per UTF-8 byte of the trimmed text: 1 credit per 90 bytes, rounded up, minimum 1 credit, taken from the workspace balance (plain English is one byte per character; accented letters and other scripts use 2 to 4). A request that fails is not charged. Nothing is stored: neither the text nor the audio. You may store and replay the audio in your own product. Retries are not replayed, because nothing is kept to replay: a retry after a timed-out success is billed again. Limited to 240 requests a minute and a capped number of requests in progress at a time per workspace, and to 2,000 characters of text. Text in [square brackets] may be performed as a delivery cue rather than spoken.\n\nRequires an API key with the `speech:write` scope.",
         "parameters": [
           {
             "name": "voiceId",
@@ -9082,7 +9097,7 @@
             }
           },
           "429": {
-            "description": "Per-workspace rate limit (code \"rate_limited\"), or speech generation is busy (code \"speech_busy\"): this workspace already has a request in progress, or the platform-wide cap is reached. Both are retryable; honour Retry-After.",
+            "description": "Per-workspace rate limit (code \"rate_limited\"), or speech generation is busy (code \"speech_busy\"): this workspace already has its share of requests in progress, or the platform-wide cap is reached. Both are retryable; honour Retry-After.",
             "headers": {
               "Retry-After": {
                 "description": "Seconds to wait before retrying.",

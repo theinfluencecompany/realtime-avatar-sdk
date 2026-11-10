@@ -11,11 +11,11 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B 
 const exactAvatarOutput: Equal<z.output<typeof avatarResponseSchema>, components["schemas"]["Avatar"]> = true;
 void exactAvatarOutput;
 
-const voice = { provider: "fish", voice_id: "voice_live2d", model: "s2-pro" } as const;
+const voice = { provider: "fish", voice_id: "voice_anima", model: "s2-pro" } as const;
 const avatar: components["schemas"]["Avatar"] = {
-  id: "av_live2d_123", tenantId: "tenant_123", displayName: "Rin", renderer: "live2d",
+  id: "av_anima_123", tenantId: "tenant_123", displayName: "Rin", renderer: "anima",
   sourceKind: "image", modelId: "realtime-avatar-live-v1", sourceAssetId: null,
-  status: "ready", error: null, idleVideoStatus: "none", defaultVoiceId: "voice_live2d",
+  status: "ready", error: null, idleVideoStatus: "none", defaultVoiceId: "voice_anima",
   llm: null, createdAt: "2026-11-09T00:00:00Z", updatedAt: "2026-11-09T00:00:00Z",
 };
 
@@ -30,30 +30,30 @@ function mock(response: unknown = avatar) {
   return { requests, client: new server.RealtimeAvatar({ apiKey: "test", fetch: fetchImpl }) };
 }
 
-test("Live2D registration posts only its identity and explicit voice, then returns the full parsed avatar", async () => {
+test("Anima registration posts only its identity and explicit voice, then returns the full parsed avatar", async () => {
   const { client, requests } = mock();
-  const created = await client.createLive2dAvatar({ displayName: "Rin", voice });
+  const created = await client.createAnimaAvatar({ displayName: "Rin", voice });
   assert.deepEqual(requests, [{
     url: "https://realtimeavatar.ai/api/v1/avatars", method: "POST",
-    body: { displayName: "Rin", renderer: "live2d", sourceKind: "image", voice: { voice } },
+    body: { displayName: "Rin", renderer: "anima", sourceKind: "image", voice: { voice } },
   }]);
   assert.deepEqual(created, avatar);
-  assert.equal(created.id, "av_live2d_123");
-  assert.equal(created.renderer, "live2d");
+  assert.equal(created.id, "av_anima_123");
+  assert.equal(created.renderer, "anima");
   const canonical: components["schemas"]["Avatar"] = created;
   void canonical;
 });
 
-test("Live2D registration forwards provided settings and metadata without manufacturing assets", async () => {
+test("Anima registration forwards provided settings and metadata without manufacturing assets", async () => {
   const { client, requests } = mock();
   const input = { displayName: "Rin", voice: { provider: "cartesia", voice_id: "voice_rin" } as const,
     settings: { rig: "rin-v1", nested: { visible: true } }, metadata: { characterId: "char_1" } };
-  await client.createLive2dAvatar(input);
+  await client.createAnimaAvatar(input);
   assert.equal(requests.length, 1);
-  assert.deepEqual(requests[0]?.body, { ...input, renderer: "live2d", sourceKind: "image", voice: { voice: input.voice } });
+  assert.deepEqual(requests[0]?.body, { ...input, renderer: "anima", sourceKind: "image", voice: { voice: input.voice } });
 });
 
-test("Live2D registration rejects source controls and malformed or automatic voices before network I/O", async () => {
+test("Anima registration rejects source controls and malformed or automatic voices before network I/O", async () => {
   const { client, requests } = mock();
   const input = { displayName: "Rin", voice };
   for (const extra of [
@@ -61,48 +61,55 @@ test("Live2D registration rejects source controls and malformed or automatic voi
     { renderer: "video" }, { motionPrompt: "blink" }, { imageUrl: "https://example.com/portrait.png" },
     { defaultVoiceId: "voice_123" }, { modelId: "realtime-avatar-video-v1" },
   ]) {
-    await assert.rejects(client.createLive2dAvatar({ ...input, ...extra }), z.ZodError);
+    await assert.rejects(client.createAnimaAvatar({ ...input, ...extra }), z.ZodError);
   }
   // @ts-expect-error explicit voice is mandatory
-  await assert.rejects(client.createLive2dAvatar({ displayName: "Rin" }), z.ZodError);
-  // @ts-expect-error automatic casting is not a Live2D voice
-  await assert.rejects(client.createLive2dAvatar({ displayName: "Rin", voice: { auto_description: "warm" } }), z.ZodError);
+  await assert.rejects(client.createAnimaAvatar({ displayName: "Rin" }), z.ZodError);
+  // @ts-expect-error automatic casting is not a Anima voice
+  await assert.rejects(client.createAnimaAvatar({ displayName: "Rin", voice: { auto_description: "warm" } }), z.ZodError);
   // @ts-expect-error provider vocabulary comes from the canonical creation request
-  await assert.rejects(client.createLive2dAvatar({ displayName: "Rin", voice: { provider: "unknown", voice_id: "voice" } }), z.ZodError);
+  await assert.rejects(client.createAnimaAvatar({ displayName: "Rin", voice: { provider: "unknown", voice_id: "voice" } }), z.ZodError);
   for (const invalid of [
     { ...input, displayName: "" }, { ...input, voice: { ...voice, voice_id: "" } },
     { ...input, voice: { ...voice, speed: 3 } }, { ...input, voice: { ...voice, auto_description: "warm" } },
-  ]) await assert.rejects(client.createLive2dAvatar(invalid), z.ZodError);
+  ]) await assert.rejects(client.createAnimaAvatar(invalid), z.ZodError);
   assert.equal(requests.length, 0);
   const compileOnly = () => {
-    // @ts-expect-error source assets cannot accompany Live2D registration
-    void client.createLive2dAvatar({ ...input, sourceAssetId: "asset_123" });
+    // @ts-expect-error source assets cannot accompany Anima registration
+    void client.createAnimaAvatar({ ...input, sourceAssetId: "asset_123" });
     // @ts-expect-error the helper owns the renderer selection
-    void client.createLive2dAvatar({ ...input, renderer: "video" });
+    void client.createAnimaAvatar({ ...input, renderer: "video" });
     // @ts-expect-error image URLs cannot trigger hidden staging
-    void client.createLive2dAvatar({ ...input, imageUrl: "https://example.com/portrait.png" });
+    void client.createAnimaAvatar({ ...input, imageUrl: "https://example.com/portrait.png" });
   };
   void compileOnly;
 });
 
-test("Live2D registration validates the entire response rather than coercing a partial legacy avatar", async () => {
+test("Anima registration validates the entire response rather than coercing a partial legacy avatar", async () => {
   for (const response of [
-    { id: "av_live2d_123", renderer: "live2d" }, { ...avatar, id: 123 },
+    { id: "av_anima_123", renderer: "anima" }, { ...avatar, id: 123 },
     { ...avatar, renderer: "unexpected" }, { ...avatar, renderer: undefined },
     { ...avatar, tenantId: 123 }, { ...avatar, llm: { provider: "unknown" } },
     { ...avatar, createdAt: 123 }, { ...avatar, status: "invented" }, null,
   ]) {
     const { client } = mock(response);
-    await assert.rejects(client.createLive2dAvatar({ displayName: "Rin", voice }), server.RealtimeAvatarError);
+    await assert.rejects(client.createAnimaAvatar({ displayName: "Rin", voice }), server.RealtimeAvatarError);
   }
 });
 
 test("legacy avatar reads preserve renderer and default old responses to video", async () => {
-  for (const renderer of ["live2d", "video", undefined] as const) {
+  for (const renderer of ["anima", "video", undefined] as const) {
     const fetchImpl: typeof fetch = async () => Response.json({ ...avatar, renderer });
     const client = new server.RealtimeAvatar({ apiKey: "test", fetch: fetchImpl });
     assert.equal((await client.getAvatar(avatar.id)).renderer, renderer ?? "video");
   }
+});
+
+test("the retired live2d renderer name is refused, not aliased to anima", async () => {
+  const fetchImpl: typeof fetch = async () => Response.json({ ...avatar, renderer: "live2d" });
+  const client = new server.RealtimeAvatar({ apiKey: "test", fetch: fetchImpl });
+  await assert.rejects(client.getAvatar(avatar.id), z.ZodError);
+  assert.equal("createLive2dAvatar" in client, false);
 });
 
 test("server schemas are existing canonical instances and reject unsafe persistence/proxy fixtures", () => {

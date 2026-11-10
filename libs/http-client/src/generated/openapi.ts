@@ -123,7 +123,7 @@ export interface paths {
         put?: never;
         /**
          * Generate speech with a voice
-         * @description Text in, an audio file out, in a voice this workspace can use: the shared presets, voices it designed, and voices it added from the public voice library. The voice is resolved strictly and never substituted. Billed per UTF-8 byte of the trimmed text: 1 credit per 90 bytes, rounded up, minimum 1 credit, taken from the workspace balance (plain English is one byte per character; accented letters and other scripts use 2 to 4). A request that fails is not charged. Nothing is stored: neither the text nor the audio. You may store and replay the audio in your own product. Retries are not replayed, because nothing is kept to replay: a retry after a timed-out success is billed again. Limited to 20 requests a minute and one request in progress at a time per workspace, and to 2,000 characters of text. Text in [square brackets] may be performed as a delivery cue rather than spoken.
+         * @description Text in, an audio file out, in a voice this workspace can use: the shared presets, voices it designed, and voices it added from the public voice library. The voice is resolved strictly and never substituted. Billed per UTF-8 byte of the trimmed text: 1 credit per 90 bytes, rounded up, minimum 1 credit, taken from the workspace balance (plain English is one byte per character; accented letters and other scripts use 2 to 4). A request that fails is not charged. Nothing is stored: neither the text nor the audio. You may store and replay the audio in your own product. Retries are not replayed, because nothing is kept to replay: a retry after a timed-out success is billed again. Limited to 240 requests a minute and a capped number of requests in progress at a time per workspace, and to 2,000 characters of text. Text in [square brackets] may be performed as a delivery cue rather than spoken.
          *
          *     Requires an API key with the `speech:write` scope.
          */
@@ -1442,7 +1442,7 @@ export interface components {
             tenantId: string;
             displayName: string;
             /** @enum {string} */
-            renderer: "video" | "live2d";
+            renderer: "video" | "anima";
             /** @enum {string} */
             sourceKind: "image" | "video";
             /** @enum {string} */
@@ -1465,11 +1465,11 @@ export interface components {
         CreateAvatarRequest: {
             displayName: string;
             /**
-             * @description Defaults to video. live2d allocates a ready avatar identity for voice sessions with an app-owned rig. It requires defaultVoiceId or an explicit voice.voice selector; automatic casting is refused. Keep sourceKind image, omit sourceAssetId and motionPrompt, and omit modelId or use realtime-avatar-live-v1. No assets, clips, cache or manufacturing charge are created. Mint with mode voice; video rendering is refused. Session billing, authorization and external-LLM gates are unchanged.
+             * @description Defaults to video. anima allocates a ready avatar identity for voice sessions; the application owns the rig and the rendering. It requires defaultVoiceId or an explicit voice.voice selector; automatic casting is refused. Keep sourceKind image, omit sourceAssetId and motionPrompt, and omit modelId or use realtime-avatar-live-v1. No assets, clips, cache or manufacturing charge are created. Mint with mode voice; video rendering is refused. Session billing, authorization and external-LLM gates are unchanged.
              * @default video
              * @enum {string}
              */
-            renderer: "video" | "live2d";
+            renderer: "video" | "anima";
             /**
              * @description `image` is how avatars are created: upload a portrait, and the platform generates the looping source video and the motion library from it. `video` is CLOSED — it survives in this enum for a handful of grandfathered tenants, and `createAvatar` answers everyone else `422` ("Creating from a supplied video is closed"). The gate is a per-tenant flag that fails closed, so treat `video` as unavailable unless you already know yours is on.
              * @default image
@@ -1512,7 +1512,7 @@ export interface components {
         };
         UpdateAvatarRequest: {
             displayName?: string;
-            /** @description For Live2D avatars, must remain a ready shared or tenant-owned platform voice. Null, missing and foreign voices are refused with 404; this does not change video-avatar PATCH behavior. */
+            /** @description For anima avatars, must remain a ready shared or tenant-owned platform voice. Null, missing and foreign voices are refused with 404; this does not change video-avatar PATCH behavior. */
             defaultVoiceId?: string | null;
             llm?: {
                 /** @enum {string} */
@@ -1710,6 +1710,13 @@ export interface components {
             speed?: number;
             /** @description BCP-47 tag such as en-AU. Shapes how numbers, dates and units are read; it does not change the voice. */
             language?: string;
+            /**
+             * @description normal (best quality), balanced (reduced latency, the default) or low (lowest latency, least stable).
+             * @enum {string}
+             */
+            latency?: "normal" | "balanced" | "low";
+            /** @description Characters the voice provider takes per text chunk, 100 to 300. Smaller starts audio sooner; useful on a conversation's first sentence. Omit for the provider's default. */
+            chunkLength?: number;
         };
         SpeechStreamEvent: {
             /** Format: uuid */
@@ -2236,7 +2243,7 @@ export interface components {
                 tenantId: string;
                 displayName: string;
                 /** @enum {string} */
-                renderer: "video" | "live2d";
+                renderer: "video" | "anima";
                 /** @enum {string} */
                 sourceKind: "image" | "video";
                 /** @enum {string} */
@@ -2848,7 +2855,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Per-workspace rate limit (code "rate_limited"), or speech generation is busy (code "speech_busy"): this workspace already has a request in progress, or the platform-wide cap is reached. Both are retryable; honour Retry-After. */
+            /** @description Per-workspace rate limit (code "rate_limited"), or speech generation is busy (code "speech_busy"): this workspace already has its share of requests in progress, or the platform-wide cap is reached. Both are retryable; honour Retry-After. */
             429: {
                 headers: {
                     /** @description Seconds to wait before retrying. */
