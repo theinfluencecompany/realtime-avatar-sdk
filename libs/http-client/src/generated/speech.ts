@@ -24,149 +24,155 @@ const schema6 = z.number().min(0);
 
 const schema7 = z.int().min(1);
 
-const schema8 = z.strictObject({
+const schema8 = z.enum(["normal","balanced","low"]);
+
+const schema9 = z.int().min(100).max(300);
+
+const schema10 = z.strictObject({
   "text": z.string().trim().pipe(schema0),
   "speed": schema2.optional(),
   "language": schema3.optional(),
+  "latency": schema8.optional(),
+  "chunkLength": schema9.optional(),
 });
 
-const schema9 = z.string().max(4096);
+const schema11 = z.string().max(4096);
 
-const schema10 = z.number().min(0).max(180);
+const schema12 = z.number().min(0).max(180);
 
-const schema11 = z.strictObject({
-  "text": schema9,
-  "start": schema10,
-  "end": schema10,
+const schema13 = z.strictObject({
+  "text": schema11,
+  "start": schema12,
+  "end": schema12,
 });
 
-export const speechAlignedTextSchema = schema11.refine(segment => segment.end >= segment.start);
+export const speechAlignedTextSchema = schema13.refine(segment => segment.end >= segment.start);
 
-const schema13 = z.uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"));
+const schema15 = z.uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"));
 
-const schema14 = z.literal("started");
+const schema16 = z.literal("started");
 
-const schema15 = z.literal("pcm_s16le");
+const schema17 = z.literal("pcm_s16le");
 
-const schema16 = z.literal(24000);
+const schema18 = z.literal(24000);
 
-const schema17 = z.literal(1);
+const schema19 = z.literal(1);
 
-const schema18 = z.strictObject({
-  "requestId": schema13,
-  "type": schema14,
-  "encoding": schema15,
-  "sampleRate": schema16,
-  "channels": schema17,
+const schema20 = z.strictObject({
+  "requestId": schema15,
+  "type": schema16,
+  "encoding": schema17,
+  "sampleRate": schema18,
+  "channels": schema19,
 });
 
-const schema19 = z.literal("audio");
+const schema21 = z.literal("audio");
 
-const schema20 = z.int().min(0).max(9007199254740991);
+const schema22 = z.int().min(0).max(9007199254740991);
 
-const schema21 = z.int().min(0).max(4320000);
+const schema23 = z.int().min(0).max(4320000);
 
-const schema22 = z.base64().regex(new RegExp("^$|^(?:[0-9a-zA-Z+/]{4})*(?:(?:[0-9a-zA-Z+/]{2}==)|(?:[0-9a-zA-Z+/]{3}=))?$")).min(4).max(21848);
+const schema24 = z.base64().regex(new RegExp("^$|^(?:[0-9a-zA-Z+/]{4})*(?:(?:[0-9a-zA-Z+/]{2}==)|(?:[0-9a-zA-Z+/]{3}=))?$")).min(4).max(21848);
 
-const schema23 = z.strictObject({
-  "requestId": schema13,
-  "type": schema19,
-  "sequence": schema20,
-  "sampleOffset": schema21,
-  "audioBase64": schema22,
+const schema25 = z.strictObject({
+  "requestId": schema15,
+  "type": schema21,
+  "sequence": schema22,
+  "sampleOffset": schema23,
+  "audioBase64": schema24,
 });
 
-const schema24 = z.literal("alignment");
+const schema26 = z.literal("alignment");
 
-const schema25 = z.int().min(0).max(127);
+const schema27 = z.int().min(0).max(127);
 
-const schema26 = z.array(speechAlignedTextSchema).max(2048);
+const schema28 = z.array(speechAlignedTextSchema).max(2048);
 
-const schema27 = z.strictObject({
-  "requestId": schema13,
-  "type": schema24,
-  "chunkSeq": schema25,
-  "segments": schema26,
+const schema29 = z.strictObject({
+  "requestId": schema15,
+  "type": schema26,
+  "chunkSeq": schema27,
+  "segments": schema28,
 });
 
-const schema28 = z.literal("completed");
+const schema30 = z.literal("completed");
 
-const schema29 = z.int().max(4320000).gt(0);
+const schema31 = z.int().max(4320000).gt(0);
 
-const schema30 = z.int().max(9007199254740991).gt(0);
+const schema32 = z.int().max(9007199254740991).gt(0);
 
-const schema31 = z.strictObject({
-  "requestId": schema13,
-  "type": schema28,
-  "totalSamples": schema29,
+const schema33 = z.strictObject({
+  "requestId": schema15,
+  "type": schema30,
+  "totalSamples": schema31,
   "billedCredits": schema6,
-  "billedBytes": schema30,
+  "billedBytes": schema32,
 });
 
-const schema32 = z.literal("failed");
-
-const schema33 = z.string();
-
-const schema34 = z.int().min(-9007199254740991).max(9007199254740991);
+const schema34 = z.literal("failed");
 
 const schema35 = z.string();
 
-const schema36 = z.url();
+const schema36 = z.int().min(-9007199254740991).max(9007199254740991);
 
-const schema37 = z.boolean();
+const schema37 = z.string();
 
-const schema38 = z.uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"));
+const schema38 = z.url();
 
-const schema39 = z.enum(["*","api_keys:write","credits:read","avatars:read","avatars:write","realtime:write","usage:read","recordings:read","usage:write","speech:write","renders:read","renders:write"]);
+const schema39 = z.boolean();
 
-const schema40 = z.enum(["*","api_keys:write","credits:read","avatars:read","avatars:write","realtime:write","usage:read","recordings:read","usage:write","speech:write","renders:read","renders:write"]);
+const schema40 = z.uuid().regex(new RegExp("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"));
 
-const schema41 = z.array(schema40);
+const schema41 = z.enum(["*","api_keys:write","credits:read","avatars:read","avatars:write","realtime:write","usage:read","recordings:read","usage:write","speech:write","renders:read","renders:write"]);
 
-const schema42 = z.string();
+const schema42 = z.enum(["*","api_keys:write","credits:read","avatars:read","avatars:write","realtime:write","usage:read","recordings:read","usage:write","speech:write","renders:read","renders:write"]);
 
-const schema43 = z.int().max(9007199254740991).gt(0);
+const schema43 = z.array(schema42);
 
-const schema44 = z.int().min(0).max(9007199254740991);
+const schema44 = z.string();
 
-const schema45 = z.int().min(0).max(9007199254740991);
+const schema45 = z.int().max(9007199254740991).gt(0);
 
 const schema46 = z.int().min(0).max(9007199254740991);
 
 const schema47 = z.int().min(0).max(9007199254740991);
 
-const schema48 = z.looseObject({
-  "error": schema33,
-  "status": schema34,
-  "code": schema35,
-  "documentation": schema36,
-  "retryable": schema37.optional(),
-  "requestId": schema38.optional(),
-  "requiredScope": schema39.optional(),
-  "grantedScopes": schema41.optional(),
-  "billingUrl": schema42.optional(),
-  "maxConcurrentSessions": schema43.optional(),
-  "liveSessions": schema44.optional(),
-  "activeSessions": schema45.optional(),
-  "connectingSessions": schema46.optional(),
-  "pendingSessions": schema47.optional(),
+const schema48 = z.int().min(0).max(9007199254740991);
+
+const schema49 = z.int().min(0).max(9007199254740991);
+
+const schema50 = z.looseObject({
+  "error": schema35,
+  "status": schema36,
+  "code": schema37,
+  "documentation": schema38,
+  "retryable": schema39.optional(),
+  "requestId": schema40.optional(),
+  "requiredScope": schema41.optional(),
+  "grantedScopes": schema43.optional(),
+  "billingUrl": schema44.optional(),
+  "maxConcurrentSessions": schema45.optional(),
+  "liveSessions": schema46.optional(),
+  "activeSessions": schema47.optional(),
+  "connectingSessions": schema48.optional(),
+  "pendingSessions": schema49.optional(),
 });
 
-const schema49 = z.strictObject({
-  "requestId": schema13,
-  "type": schema32,
-  "error": schema48,
+const schema51 = z.strictObject({
+  "requestId": schema15,
+  "type": schema34,
+  "error": schema50,
 });
 
-const schema50 = z.union([schema18, schema23, schema27, schema31, schema49]);
+const schema52 = z.union([schema20, schema25, schema29, schema33, schema51]);
 export const createSpeechRequestSchema = schema4.extend({
   format: schema4.shape.format.unwrap().default("mp3"),
 });
 export type CreateSpeechInput = z.input<typeof createSpeechRequestSchema>;
-export const createSpeechStreamRequestSchema = schema8;
+export const createSpeechStreamRequestSchema = schema10;
 export type CreateSpeechStreamRequest = z.infer<typeof createSpeechStreamRequestSchema>;
 export type SpeechAlignedText = z.infer<typeof speechAlignedTextSchema>;
-export const speechStreamEventSchema = schema50;
+export const speechStreamEventSchema = schema52;
 export type SpeechStreamEvent = z.infer<typeof speechStreamEventSchema>;
 export const SPEECH_STREAM_CONTRACT = {"maxAudioEventBytes":16384,"maxSamples":4320000,"alignedTextEndNotBeforeStart":true} as const;
 type StreamWireRequest = operations["createSpeechStream"]["requestBody"]["content"]["application/json"];

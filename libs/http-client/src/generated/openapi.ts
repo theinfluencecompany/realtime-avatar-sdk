@@ -123,7 +123,7 @@ export interface paths {
         put?: never;
         /**
          * Generate speech with a voice
-         * @description Text in, an audio file out, in a voice this workspace can use: the shared presets, voices it designed, and voices it added from the public voice library. The voice is resolved strictly and never substituted. Billed per UTF-8 byte of the trimmed text: 1 credit per 90 bytes, rounded up, minimum 1 credit, taken from the workspace balance (plain English is one byte per character; accented letters and other scripts use 2 to 4). A request that fails is not charged. Nothing is stored: neither the text nor the audio. You may store and replay the audio in your own product. Retries are not replayed, because nothing is kept to replay: a retry after a timed-out success is billed again. Limited to 20 requests a minute and one request in progress at a time per workspace, and to 2,000 characters of text. Text in [square brackets] may be performed as a delivery cue rather than spoken.
+         * @description Text in, an audio file out, in a voice this workspace can use: the shared presets, voices it designed, and voices it added from the public voice library. The voice is resolved strictly and never substituted. Billed per UTF-8 byte of the trimmed text: 1 credit per 90 bytes, rounded up, minimum 1 credit, taken from the workspace balance (plain English is one byte per character; accented letters and other scripts use 2 to 4). A request that fails is not charged. Nothing is stored: neither the text nor the audio. You may store and replay the audio in your own product. Retries are not replayed, because nothing is kept to replay: a retry after a timed-out success is billed again. Limited to 240 requests a minute and a capped number of requests in progress at a time per workspace, and to 2,000 characters of text. Text in [square brackets] may be performed as a delivery cue rather than spoken.
          *
          *     Requires an API key with the `speech:write` scope.
          */
@@ -1710,6 +1710,13 @@ export interface components {
             speed?: number;
             /** @description BCP-47 tag such as en-AU. Shapes how numbers, dates and units are read; it does not change the voice. */
             language?: string;
+            /**
+             * @description normal (best quality), balanced (reduced latency, the default) or low (lowest latency, least stable).
+             * @enum {string}
+             */
+            latency?: "normal" | "balanced" | "low";
+            /** @description Characters the voice provider takes per text chunk, 100 to 300. Smaller starts audio sooner; useful on a conversation's first sentence. Omit for the provider's default. */
+            chunkLength?: number;
         };
         SpeechStreamEvent: {
             /** Format: uuid */
@@ -2848,7 +2855,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Per-workspace rate limit (code "rate_limited"), or speech generation is busy (code "speech_busy"): this workspace already has a request in progress, or the platform-wide cap is reached. Both are retryable; honour Retry-After. */
+            /** @description Per-workspace rate limit (code "rate_limited"), or speech generation is busy (code "speech_busy"): this workspace already has its share of requests in progress, or the platform-wide cap is reached. Both are retryable; honour Retry-After. */
             429: {
                 headers: {
                     /** @description Seconds to wait before retrying. */
