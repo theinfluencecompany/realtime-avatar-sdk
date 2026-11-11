@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.40.0
+
+A breaking minor release (the SDK is pre-1.0): the live speech session is removed.
+
+### Removed
+
+- **`openSpeechSession` and `SpeechSession` are gone, along with `speechLiveOpenSchema`,
+  `speechLiveClientMessageSchema`, `speechLiveServerMessageSchema`, `SpeechLiveOpen`,
+  `SpeechLiveClientMessage` and `SpeechLiveServerMessage`.** The platform no longer serves
+  `GET /voices/{voiceId}/speech/live`. Every WebSocket upgrade landed on a cold platform isolate,
+  which cost 2 to 4 seconds before admission, so the session was slower than the HTTP stream it
+  was meant to beat. Speak each utterance with `createSpeechStream` instead. It returns the same
+  PCM audio and alignment, and it is billed per request.
+- The spec is re-vendored from the platform, which no longer publishes `openSpeechLive`.
+
 ## 0.39.0
 
 A minor release: a live speech session that takes text while it is written.

@@ -377,8 +377,6 @@ rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires
 rta.createSpeech(voiceId, { text, format?, speed?, language? }, { signal? })
 // unreleased streaming candidate; generated SSE events, never retried
 rta.createSpeechStream(voiceId, { text, speed?, language? }, { signal? })
-// live session: text in while it is written, PCM + alignment per utterance; WebSocket, never retried
-rta.openSpeechSession(voiceId, { maxTextBytes, latency?, chunkLength?, language? }, { signal? })
 
 // pre-rendered video (MP4, no live call); server only, requires renders:write / renders:read
 rta.createRender({ avatarId, voiceId? | voice?, lipGain?, shots })  // 202 queued; one Idempotency-Key across retries
@@ -689,52 +687,6 @@ truncated transport reject with `RealtimeAvatarError`. HTTP refusals before SSE 
 `timeoutMs` and `totalTimeoutMs` covers the request and the entire body, including time spent
 between iterations. A timeout or cancellation is not proof that billing stopped; do not retry
 an ambiguous paid request as a new operation.
-
-### Live speech session
-
-`openSpeechSession(voiceId, { maxTextBytes, latency?, chunkLength?, language? }, { signal? })`
-opens `GET /voices/{voiceId}/speech/live` as a WebSocket. Open it when a turn starts, while your
-language model is still writing: admission, the credit hold and the voice provider's connection
-happen once per session instead of once per sentence. It resolves once the platform admitted the
-session, so every refusal (eligibility, voice, a busy slot, credits) rejects the promise.
-
-```ts
-const session = await rta.openSpeechSession(voiceId, { maxTextBytes: 600, latency: "balanced" }, { signal });
-session.text(0, "超级棒哦！");   // utterance 0 is the first; at most chunkLength characters each
-session.flush(0);                 // speak it now and open utterance 1
-session.text(1, "Second sentence.");
-session.end();                    // no more text: speak what is buffered, then complete
-for await (const message of session) {
-  if (message.type === "audio") await pcmSink.write(message.utterance, Buffer.from(message.audioBase64, "base64"));
-  else if (message.type === "alignment") alignmentByUtterance.set(message.utterance, message.segments);
-  else if (message.type === "failed") handleSpeechFailure(message.error.code, message.requestId);
-}
-```
-
-- **Messages.** The client sends `text {utterance, text}`, `flush {utterance}`, `end` and
-  `cancel`; the server answers `started`, then per utterance `audio`, `alignment` and
-  `utterance-end`, then one `completed` or `failed`. `speechLiveOpenSchema`,
-  `speechLiveClientMessageSchema`, `speechLiveServerMessageSchema` and their types
-  `SpeechLiveOpen`, `SpeechLiveClientMessage`, `SpeechLiveServerMessage` are generated from the
-  platform contract. Every frame you send is validated before it is sent; every frame received is
-  validated once before it is yielded.
-- **Timing is per utterance.** `audio.sampleOffset` counts mono samples from the utterance's start
-  and `alignment` segments are seconds from it; an alignment snapshot replaces the previous one for
-  that utterance and may arrive after the next utterance's audio has started. `utterance-end`
-  carries the utterance's sample count. The SDK rejects a session whose audio is not contiguous,
-  skips an utterance, or disagrees with its `utterance-end`.
-- **Billing.** The session holds the price of `maxTextBytes` and is billed for the UTF-8 bytes it
-  actually sent. A cancel, a disconnect, `break`, an abort and the platform's session cap all still
-  bill what was sent; a provider failure refunds the session. `completed` carries the settled
-  `billedBytes` and `billedCredits`. The session is never retried.
-- **Runtimes.** In Cloudflare Workers the SDK upgrades with `fetch` and the `Authorization`
-  header, so a refusal is a `RealtimeAvatarHttpError` with its status and code. In Node 22 it uses
-  the global `WebSocket` with the same header; Node's client reports no HTTP status, so a refusal
-  there is a `RealtimeAvatarError`. A browser cannot open a session: the key must stay on your
-  server.
-- **Lifetimes.** `timeoutMs` (or a smaller `totalTimeoutMs`) bounds opening; `totalTimeoutMs`, if
-  set, bounds the whole session; otherwise the platform's idle timeout and session cap end it.
-  Iterate a session once. After it is over, `text` and `flush` throw and `end`/`cancel` do nothing.
 
 ## Custom voice (webhook)
 

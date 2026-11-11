@@ -36,11 +36,7 @@ import type { RecordingMode, RecordingArtifact } from "./generated/recording.ts"
 import type { voiceWebhookToWire } from "./generated/voice-webhook.ts";
 import type { externalLlmToWire } from "./generated/external-llm.ts";
 import type { readSpeechHeaders, SpeechContentType } from "./generated/speech.ts";
-export type {
-  CreateSpeechInput, CreateSpeechStreamRequest, SpeechStreamEvent, SpeechAlignedText,
-  SpeechLiveOpen, SpeechLiveClientMessage, SpeechLiveServerMessage,
-} from "./generated/speech.ts";
-export type { SpeechSession } from "./speech-session.ts";
+export type { CreateSpeechInput, CreateSpeechStreamRequest, SpeechStreamEvent, SpeechAlignedText } from "./generated/speech.ts";
 /** DERIVATION: binary bytes are SDK-owned; media types and billing derive from createSpeech's operation. */
 export type SpeechResult = ReturnType<typeof readSpeechHeaders> & {
   bytes: Uint8Array<ArrayBuffer>;

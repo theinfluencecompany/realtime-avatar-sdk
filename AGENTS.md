@@ -1027,20 +1027,6 @@ fetch and reader even during an outstanding `next()`. Timeout covers the entire 
 retry this paid operation automatically, even if `maxRetries` is configured or a failed event
 says retryable: an ambiguous request may already have cost money. Cancellation is not a refund.
 
-### Live speech session
-
-`openSpeechSession(voiceId, { maxTextBytes, latency?, chunkLength?, language? }, { signal? })` is
-the server-only WebSocket form: open it when a turn starts, send `text(utterance, text)` and
-`flush(utterance)` as each sentence closes, then `end()`, and iterate the session once for
-`SpeechLiveServerMessage`. The generator reads `openSpeechLive`'s query parameters,
-`SpeechLiveClientMessage` and `SpeechLiveServerMessage` from platform OpenAPI; never hand-write
-these shapes. Timing is per utterance (`sampleOffset` and alignment seconds from the utterance's
-start); alignment replaces per utterance and may arrive after the next utterance's audio started.
-The SDK refuses non-contiguous audio, a skipped utterance and a wrong `utterance-end` count.
-Workers open it with a `fetch` upgrade (refusals are `RealtimeAvatarHttpError`); Node 22 uses the
-global `WebSocket` (refusals carry no status). It bills the bytes sent even on cancel, disconnect
-or abort, and is never retried.
-
 ## Working in this repo
 
 ```bash
