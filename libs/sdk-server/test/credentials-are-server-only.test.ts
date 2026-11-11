@@ -29,7 +29,7 @@ function closure(entry: string, seen = new Set<string>()): Set<string> {
 
 // `\b` keeps the in-call error codes (`voice_webhook_timeout`, …), which clients do receive, from
 // counting as the mint field.
-const SERVER_ONLY = [/\bexternal_llm\b/, /\bvoice_webhook\b/, /\bcreateSpeech\b/, /\bcreateSpeechRequestSchema\b/, /\bcreateSpeechStream\b/, /\bspeechStreamEventSchema\b/];
+const SERVER_ONLY = [/\bexternal_llm\b/, /\bvoice_webhook\b/, /\bcreateSpeech\b/, /\bcreateSpeechRequestSchema\b/, /\bcreateSpeechStream\b/, /\bspeechStreamEventSchema\b/, /\bopenSpeechSession\b/, /\bspeechLiveServerMessageSchema\b/];
 
 for (const field of SERVER_ONLY) {
   test(`the server entry sends ${field.source}`, () => {

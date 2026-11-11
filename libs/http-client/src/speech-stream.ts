@@ -3,9 +3,10 @@ import { RealtimeAvatarError } from "./errors.ts";
 import { speechStreamEventSchema, SPEECH_STREAM_CONTRACT, type SpeechStreamEvent } from "./generated/speech.ts";
 
 const MISMATCH = "Speech stream response did not match the SDK contract";
-// Local receive budgets, not promises about the platform's future limits.
-const MAX_WIRE_BYTES = 24 * 1024 * 1024;
-const MAX_EVENT_BYTES = 256 * 1024;
+// Local receive budgets, not promises about the platform's future limits. The live session
+// shares the first two.
+export const MAX_WIRE_BYTES = 24 * 1024 * 1024;
+export const MAX_EVENT_BYTES = 256 * 1024;
 const MAX_ERROR_BYTES = 64 * 1024;
 const FEED_BYTES = 4096;
 

@@ -6,8 +6,14 @@ export {
   type ExternalTurnContext, type ExternalUtterance, type ExternalSpeechSegment,
 } from "./generated/external-performance.ts";
 export { isQueued } from "./types.ts";
-export { createSpeechRequestSchema, createSpeechStreamRequestSchema, speechStreamEventSchema, speechAlignedTextSchema } from "./generated/speech.ts";
-export type { CreateSpeechInput, SpeechResult, CreateSpeechStreamRequest, SpeechStreamEvent, SpeechAlignedText } from "./types.ts";
+export {
+  createSpeechRequestSchema, createSpeechStreamRequestSchema, speechStreamEventSchema, speechAlignedTextSchema,
+  speechLiveOpenSchema, speechLiveClientMessageSchema, speechLiveServerMessageSchema,
+} from "./generated/speech.ts";
+export type {
+  CreateSpeechInput, SpeechResult, CreateSpeechStreamRequest, SpeechStreamEvent, SpeechAlignedText,
+  SpeechLiveOpen, SpeechLiveClientMessage, SpeechLiveServerMessage, SpeechSession,
+} from "./types.ts";
 export { clipLibraryDeclarationSchema } from "./generated/clip-library-schema.ts";
 export { fishTtsModelSchema, DEFAULT_FISH_TTS_MODEL, type FishTtsModel, FISH_DELIVERY_MODELS, type FishDelivery } from "./generated/fish-tts-model.ts";
 export { recordingModeSchema, recordingArtifactSchema, listRecordingsResponseSchema, recordingAccessResponseSchema } from "./generated/recording.ts";

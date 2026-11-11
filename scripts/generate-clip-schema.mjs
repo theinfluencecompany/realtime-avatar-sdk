@@ -501,11 +501,25 @@ const speechAlignedTextRoot = expression(alignedSchema);
 definitions.push(`export const speechAlignedTextSchema = ${speechAlignedTextRoot}.refine(segment => segment.end >= segment.start);`);
 names.set(JSON.stringify(alignedSchema), "speechAlignedTextSchema");
 const speechStreamEventRoot = expression(spec.components.schemas.SpeechStreamEvent);
+const speechLiveOperation = Object.values(spec.paths).map(path => path.get).find(operation => operation?.operationId === "openSpeechLive");
+if (!speechLiveOperation) throw new Error("Missing openSpeechLive operation; sync the platform OpenAPI first");
+const speechLiveVoiceId = speechLiveOperation.parameters.find(parameter => parameter.in === "path" && parameter.name === "voiceId")?.schema;
+// The session is addressed by the same voice id as createSpeech, so it reuses that schema.
+if (JSON.stringify(speechLiveVoiceId) !== JSON.stringify(speechOperation.parameters.find(parameter => parameter.in === "path" && parameter.name === "voiceId").schema)) {
+  throw new Error("openSpeechLive voiceId differs from createSpeech");
+}
+const speechLiveQuery = speechLiveOperation.parameters.filter(parameter => parameter.in === "query");
+if (speechLiveOperation.parameters.some(parameter => parameter.in !== "query" && parameter.in !== "path")) throw new Error("Unsupported openSpeechLive parameter location");
+const speechLiveOpenFields = speechLiveQuery.map(({ name, required, schema: { $schema: _dialect, ...schema } }) =>
+  `  ${JSON.stringify(name)}: ${expression(schema)}${required === true ? "" : ".optional()"},`);
+const withoutDialect = ({ $schema: _dialect, ...schema }) => schema;
+const speechLiveClientRoot = expression(withoutDialect(spec.components.schemas.SpeechLiveClientMessage));
+const speechLiveServerRoot = expression(withoutDialect(spec.components.schemas.SpeechLiveServerMessage));
 const speechTarget = new URL("../libs/http-client/src/generated/speech.ts", import.meta.url);
 const speechOutput = `// Generated from spec/realtime-avatar.openapi.json by scripts/generate-clip-schema.mjs.
 // Do not edit; the platform owns the speech request and response metadata.
 import { z } from "zod";
-import type { operations } from "./openapi.ts";
+import type { components, operations } from "./openapi.ts";
 type AssertTrue<Value extends true> = Value;
 ${definitions.join("\n\n")}
 export const createSpeechRequestSchema = ${speechRequestRoot}.extend({
@@ -522,6 +536,20 @@ type StreamWireRequest = operations["createSpeechStream"]["requestBody"]["conten
 type StreamWireEvent = operations["createSpeechStream"]["responses"][200]["content"]["text/event-stream"];
 type _SpeechStreamRequestParity = AssertTrue<[CreateSpeechStreamRequest] extends [StreamWireRequest] ? [StreamWireRequest] extends [CreateSpeechStreamRequest] ? true : false : false>;
 type _SpeechStreamEventParity = AssertTrue<[SpeechStreamEvent] extends [StreamWireEvent] ? [StreamWireEvent] extends [SpeechStreamEvent] ? true : false : false>;
+export const speechLiveOpenSchema = z.strictObject({
+${speechLiveOpenFields.join("\n")}
+});
+export type SpeechLiveOpen = z.infer<typeof speechLiveOpenSchema>;
+export const speechLiveClientMessageSchema = ${speechLiveClientRoot};
+export type SpeechLiveClientMessage = z.infer<typeof speechLiveClientMessageSchema>;
+export const speechLiveServerMessageSchema = ${speechLiveServerRoot};
+export type SpeechLiveServerMessage = z.infer<typeof speechLiveServerMessageSchema>;
+type LiveWireQuery = operations["openSpeechLive"]["parameters"]["query"];
+type LiveWireMessage = operations["openSpeechLive"]["responses"][101]["content"]["application/json"];
+type _SpeechLiveOpenParity = AssertTrue<[SpeechLiveOpen] extends [LiveWireQuery] ? [LiveWireQuery] extends [SpeechLiveOpen] ? true : false : false>;
+type _SpeechLiveClientParity = AssertTrue<[SpeechLiveClientMessage] extends [components["schemas"]["SpeechLiveClientMessage"]] ? [components["schemas"]["SpeechLiveClientMessage"]] extends [SpeechLiveClientMessage] ? true : false : false>;
+type _SpeechLiveServerParity = AssertTrue<[SpeechLiveServerMessage] extends [components["schemas"]["SpeechLiveServerMessage"]] ? [components["schemas"]["SpeechLiveServerMessage"]] extends [SpeechLiveServerMessage] ? true : false : false>;
+type _SpeechLiveMessageParity = AssertTrue<[SpeechLiveClientMessage | SpeechLiveServerMessage] extends [LiveWireMessage] ? [LiveWireMessage] extends [SpeechLiveClientMessage | SpeechLiveServerMessage] ? true : false : false>;
 type WireRequest = operations["createSpeech"]["requestBody"]["content"]["application/json"];
 type SpeechRequest = z.output<typeof createSpeechRequestSchema>;
 type _SpeechRequestParity = AssertTrue<[SpeechRequest] extends [WireRequest] ? [WireRequest] extends [SpeechRequest] ? true : false : false>;

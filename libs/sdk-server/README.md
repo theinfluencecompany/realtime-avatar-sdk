@@ -259,6 +259,24 @@ and fetch, including a pending `next()`. The smaller of `timeoutMs` and `totalTi
 covers the entire request/body, including pauses between iterations. **Never automatically
 retry** an ambiguous paid request. Cancellation does not prove that billing stopped.
 
+### Live speech session
+
+`openSpeechSession(voiceId, { maxTextBytes, latency?, chunkLength?, language? }, { signal? })`
+opens `GET /voices/{voiceId}/speech/live` as a WebSocket and resolves once the platform admitted
+the session, so every refusal rejects the promise. Send `text(utterance, text)` (utterance 0 first,
+at most `chunkLength` characters each), `flush(utterance)` to speak it and open the next, `end()`
+and `cancel()`. Iterate it once for `started`, per-utterance `audio` (`sampleOffset` from the
+utterance's start), `alignment` (replaces that utterance's snapshot, may arrive late) and
+`utterance-end`, then one `completed` or `failed`. Frames are validated by the generated
+`speechLiveClientMessageSchema` and `speechLiveServerMessageSchema` in both directions;
+non-contiguous audio or a skipped utterance fails the session.
+
+Billing is for the UTF-8 bytes sent: cancel, disconnect, `break` and abort still bill them, and a
+provider failure refunds. Never retried. In Workers the upgrade is a `fetch` with the
+`Authorization` header and a refusal is a `RealtimeAvatarHttpError`; in Node 22 it is the global
+`WebSocket`, which reports no status, so a refusal is a `RealtimeAvatarError`. `timeoutMs` bounds
+opening and `totalTimeoutMs`, if set, the whole session.
+
 ## Custom voice (webhook)
 
 Speak a call in your own voice. Each sentence she is about to say is POSTed, signed, to an
@@ -482,6 +500,8 @@ rta.getConnectionHistory(sessionId)    // bounded LiveKit observations; requires
 rta.createSpeech(voiceId, { text, format?, speed?, language? }, { signal? })
 // unreleased streaming candidate; generated SSE events, never retried
 rta.createSpeechStream(voiceId, { text, speed?, language? }, { signal? })
+// live session: text in while it is written, PCM + alignment per utterance; WebSocket, never retried
+rta.openSpeechSession(voiceId, { maxTextBytes, latency?, chunkLength?, language? }, { signal? })
 
 // pre-rendered video (MP4, no live call); server only, requires renders:write / renders:read
 rta.createRender({ avatarId, voiceId? | voice?, lipGain?, shots })  // 202 queued; one Idempotency-Key across retries
