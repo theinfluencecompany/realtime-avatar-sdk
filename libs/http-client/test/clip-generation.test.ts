@@ -129,14 +129,6 @@ test("canonical numeric field mutations fail generated mapping and public consum
           if (event.type === "audio") { const offset: number = event.sampleOffset; void offset; }
           if (event.type === "alignment") { const seconds: number = event.segments[0].start; void seconds; }
         }
-        const live = await client.openSpeechSession("voice_test", { maxTextBytes: 600, latency: "balanced" });
-        live.text(0, "Hello");
-        live.flush(0);
-        live.end();
-        for await (const message of live) {
-          if (message.type === "audio") { const at: number = message.sampleOffset; const utterance: number = message.utterance; void [at, utterance]; }
-          if (message.type === "utterance-end") { const samples: number = message.samples; void samples; }
-        }
         const page = await client.listSessions();
         for (const session of page.sessions) {
           const seconds: number | null = session.activeSeconds;
@@ -173,12 +165,6 @@ test("canonical numeric field mutations fail generated mapping and public consum
        const event: SpeechStreamEvent = decoded;`,
       `import type { SpeechStreamEvent } from "./libs/http-client/src/index.ts";
        const event: SpeechStreamEvent = { type: "audio", requestId: "id", sequence: "0", sampleOffset: 0, audioBase64: "AAAA" };`,
-      `import type { SpeechLiveOpen, SpeechLiveServerMessage } from "./libs/http-client/src/index.ts";
-       declare const decoded: unknown;
-       const open: SpeechLiveOpen = decoded;
-       const message: SpeechLiveServerMessage = decoded;`,
-      `import type { SpeechLiveClientMessage } from "./libs/http-client/src/index.ts";
-       const message: SpeechLiveClientMessage = { type: "text", utterance: "0", text: "Hello" };`,
       `import type { CreateSpeechInput, SpeechResult } from "./libs/http-client/src/index.ts";
        declare const decoded: unknown;
        const input: CreateSpeechInput = decoded;

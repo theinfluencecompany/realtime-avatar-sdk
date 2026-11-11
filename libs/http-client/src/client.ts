@@ -20,9 +20,8 @@ import type { components, operations } from "./generated/openapi.ts";
 import { liveKitSessionGrantSchema } from "../../client/src/wire.ts";
 import { transcriptionToWire } from "./generated/transcription.ts";
 import { contentPolicySchema } from "./generated/content-policy.ts";
-import { createSpeechRequestSchema, createSpeechStreamRequestSchema, speechLiveOpenSchema, speechVoiceIdSchema, speechContentTypeSchema, readSpeechHeaders } from "./generated/speech.ts";
+import { createSpeechRequestSchema, createSpeechStreamRequestSchema, speechVoiceIdSchema, speechContentTypeSchema, readSpeechHeaders } from "./generated/speech.ts";
 import { speechStreamIterator, boundedSpeechErrorResponse } from "./speech-stream.ts";
-import { connectStandardSocket, isUpgradedSocket, openSpeechSocketSession, type SpeechConnection, type SpeechSession } from "./speech-session.ts";
 import { voiceWebhookToWire } from "./generated/voice-webhook.ts";
 import { externalLlmToWire } from "./generated/external-llm.ts";
 import { listUsageSessionsResponseSchema, toSessionsPage } from "./generated/usage-sessions.ts";
@@ -55,7 +54,6 @@ import type {
   CreateSpeechInput,
   CreateSpeechStreamRequest,
   SpeechStreamEvent,
-  SpeechLiveOpen,
   SpeechResult,
   ListRendersQuery,
   ListRendersResponse,
@@ -71,7 +69,7 @@ const SPEECH_MISMATCH = "Speech response did not match the SDK contract";
 const MAX_SPEECH_RESPONSE_BYTES = 24 * 1024 * 1024;
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.39.0";
+export const SDK_VERSION = "0.40.0";
 
 
 
@@ -854,47 +852,7 @@ export class RealtimeAvatar {
     }, Math.max(0, Math.min(this.#timeoutMs, this.#totalTimeoutMs ?? Infinity)), options.signal);
   }
 
-  /**
-   * A live speech session: text in while it is written, PCM and alignment out per utterance.
-   * Resolves once the platform admitted the session (voice, slot, credit hold, provider socket),
-   * so every refusal before that rejects here. In Workers the upgrade is a fetch and a refusal is
-   * a RealtimeAvatarHttpError; Node's standard WebSocket reports no status, so there it is a
-   * RealtimeAvatarError. Never retried. `timeoutMs` bounds opening, `totalTimeoutMs` (if set) the
-   * whole session; abort or `break` closes it, which bills what was already sent.
-   */
-  async openSpeechSession(
-    voiceId: operations["openSpeechLive"]["parameters"]["path"]["voiceId"],
-    input: SpeechLiveOpen,
-    options: { signal?: AbortSignal } = {},
-  ): Promise<SpeechSession> {
-    const id = speechVoiceIdSchema.parse(voiceId);
-    const open = speechLiveOpenSchema.parse(input);
-    const query = new URLSearchParams();
-    for (const [name, value] of Object.entries(open)) if (value !== undefined) query.set(name, String(value));
-    const url = `${this.#baseUrl}/voices/${encodeURIComponent(id)}/speech/live?${query}`;
-    const headers = this.#identityHeaders();
-    return openSpeechSocketSession(
-      isWorkerd() ? signal => this.#upgrade(url, headers, signal) : async () => connectStandardSocket(url, headers),
-      { handshakeMs: Math.max(0, Math.min(this.#timeoutMs, this.#totalTimeoutMs ?? Infinity)), sessionMs: this.#totalTimeoutMs },
-      options.signal,
-    );
-  }
-
-  /** Workers open an outbound WebSocket with a fetch upgrade; it is the only way to send headers there. */
-  async #upgrade(url: string, headers: Record<string, string>, signal: AbortSignal): Promise<SpeechConnection> {
-    const response = await this.#fetch(url, { headers: { ...headers, upgrade: "websocket" }, signal });
-    const socket = "webSocket" in response ? response.webSocket : null;
-    if (response.status === 101 && isUpgradedSocket(socket)) return { socket, ready: Promise.resolve() };
-    if (!response.ok) await this.#json(await boundedSpeechErrorResponse(response, signal));
-    await response.body?.cancel().catch(() => {});
-    throw new RealtimeAvatarError("Speech session upgrade did not match the SDK contract");
-  }
-
   // ── internals ────────────────────────────────────────────────────────────
-
-  #identityHeaders(): Record<string, string> {
-    return { authorization: `Bearer ${this.#apiKey}`, "user-agent": this.#userAgent };
-  }
 
   async #request(
     method: string,
@@ -907,7 +865,10 @@ export class RealtimeAvatar {
       headers?: Pick<NonNullable<operations["listUsageSessions"]["parameters"]["header"]>, "X-RTA-Speech-Diagnostics">;
     } = {},
   ): Promise<Response> {
-    const headers = this.#identityHeaders();
+    const headers: Record<string, string> = {
+      authorization: `Bearer ${this.#apiKey}`,
+      "user-agent": this.#userAgent,
+    };
     if (init.headers?.["X-RTA-Speech-Diagnostics"] === "1") {
       headers["X-RTA-Speech-Diagnostics"] = "1";
     }
@@ -1099,17 +1060,12 @@ function toAsset(raw: unknown): Asset {
 
 
 /** `node`, `workerd`, `deno`, `bun` — enough to tell where SDK traffic comes from. */
-function isWorkerd(): boolean {
-  const g: object = globalThis;
-  return "navigator" in g && typeof navigator?.userAgent === "string"
-    && navigator.userAgent.includes("Cloudflare-Workers");
-}
-
 function runtimeTag(): string {
   const g: object = globalThis;
   if ("Deno" in g) return "deno";
   if ("Bun" in g) return "bun";
-  if (isWorkerd()) return "workerd";
+  if ("navigator" in g && typeof navigator?.userAgent === "string"
+      && navigator.userAgent.includes("Cloudflare-Workers")) return "workerd";
   if ("process" in g && typeof process?.versions?.node === "string") return `node/${process.versions.node}`;
   return "unknown";
 }
