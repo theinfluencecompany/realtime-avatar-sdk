@@ -22,7 +22,7 @@
 // never takes a second, drifting dependency on @livekit/react-native for the
 // pieces this SDK's flows require.
 export { AudioSession, registerGlobals } from "@livekit/react-native";
-export { useAvatarCamera } from "../react/use-avatar-camera";
+export { useAvatarCamera, type AvatarCameraFailure } from "../react/use-avatar-camera";
 export { VideoTrack, type VideoTrackProps } from "@livekit/react-native";
 
 // The native room bridge + audio-session hook (twins of the web ./react ones), and the iOS

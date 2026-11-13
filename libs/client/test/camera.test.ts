@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cameraPublishOptions, createCameraControl } from "../src/camera.ts";
+import {
+  CameraStageError,
+  MAX_CAMERA_FAILURE_TEXT,
+  cameraPublishOptions,
+  createCameraControl,
+  describeCameraFailure,
+} from "../src/camera.ts";
 
 function deferred<Value>() {
   let resolve: (value: Value) => void = () => {};
@@ -87,7 +93,8 @@ test("a synchronous capture failure does not poison pending state", async () => 
     },
     publish: async () => {}, unpublish: async () => {}, onPending: () => {},
   });
-  await assert.rejects(control.setEnabled(true), /device unavailable/);
+  await assert.rejects(control.setEnabled(true), (failure) => failure instanceof CameraStageError
+    && failure.stage === "capture" && failure.cause instanceof Error && failure.cause.message === "device unavailable");
   assert.equal(control.pending, false);
   await control.setEnabled(true);
   assert.equal(captures, 2);
@@ -118,4 +125,49 @@ test("one controller can repeatedly enable and disable without closing the sessi
   }
   assert.equal(new Set(published).size, 3);
   assert.deepEqual(unpublished, published);
+});
+
+test("a publish failure is the one reported, even when cleanup after it also fails", async () => {
+  const refused = new Error("publication of local track timed out, no response from server");
+  let stopped = 0;
+  let unpublishes = 0;
+  const control = createCameraControl({
+    capture: async () => ({ stop() { stopped += 1; } }),
+    publish: async () => { throw refused; },
+    unpublish: async () => { unpublishes += 1; throw new Error("cannot negotiate on closed engine"); },
+    onPending: () => {},
+  });
+  await assert.rejects(control.setEnabled(true),
+    (failure) => failure instanceof CameraStageError && failure.stage === "publish" && failure.cause === refused);
+  assert.equal(stopped, 1);
+  assert.equal(unpublishes, 1);
+  assert.equal(control.pending, false);
+});
+
+test("turning the camera off reports its own failure as stop, keeping what was thrown", async () => {
+  const closed = new Error("cannot negotiate on closed engine");
+  const control = createCameraControl({
+    capture: async () => ({ stop() {} }),
+    publish: async () => {}, unpublish: async () => { throw closed; }, onPending: () => {},
+  });
+  await control.setEnabled(true);
+  await assert.rejects(control.setEnabled(false),
+    (failure) => failure instanceof CameraStageError && failure.stage === "stop" && failure.cause === closed);
+});
+
+test("a failure is described from the original error, by shape, and bounded", () => {
+  const long = "x".repeat(MAX_CAMERA_FAILURE_TEXT + 50);
+  assert.deepEqual(
+    describeCameraFailure(new CameraStageError("capture", new DOMException("Permission denied", "NotAllowedError"))),
+    { name: "NotAllowedError", message: "Permission denied", stage: "capture" },
+  );
+  assert.deepEqual(describeCameraFailure(new CameraStageError("publish", { name: "SecurityError" })),
+    { name: "SecurityError", message: "", stage: "publish" });
+  assert.deepEqual(describeCameraFailure(new CameraStageError("capture", "device busy")),
+    { name: "Unknown", message: "device busy", stage: "capture" });
+  assert.deepEqual(describeCameraFailure(new CameraStageError("stop", { name: "", message: 7 })),
+    { name: "Unknown", message: "", stage: "stop" });
+  const bounded = describeCameraFailure(new CameraStageError("capture", Object.assign(new Error(long), { name: long })));
+  assert.equal(bounded.name.length, MAX_CAMERA_FAILURE_TEXT);
+  assert.equal(bounded.message.length, MAX_CAMERA_FAILURE_TEXT);
 });

@@ -917,13 +917,29 @@ and inference release; an older grant does not authorize capture.
 
 For an in-room control on either web or native, use
 `useAvatarCamera({ allowed: grant.camera === true, active: foreground })`. It
-returns `enabled`, `pending`, `error`, `toggle`, `setEnabled`, `publication` and
-`participant`. Bind `active` to your page/app foreground and live-call state.
-Capture stays off until an explicit action, stops when inactive or unmounted,
+returns `enabled`, `pending`, `error`, `failure`, `toggle`, `setEnabled`,
+`publication` and `participant`. Bind `active` to your page/app foreground and
+live-call state. Capture stays off until an explicit action, stops when inactive or unmounted,
 and cancelled permission requests cannot publish it. Capture and publication are
 separate operations; a late captured track is stopped before it reaches the room.
 The existing room `video` prop remains a lower-level LiveKit escape hatch. Do not
 drive it alongside this hook; choose one camera controller.
+
+`error` is `"permission_denied"` or `"unavailable"`, for what to show. `failure` is
+what to report: the original error's `name` and `message` (each cut to 300
+characters, `name` is `"Unknown"` when the thrown value has none) and the `stage`
+that failed, `"capture"`, `"publish"` or `"stop"`. "Unavailable" alone covers a
+busy device, a capture the platform refused and a publication the room never
+confirmed; `failure` tells them apart. On React Native a refused permission is
+`SecurityError`, still `"unavailable"`. Both clear on the next attempt and when the
+camera is turned off.
+
+```tsx
+const camera = useAvatarCamera({ allowed: grant.camera === true, active: foreground });
+useEffect(() => {
+  if (camera.failure) report("camera_failed", camera.failure); // { name, message, stage }
+}, [camera.failure]);
+```
 
 ## Contributing
 

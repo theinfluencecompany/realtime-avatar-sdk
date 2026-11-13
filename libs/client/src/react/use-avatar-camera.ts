@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useConnectionState, useLocalParticipant } from "@livekit/components-react";
 import { ConnectionState, Track, createLocalVideoTrack, type LocalVideoTrack } from "livekit-client";
-import { createCameraControl } from "../camera";
+import {
+  CameraStageError,
+  createCameraControl,
+  describeCameraFailure,
+  type AvatarCameraFailure,
+} from "../camera";
+
+export type { AvatarCameraFailure } from "../camera";
 
 export function useAvatarCamera({ allowed, active = true }: { allowed: boolean; active?: boolean }) {
   const { localParticipant, cameraTrack, isCameraEnabled } = useLocalParticipant();
   const connection = useConnectionState();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<"permission_denied" | "unavailable" | null>(null);
+  const [failure, setFailure] = useState<AvatarCameraFailure | null>(null);
   const control = useRef<ReturnType<typeof createCameraControl<LocalVideoTrack>> | null>(null);
   const available = allowed && active && connection === ConnectionState.Connected;
 
@@ -30,13 +37,14 @@ export function useAvatarCamera({ allowed, active = true }: { allowed: boolean; 
   const setEnabled = useCallback(async (enabled: boolean) => {
     const current = control.current;
     if (!current) return;
-    setError(null);
+    setFailure(null);
     try {
       await current.setEnabled(enabled && available);
-    } catch (failure) {
+    } catch (thrown) {
       if (control.current !== current) return;
-      setError(failure instanceof Error && failure.name === "NotAllowedError"
-        ? "permission_denied" : "unavailable");
+      // The control rejects only with CameraStageError; anything else is a bug, not a camera state.
+      if (!(thrown instanceof CameraStageError)) throw thrown;
+      setFailure(describeCameraFailure(thrown));
     }
   }, [available]);
 
@@ -47,6 +55,10 @@ export function useAvatarCamera({ allowed, active = true }: { allowed: boolean; 
   const toggle = useCallback(() => setEnabled(!isCameraEnabled && !control.current?.pending),
     [isCameraEnabled, setEnabled]);
 
-  return { enabled: isCameraEnabled, pending, error, available, toggle, setEnabled,
+  // `error` is the coarse state the hook has always returned; `failure` says what was thrown.
+  const error: "permission_denied" | "unavailable" | null = failure === null ? null
+    : failure.name === "NotAllowedError" ? "permission_denied" : "unavailable";
+
+  return { enabled: isCameraEnabled, pending, error, failure, available, toggle, setEnabled,
     publication: cameraTrack, participant: localParticipant };
 }
