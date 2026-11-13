@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.41.0
+
+A minor release: a camera that will not turn on says why.
+
+### Added
+
+- **`useAvatarCamera` returns `failure: { name, message, stage } | null`** beside `error`, on web
+  and React Native. `name` and `message` are the original error's, each cut to 300 characters.
+  They are read by shape, because React Native's WebRTC rejects with a `MediaStreamError` that is
+  not an `Error`; a thrown value with no name reports `"Unknown"`. `stage` is `"capture"` (asking
+  the device for a track), `"publish"` (sending it to the room) or `"stop"` (turning it off).
+  `failure` clears with `error`: on the next attempt, and when the camera is turned off.
+- `AvatarCameraFailure`, the type of `failure`, from `realtime-avatar/react` and
+  `realtime-avatar/react-native`.
+
+### Changed
+
+- `error` keeps its values: `"permission_denied"` for a `NotAllowedError`, `"unavailable"` for
+  everything else. It is now read from the original error at every stage. On React Native a
+  refused permission is `SecurityError`, so it stays `"unavailable"`; `failure.name` shows it.
+- When publishing fails and the cleanup after it also fails, the publish error is reported.
+  Before, the cleanup error replaced it.
+
 ## 0.40.0
 
 A breaking minor release (the SDK is pre-1.0): the live speech session is removed.

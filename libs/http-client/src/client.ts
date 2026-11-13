@@ -69,7 +69,7 @@ const SPEECH_MISMATCH = "Speech response did not match the SDK contract";
 const MAX_SPEECH_RESPONSE_BYTES = 24 * 1024 * 1024;
 
 /** Must equal the version in package.json — a test asserts it, so drift fails CI. */
-export const SDK_VERSION = "0.40.0";
+export const SDK_VERSION = "0.41.0";
 
 
 
