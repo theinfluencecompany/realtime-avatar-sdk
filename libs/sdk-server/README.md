@@ -54,7 +54,7 @@ server grant's permission and the caller's opt-in. Room callbacks/options contin
 public types and implementation; no separate connection state machine is introduced.
 
 **On iOS, the room also clears an input mute an earlier call left on the app.** A server-closed room
-can leave iOS 26's per-app input mute set, so later calls publish an unmuted track of silence. Each
+can leave the iOS per-app input mute set, so later calls publish an unmuted track of silence. Each
 time the room's own microphone goes live, `RealtimeAvatarLiveKitRoom` round-trips the audio engine's
 mute once so the engine writes "unmuted" itself (iOS with the Voice Processing mute mode only; never
 on Android). A room you compose yourself needs `useClearStaleInputMute(room)` inside it.

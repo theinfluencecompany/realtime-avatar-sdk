@@ -71,8 +71,9 @@ const INPUT_LIVE_POLL_MS = 100;
 /**
  * Clear a microphone mute an earlier call left on the whole app, once this call's input is live.
  *
- * iOS 26 keeps ONE input-mute flag per app process, and libwebrtc's audio engine sets it through
- * Voice Processing whenever a send track still attached to a live peer connection is disabled.
+ * iOS keeps ONE input-mute flag per app process (the failure is measured on iOS 18, 26 and 27),
+ * and libwebrtc's audio engine sets it through Voice Processing whenever a send track still
+ * attached to a live peer connection is disabled.
  * livekit-client does exactly that when the SERVER closes the room (it stops the microphone track
  * before closing the connection, and on React Native `stop()` only disables it); an app's own
  * mute on a live room takes the same path. The engine is then rebuilt playout-only without
