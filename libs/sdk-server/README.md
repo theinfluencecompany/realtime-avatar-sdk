@@ -27,8 +27,9 @@ const call = await rta.startCall({
   maxSeconds: 600,
 });
 
-if (isQueued(call)) return { queued: true, position: call.position };
-return call.raw;   // relay to the browser byte-for-byte
+// Every slot busy: a place in line, not a call. 429 is how the browser client tells them apart.
+if (isQueued(call)) return Response.json(call, { status: 429 });
+return Response.json(call.raw);   // relay to the browser byte-for-byte
 ```
 
 That is the whole server half. The client joins with the payload and renders her.
@@ -190,7 +191,7 @@ inventing them.
 | **Full-duplex** | Interrupt her and she stops. A cough does not derail her. A pause is not the end of your turn. |
 | **Your character** | Your footage, your voice, your persona — not a stock presenter. |
 | **Your tools** | You run them; you feed the result back into a turn. Nothing calls your API on your behalf. |
-| **Priced to leave on** | Under $5/hour of live conversation, billed by the second. |
+| **One meter, by the second** | Seconds on air, not rounded up to the minute, with speech recognition, the LLM, the voice and the video included. Plans and per-minute rates: [pricing](https://realtimeavatar.ai/pricing?utm_source=npm). |
 
 ---
 

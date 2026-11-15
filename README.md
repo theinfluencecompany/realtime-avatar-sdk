@@ -72,7 +72,8 @@ That's the whole integration. Two halves, one payload between them. The same rou
 Express, Hono and TanStack Start (`realtime-avatar/{express,hono,tanstack-start}`). On Expo and
 React Native, `realtime-avatar/react-native` pairs the same proxy client with a native room
 (`RealtimeAvatarLiveKitRoom`) and video surface (`AvatarVideoSurface`). Writing the route by hand
-is `rta.startCall()` plus relaying `call.raw` byte-for-byte (see [API](#api)).
+is `rta.startCall()`, relaying `call.raw` byte-for-byte and answering a queued call with a 429
+(see [API](#api)).
 
 > [!TIP]
 > Not on Node? The server half is plain HTTP. See
@@ -93,7 +94,7 @@ also document an optional, separately installed hosted call preview.
 | 🎙️ **Full duplex, always** | They listen the entire time they speak. Interrupt and they stop. A cough doesn't derail them; a pause isn't the end of your turn. Video doesn't cost you this. |
 | 🎭 **Your character, not a stock presenter** | Hand it one still image: the resting loop and a starter motion library are generated from it — no footage to shoot, no clips to host. Direct her further in JSON (`setClipLibrary`), or re-shoot her later with footage of your own. ([the one rule](./AGENTS.md#the-one-rule-that-decides-whether-multi-clip-looks-good) if you do: every clip starts and ends on the same frame.) |
 | 🛠️ **Tools run on your machine** | Your functions, your data, your secrets — never uploaded. They're called mid-conversation and have 2.5s to answer. |
-| 💸 **One meter, by the second** | Seconds on air, not rounded up to the minute. Speech recognition, the LLM, the voice and the video are in that one rate. Plans and per-minute rates: [pricing](https://realtimeavatar.ai/pricing?utm_source=github). |
+| 💸 **One meter, by the second** | Seconds on air, not rounded up to the minute, with speech recognition, the LLM, the voice and the video included. Plans and per-minute rates: [pricing](https://realtimeavatar.ai/pricing?utm_source=github). |
 | 🧾 **An itemised bill** | `listSessions` returns every session: when it ran, how long, what it cost. Tag calls with your own user id to attribute them. |
 | 🤖 **Written for coding agents** | [`AGENTS.md`](./AGENTS.md) is the whole surface and its traps in one file. Point your agent at it and it writes the integration correctly the first time. |
 
