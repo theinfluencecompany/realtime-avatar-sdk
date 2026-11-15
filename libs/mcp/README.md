@@ -1,10 +1,14 @@
-# realtime-avatar-mcp
+# realtime-avatar-mcp: create and manage live talking AI avatars from your coding agent
 
-Published on npm as [`realtime-avatar-mcp`](https://www.npmjs.com/package/realtime-avatar-mcp) — run it with `npx`, never installed into an app.
+The MCP server for [Realtime Avatar](https://realtimeavatar.ai/?utm_source=npm)
+(realtimeavatar.ai), the real-time AI avatar API. From Claude Code, Cursor or any MCP host, your
+agent can create an avatar from one image, declare its clip library and start a short test call
+(write tools, opt-in), and read your avatars, credit balance and per-session bill.
+[`AGENTS.md`](../../AGENTS.md) tells a coding agent what the API is; this lets it *look*
+instead of guessing ids and inventing shapes.
 
-An MCP server for Realtime Avatar. [`AGENTS.md`](../../AGENTS.md) tells a coding agent what
-the API is; this lets it *look* — at your avatars, your balance, your bill — instead of
-guessing ids and inventing shapes.
+Published on npm as [`realtime-avatar-mcp`](https://www.npmjs.com/package/realtime-avatar-mcp).
+Run it with `npx`; it is never installed into an app.
 
 ```jsonc
 {
@@ -18,9 +22,11 @@ guessing ids and inventing shapes.
 }
 ```
 
+The read tools are on by default. Add `"REALTIME_AVATAR_ALLOW_WRITES": "1"` to `env` to turn on
+avatar creation, the clip library and test calls ([how writes are gated](#spending-money-is-opt-in-and-twice-gated)).
 Full page, including the write tools and what they cost:
-<https://realtimeavatar.ai/docs/mcp>. You need an API key first — a
-[sandbox key](https://realtimeavatar.ai/signup) is free and needs no card.
+[realtimeavatar.ai/docs/mcp](https://realtimeavatar.ai/docs/mcp?utm_source=npm). You need an API
+key first: a [sandbox key](https://realtimeavatar.ai/signup?utm_source=npm) is free and needs no card.
 
 Working on it in this repo? `npm run build`, then point `command` at `node` with
 `args: ["/abs/path/to/realtime-avatar-sdk/libs/mcp/dist/bin.js"]`.

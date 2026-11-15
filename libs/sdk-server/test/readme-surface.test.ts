@@ -106,6 +106,23 @@ for (const [label, path] of READMES) {
 }
 
 /**
+ * Both READMEs open with `npm install --save-exact realtime-avatar@<version>`, and nothing moved
+ * that pin: it read 0.17.0 on the npm page and the repo front page while 0.40.0 was current, so the
+ * first command a reader copied installed a release 23 minors old. set-version.mjs now rewrites it;
+ * this holds every pin in both to the version this package publishes.
+ */
+for (const [label, path] of READMES) {
+  test(`${label} installs the version this package publishes`, () => {
+    const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    const pins = [...readFileSync(path, "utf8").matchAll(/\brealtime-avatar@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/g)]
+      .map((m) => m[1]);
+    assert.ok(pins.length > 0, `${label}: no realtime-avatar@<version> install line`);
+    assert.deepEqual(pins.filter((pin) => pin !== version), [],
+      `${label}: install pins disagree with package.json ${version} (run scripts/set-version.mjs)`);
+  });
+}
+
+/**
  * The voice webhook's reply contract is the worker's, and every page that teaches it must say the
  * same thing. The first draft told receivers a failure "skips that one sentence" and that only a
  * 401/403 is fatal; the worker drops the rest of the reply and ends the call after repeated

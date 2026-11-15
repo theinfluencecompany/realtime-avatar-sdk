@@ -1,10 +1,14 @@
-# Realtime Avatar SDK
+# Realtime Avatar SDK (realtimeavatar.ai)
 
-> Server-side SDK for Realtime Avatar: a live character your users can talk to over voice or
-> video, who listens while she speaks — so she can be interrupted mid-sentence.
+> TypeScript SDK and MCP server for Realtime Avatar (https://realtimeavatar.ai), the real-time AI
+> avatar API: a live character your users can talk to over voice or lip-synced video, who listens
+> while she speaks, so she can be interrupted mid-sentence. Pricing: https://realtimeavatar.ai/pricing.md
 
-Install: `npm install realtime-avatar` (+ `-proxy` for framework adapters)
-Runtime: Node >= 20. Zero dependencies. Server-only (it holds the API key).
+Install: `npm install --save-exact realtime-avatar`. One package: the server client, the route
+adapters, the React and React Native bindings and the browser helpers are subpaths of it.
+The MCP server is not installed; run it with `npx -y realtime-avatar-mcp`.
+Runtime: Node >= 20. The server entries import no other package and hold the API key, so they
+are server-only.
 
 ## Start here
 - [AGENTS.md](./AGENTS.md): the contract for using this correctly — the whole surface, plus
@@ -24,8 +28,9 @@ Runtime: Node >= 20. Zero dependencies. Server-only (it holds the API key).
   prepareAvatarRoom(room) gives every track the room subscribes the 0.5s receiver cushion
   (without it she freezes on every lost packet; attachRemoteAudio calls it for you, and the
   React RealtimeAvatarLiveKitRoom applies it room-wide). No React, no livekit-client dependency
-- libs/mcp (realtime-avatar-mcp): MCP server so an agent can read avatars,
-  balance and the per-session bill directly. Read-only unless REALTIME_AVATAR_ALLOW_WRITES=1.
+- libs/mcp (realtime-avatar-mcp): MCP server so a coding agent can create and manage avatars
+  (create one from a single image, declare its clip library, start a short test call) and read
+  avatars, balance and the per-session bill directly. Read-only unless REALTIME_AVATAR_ALLOW_WRITES=1.
 - libs/examples (realtime-avatar-examples): the demos' contracts — brief, builder
   prompt, tool descriptors — one source imported by apps/demo AND by the hosted ports
   on realtimeavatar.ai, so the copies cannot drift; pure data, zero dependencies

@@ -1,19 +1,33 @@
 <div align="center">
 
-# Realtime Avatar
+# Realtime Avatar (realtimeavatar.ai): real-time AI avatar API and React / React Native SDK
 
-**Live voice and video characters you can interrupt.**
+**Live, talking AI avatars your users can interrupt, with voice and lip-synced video.**
 
-Your footage. Your voice. Your persona. Talking back in real time — and stopping
-mid-sentence the moment someone cuts in, the way a person stops.
+</div>
+
+[Realtime Avatar](https://realtimeavatar.ai/?utm_source=github) is a hosted API for live AI
+avatars: give it one portrait, and your users hold a real-time conversation with that character
+while it listens, answers in its own voice with lip-synced video, and calls your own functions
+mid-conversation. This repo is its TypeScript SDK, [`realtime-avatar`](https://www.npmjs.com/package/realtime-avatar)
+(server client, route adapters, React and React Native bindings), and its MCP server for coding
+agents, [`realtime-avatar-mcp`](./libs/mcp).
+
+- **Pricing:** one meter, seconds on air, billed by the second; speech recognition, the LLM, the
+  voice and the video are included. Current plans, included minutes and per-minute rates:
+  [realtimeavatar.ai/pricing](https://realtimeavatar.ai/pricing?utm_source=github).
+- **Free sandbox:** a [test key](https://realtimeavatar.ai/signup?utm_source=github) with enough
+  credit to build one avatar and try a call. No card.
+
+<div align="center">
 
 [![npm](https://img.shields.io/npm/v/realtime-avatar?color=1a7f37&label=npm)](https://www.npmjs.com/package/realtime-avatar)
 [![CI](https://github.com/theinfluencecompany/realtime-avatar-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/theinfluencecompany/realtime-avatar-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-[![Docs](https://img.shields.io/badge/docs-realtimeavatar.ai-6f42c1)](https://realtimeavatar.ai/docs)
+[![Docs](https://img.shields.io/badge/docs-realtimeavatar.ai-6f42c1)](https://realtimeavatar.ai/docs?utm_source=github)
 [![Agent-ready](https://img.shields.io/badge/agent--ready-AGENTS.md-ff6b35)](./AGENTS.md)
 
-[Quickstart](#quickstart) · [Examples](#examples) · [Packages](#packages) · [API](#api) · [Docs](https://realtimeavatar.ai/docs)
+[Quickstart](#quickstart) · [Examples](#examples) · [Packages](#packages) · [API](#api) · [Docs](https://realtimeavatar.ai/docs?utm_source=github) · [Pricing](https://realtimeavatar.ai/pricing?utm_source=github)
 
 </div>
 
@@ -21,30 +35,26 @@ mid-sentence the moment someone cuts in, the way a person stops.
 
 ## Quickstart
 
-For Claude Code or Cursor, install the [shared Realtime Avatar plugin](./plugins/realtime-avatar/README.md).
-It connects your account's avatars, credits and clips to the agent, with opt-in writes
-and a shared workflow for building an avatar app. The [plugin source and packaging](./integrations/agent-plugin/README.md)
-also document an optional, separately installed hosted call preview.
-
 ```bash
-npm install --save-exact realtime-avatar@0.17.0
+npm install --save-exact realtime-avatar@0.40.0
 ```
 
-Start the call on your **server**. Your key never touches a browser.
+Mount the route on your **server** (Next.js App Router shown). Your key never touches a browser.
 
 ```ts
-import { RealtimeAvatar, isQueued } from "realtime-avatar";
+// app/api/realtime-avatar/[...path]/route.ts
+import { createRealtimeAvatarRoute } from "realtime-avatar/nextjs";
 
-const rta = new RealtimeAvatar({ apiKey: process.env.REALTIME_AVATAR_API_KEY! });
-
-const call = await rta.startCall({
-  avatarId: "ava_…",
-  instructions: "You are Rin. Short, warm, specific sentences.",
-  maxSeconds: 600,
+export const { GET, POST } = createRealtimeAvatarRoute({
+  apiKey: process.env.REALTIME_AVATAR_API_KEY!,   // never NEXT_PUBLIC_ prefixed
+  authorize: async ({ request }) => {             // who may use this route: your own auth
+    if (!(await currentUser(request))) return new Response("Unauthorized", { status: 401 });
+  },
+  session: async () => ({                         // what she knows, decided here, never by the page
+    instructions: "You are Rin. Short, warm, specific sentences.",
+    maxSeconds: 600,
+  }),
 });
-
-if (isQueued(call)) return { queued: true, position: call.position };
-return call.raw;            // relay to the browser, byte-for-byte
 ```
 
 Join it from your **client**.
@@ -58,12 +68,21 @@ const client = createProxyClient({ proxyUrl: "/api/realtime-avatar" });
 <AvatarCall client={client} avatarId="ava_…" onEnded={({ reason }) => router.push("/")} />;
 ```
 
-That's the whole integration. Two halves, one payload between them.
+That's the whole integration. Two halves, one payload between them. The same route mounts on
+Express, Hono and TanStack Start (`realtime-avatar/{express,hono,tanstack-start}`). On Expo and
+React Native, `realtime-avatar/react-native` pairs the same proxy client with a native room
+(`RealtimeAvatarLiveKitRoom`) and video surface (`AvatarVideoSurface`). Writing the route by hand
+is `rta.startCall()` plus relaying `call.raw` byte-for-byte (see [API](#api)).
 
 > [!TIP]
-> Not on Node? The server half is plain HTTP — see
+> Not on Node? The server half is plain HTTP. See
 > [`apps/quickstart/python-fastapi`](./apps/quickstart/python-fastapi) for the same split
 > from a Python backend.
+
+Using Claude Code or Cursor? Install the [shared Realtime Avatar plugin](./plugins/realtime-avatar/README.md).
+It connects your account's avatars, credits and clips to the agent, with opt-in writes
+and a shared workflow for building an avatar app. The [plugin source and packaging](./integrations/agent-plugin/README.md)
+also document an optional, separately installed hosted call preview.
 
 ---
 
@@ -74,9 +93,9 @@ That's the whole integration. Two halves, one payload between them.
 | 🎙️ **Full duplex, always** | They listen the entire time they speak. Interrupt and they stop. A cough doesn't derail them; a pause isn't the end of your turn. Video doesn't cost you this. |
 | 🎭 **Your character, not a stock presenter** | Hand it one still image: the resting loop and a starter motion library are generated from it — no footage to shoot, no clips to host. Direct her further in JSON (`setClipLibrary`), or re-shoot her later with footage of your own. ([the one rule](./AGENTS.md#the-one-rule-that-decides-whether-multi-clip-looks-good) if you do: every clip starts and ends on the same frame.) |
 | 🛠️ **Tools run on your machine** | Your functions, your data, your secrets — never uploaded. They're called mid-conversation and have 2.5s to answer. |
-| 💸 **Priced to leave running** | Under $5 per hour of live conversation, billed by the second — not rounded up to the minute. |
+| 💸 **One meter, by the second** | Seconds on air, not rounded up to the minute. Speech recognition, the LLM, the voice and the video are in that one rate. Plans and per-minute rates: [pricing](https://realtimeavatar.ai/pricing?utm_source=github). |
 | 🧾 **An itemised bill** | `listSessions` returns every session: when it ran, how long, what it cost. Tag calls with your own user id to attribute them. |
-| 🤖 **Written for coding agents** | [`AGENTS.md`](./AGENTS.md) ships in the package. Point your agent at it and it writes the integration correctly the first time. |
+| 🤖 **Written for coding agents** | [`AGENTS.md`](./AGENTS.md) is the whole surface and its traps in one file. Point your agent at it and it writes the integration correctly the first time. |
 
 ---
 
@@ -103,17 +122,18 @@ Two rules fall out of that picture, and they drive everything else:
 
 Most people integrating this in 2026 aren't typing it by hand. So the reference is written
 for the reader that shows up: **[`AGENTS.md`](./AGENTS.md)** is the entire surface in one
-file, plus the twelve rules that are expensive to learn the hard way.
+file, plus the rules that are expensive to learn the hard way.
 
 ```
 "Add a voice call to my Next.js app using the Realtime Avatar SDK.
- Read AGENTS.md in node_modules/realtime-avatar first."
+ Read https://github.com/theinfluencecompany/realtime-avatar-sdk/blob/main/AGENTS.md first."
 ```
 
-`CLAUDE.md` symlinks to it, so Claude Code picks it up with no prompting. Codex, Cursor and
-Copilot read `AGENTS.md` directly. There's also an
-**[MCP server](./libs/mcp)** if you'd rather your agent query your avatars, balance and bill
-live instead of reading about them.
+`CLAUDE.md` symlinks to it, so Claude Code picks it up with no prompting in a clone of this
+repo. Codex, Cursor and Copilot read `AGENTS.md` directly. There's also an
+**[MCP server](./libs/mcp)** that lets your agent create and manage avatars itself: build one
+from a single image, declare its clips and start a short test call (opt-in writes), and read
+your avatars, balance and bill live instead of reading about them.
 
 ---
 
@@ -124,7 +144,7 @@ a JavaScript dependency and introduces no native module.
 
 ## Packages
 
-**One.** `npm install --save-exact realtime-avatar@0.17.0` and you have the server client, the route adapters, the
+**One.** `npm install --save-exact realtime-avatar@0.40.0` and you have the server client, the route adapters, the
 React bindings and the browser helpers. Everything is a subpath, treeshaken per entry, so a
 server-only app still ships 18.8 KB with no React and no LiveKit in it.
 
@@ -153,7 +173,7 @@ and the exact verified dependency tuple are documented in the [package README](.
 | | `realtime-avatar/browser` | Mic and playback, with the six failure modes turned into values |
 | | `realtime-avatar/tools` | The browser tool plane — your functions, called mid-conversation |
 | | `realtime-avatar/recording` | Client-safe recording schemas and derived types |
-| [`libs/mcp`](./libs/mcp) | `realtime-avatar-mcp` | MCP server for coding agents |
+| [`libs/mcp`](./libs/mcp) | `realtime-avatar-mcp` | MCP server: create and manage avatars from a coding agent |
 
 ---
 
@@ -941,7 +961,7 @@ Found a security issue? Please don't open a public issue —
 
 ## Support
 
-- 📖 **Docs** — <https://realtimeavatar.ai/docs>
+- 📖 **Docs** — [realtimeavatar.ai/docs](https://realtimeavatar.ai/docs?utm_source=github)
 - 🐛 **Bugs and feature requests** — [open an issue](https://github.com/theinfluencecompany/realtime-avatar-sdk/issues)
 - 🔀 **Versioning** — the API is pinned at `/api/v1`. Breaking changes get a new version, never a silent edit.
 
