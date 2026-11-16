@@ -16,8 +16,9 @@
  *
  *   node scripts/set-version.mjs 0.3.0
  *
- * Writes package.json only. Committing and tagging stay manual — that is the release
- * decision, and it is not this script's to make.
+ * Writes files only: the manifests, server.json, the version constants and the README install
+ * lines. Committing and tagging stay manual — that is the release decision, and it is not this
+ * script's to make.
  */
 import { readFile, writeFile } from "node:fs/promises";
 
@@ -85,6 +86,20 @@ for (const dir of LIBS) {
   for (const pkg of entry.packages) pkg.version = version;
   await writeFile(path, `${JSON.stringify(entry, null, 2)}\n`);
   console.log(`· ${path}  -> ${version}`);
+}
+
+// Both READMEs open with an exact install line, and the package one IS the npm page. Nothing
+// moved it, so it told every reader to install 0.17.0 while 0.40.0 was current: a pin only a
+// human remembers to bump is a pin that is wrong. readme-surface.test.ts holds it to this version.
+// `realtime-avatar@` exactly: a `realtime-avatar-mcp@…` pin belongs to the agent plugin, which
+// is released on its own schedule.
+for (const path of ["README.md", "libs/sdk-server/README.md"]) {
+  const before = await readFile(path, "utf8");
+  const pin = /\brealtime-avatar@\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/g;
+  if (!before.match(pin)) throw new Error(`${path}: no realtime-avatar@<version> install line`);
+  const after = before.replace(pin, `realtime-avatar@${version}`);
+  if (after !== before) await writeFile(path, after);
+  console.log(`· ${path}  install line -> ${version}`);
 }
 
 console.log(`\nNext:\n  npm install --package-lock-only\n  npm run check\n  git commit -am "release: ${version}"\n  git tag -a v${version} -m "${version}" && git push origin main v${version}`);

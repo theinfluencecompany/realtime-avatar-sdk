@@ -1,10 +1,18 @@
-# realtime-avatar
+# realtime-avatar: the Realtime Avatar (realtimeavatar.ai) SDK for real-time AI avatars
 
-A live character your users can talk to — voice, or voice and video. She listens while she
-speaks, so you can interrupt her mid-sentence and she stops, the way a person stops.
+The TypeScript SDK for [Realtime Avatar](https://realtimeavatar.ai/?utm_source=npm), the
+real-time AI avatar API: a live character your users can talk to, with voice, or voice and
+lip-synced video. She listens while she speaks, so you can interrupt her mid-sentence and she
+stops, the way a person stops. One install gives you the server client, route adapters for
+Next.js, Express, Hono and TanStack Start, and React and React Native bindings.
+
+- **Pricing:** one meter, seconds on air, billed by the second. Current plans and per-minute
+  rates: [realtimeavatar.ai/pricing](https://realtimeavatar.ai/pricing?utm_source=npm).
+- **Free sandbox:** a [test key](https://realtimeavatar.ai/signup?utm_source=npm) with enough
+  credit to build one avatar and try a call. No card.
 
 ```bash
-npm install --save-exact realtime-avatar@0.17.0
+npm install --save-exact realtime-avatar@0.40.0
 ```
 
 ```ts
@@ -19,8 +27,9 @@ const call = await rta.startCall({
   maxSeconds: 600,
 });
 
-if (isQueued(call)) return { queued: true, position: call.position };
-return call.raw;   // relay to the browser byte-for-byte
+// Every slot busy: a place in line, not a call. 429 is how the browser client tells them apart.
+if (isQueued(call)) return Response.json(call, { status: 429 });
+return Response.json(call.raw);   // relay to the browser byte-for-byte
 ```
 
 That is the whole server half. The client joins with the payload and renders her.
@@ -159,17 +168,17 @@ flowchart LR
   Storage --> Player
 ```
 
-New here? The [quickstart](https://realtimeavatar.ai/docs/quickstart) goes from an API key to a
-working call, and a [sandbox key](https://realtimeavatar.ai/signup) is free with no card. Mount
+New here? The [quickstart](https://realtimeavatar.ai/docs/quickstart?utm_source=npm) goes from an API key to a
+working call, and a [sandbox key](https://realtimeavatar.ai/signup?utm_source=npm) is free with no card. Mount
 the server half on your framework:
-[Next.js](https://realtimeavatar.ai/docs/nextjs) ·
-[Express](https://realtimeavatar.ai/docs/express) ·
-[Hono, Workers, Bun, Deno](https://realtimeavatar.ai/docs/hono) ·
-[TanStack Start](https://realtimeavatar.ai/docs/tanstack-start), and render it with
-[React or React Native](https://realtimeavatar.ai/docs/react).
+[Next.js](https://realtimeavatar.ai/docs/nextjs?utm_source=npm) ·
+[Express](https://realtimeavatar.ai/docs/express?utm_source=npm) ·
+[Hono, Workers, Bun, Deno](https://realtimeavatar.ai/docs/hono?utm_source=npm) ·
+[TanStack Start](https://realtimeavatar.ai/docs/tanstack-start?utm_source=npm), and render it with
+[React or React Native](https://realtimeavatar.ai/docs/react?utm_source=npm).
 
 Using a coding agent? Point it at [`AGENTS.md`](../../AGENTS.md) and give it the
-[MCP server](https://realtimeavatar.ai/docs/mcp) so it can read your real avatar ids instead of
+[MCP server](https://realtimeavatar.ai/docs/mcp?utm_source=npm) so it can read your real avatar ids instead of
 inventing them.
 
 ---
@@ -182,7 +191,7 @@ inventing them.
 | **Full-duplex** | Interrupt her and she stops. A cough does not derail her. A pause is not the end of your turn. |
 | **Your character** | Your footage, your voice, your persona — not a stock presenter. |
 | **Your tools** | You run them; you feed the result back into a turn. Nothing calls your API on your behalf. |
-| **Priced to leave on** | Under $5/hour of live conversation, billed by the second. |
+| **One meter, by the second** | Seconds on air, not rounded up to the minute, with speech recognition, the LLM, the voice and the video included. Plans and per-minute rates: [pricing](https://realtimeavatar.ai/pricing?utm_source=npm). |
 
 ---
 
@@ -877,15 +886,15 @@ the Fish model validator `fishTtsModelSchema` with its `DEFAULT_FISH_TTS_MODEL`.
 
 ## Docs and support
 
-- Full documentation: <https://realtimeavatar.ai/docs>
-- [Quickstart](https://realtimeavatar.ai/docs/quickstart) — key to a live call
-- [Authentication](https://realtimeavatar.ai/docs/authentication) — what belongs on your server, and why
-- [Calls](https://realtimeavatar.ai/docs/sessions) — what your server decides and what the client reports
-- [Creating an avatar](https://realtimeavatar.ai/docs/video) — one photo in, a moving character out
-- [Tool calling](https://realtimeavatar.ai/docs/tool-calling) — your handlers, your server, no hosted executor
-- [MCP server](https://realtimeavatar.ai/docs/mcp) — give a coding agent the account itself
-- [API reference](https://realtimeavatar.ai/docs/api-reference) · [OpenAPI 3.1](https://realtimeavatar.ai/openapi.json)
-- [Pricing](https://realtimeavatar.ai/pricing) — one meter, seconds on air
+- Full documentation: [realtimeavatar.ai/docs](https://realtimeavatar.ai/docs?utm_source=npm)
+- [Quickstart](https://realtimeavatar.ai/docs/quickstart?utm_source=npm) — key to a live call
+- [Authentication](https://realtimeavatar.ai/docs/authentication?utm_source=npm) — what belongs on your server, and why
+- [Calls](https://realtimeavatar.ai/docs/sessions?utm_source=npm) — what your server decides and what the client reports
+- [Creating an avatar](https://realtimeavatar.ai/docs/video?utm_source=npm) — one photo in, a moving character out
+- [Tool calling](https://realtimeavatar.ai/docs/tool-calling?utm_source=npm) — your handlers, your server, no hosted executor
+- [MCP server](https://realtimeavatar.ai/docs/mcp?utm_source=npm) — give a coding agent the account itself
+- [API reference](https://realtimeavatar.ai/docs/api-reference?utm_source=npm) · [OpenAPI 3.1](https://realtimeavatar.ai/openapi.json)
+- [Pricing](https://realtimeavatar.ai/pricing?utm_source=npm) — one meter, seconds on air
 - Issues and feature requests: this repo
 - The API is versioned at `/api/v1`; breaking changes get a new version, not a silent edit.
 

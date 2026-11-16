@@ -369,3 +369,12 @@ test("server.json agrees with package.json, so the registry entry cannot drift",
   assert.equal(entry.packages[0].identifier, pkg.name);
   assert.equal(entry.packages[0].version, pkg.version);
 });
+
+test("server.json's description fits the registry schema, which nothing else checks before release", () => {
+  // The 2025-12-11 server schema caps `description` at 100 characters. release.yml publishes
+  // server.json only after npm has the version, so an entry that is one word too long fails
+  // there, with the packages already out and the registry still announcing the last release.
+  const entry = JSON.parse(readFileSync(new URL("../server.json", import.meta.url), "utf8"));
+  assert.ok(entry.description.length >= 1 && entry.description.length <= 100,
+    `server.json description is ${entry.description.length} characters; the registry allows 1-100`);
+});

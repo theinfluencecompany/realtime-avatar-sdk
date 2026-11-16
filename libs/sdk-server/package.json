@@ -1,10 +1,10 @@
 {
   "name": "realtime-avatar",
   "version": "0.40.0",
-  "description": "Realtime Avatar SDK. `realtime-avatar` and the route adapters hold your API key and are server-only; `realtime-avatar/react`, `/browser` and `/tools` never can — importing a server entry into a browser build throws at bundle time.",
+  "description": "Realtime Avatar (realtimeavatar.ai) SDK for real-time AI avatars: live, interruptible talking characters with voice and lip-synced video over LiveKit WebRTC, for Node servers, React and React Native. The server entries hold your API key; the React, React Native and browser entries never can.",
   "license": "MIT",
   "author": "The Influence Company",
-  "homepage": "https://realtimeavatar.ai/docs",
+  "homepage": "https://realtimeavatar.ai/docs?utm_source=npm",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/theinfluencecompany/realtime-avatar-sdk.git",
@@ -25,7 +25,18 @@
     "sdk",
     "api-client",
     "react",
-    "react-native"
+    "react-native",
+    "realtime-avatar",
+    "ai-avatar",
+    "talking-avatar",
+    "interactive-avatar",
+    "digital-human",
+    "lipsync",
+    "webrtc",
+    "streaming-avatar",
+    "avatar-api",
+    "conversational-ai",
+    "expo"
   ],
   "type": "module",
   "main": "./dist/index.js",
